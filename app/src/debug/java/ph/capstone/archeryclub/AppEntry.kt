@@ -5,12 +5,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import ph.capstone.archeryclub.backend.BackendApp
+import ph.capstone.archeryclub.backend.SupabaseConfig
 import ph.capstone.archeryclub.data.LocalPreviewRepository
 import ph.capstone.archeryclub.data.PreferencesSnapshotStore
 import ph.capstone.archeryclub.ui.*
 
 @Composable
 fun AppEntry(activity: ComponentActivity) {
+    if (SupabaseConfig.isConfigured) {
+        BackendApp(activity)
+        return
+    }
     val result = remember(activity) {
         runCatching {
             val factory = object : ViewModelProvider.Factory {

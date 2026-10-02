@@ -25,7 +25,9 @@ AGP 9 uses built-in Kotlin; do not add the old `org.jetbrains.kotlin.android` pl
   club decisions are deliberately absent from the applicant interface.
 - **M1:** view a separate sample member, update permitted contact fields, and request renewal.
   Official membership fields are read-only. A renewal request does not approve membership.
-- **M6:** display the sample member's standing, pending renewal and profile shortcut.
+- **M3:** browse published member activities, view schedules/deadlines/details, and register or cancel participation for eligible activities.
+- **M4:** view official attendance history and training records, including attendance percentage, training scores, and coach feedback; official records are read-only.
+- **M6:** member dashboard now consolidates membership standing, attendance summary, training count, registered activities, upcoming activities, renewal, profile, and shortcuts to M3/M4.
 - Device-local saved state, form validation, duplicate-action protection, unsaved-change prompts,
   light/dark themes, scrolling forms, and error feedback.
 
@@ -108,3 +110,34 @@ The release build is a service-not-connected placeholder, not a production deplo
 References: [Android architecture](https://developer.android.com/topic/architecture/recommendations),
 [Supabase Kotlin quickstart](https://supabase.com/docs/guides/getting-started/quickstarts/kotlin),
 [Supabase row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+## M3–M6 Supabase backend package
+
+The project now contains an optional real Supabase backend for the member-facing modules:
+
+- **M3 Activities:** published activities and member registrations.
+- **M4 Attendance:** authenticated members can read only their own official attendance.
+- **M4 Training:** authenticated members can read only their own official training records.
+- **M6 Dashboard:** the existing dashboard consumes the authoritative profile, activity, registration, attendance and training data.
+- **Profile/Renewal:** permitted contact fields and renewal requests are sent through server-side Postgres functions.
+
+### Configure Supabase
+
+1. Create a Supabase project.
+2. Open **SQL Editor** and run `supabase/migrations/202610020001_m3_m4_m6_backend.sql`.
+3. In the Supabase project Connect/API settings, copy the **Project URL** and **Publishable key**.
+4. Add these to your local `local.properties` (this file is ignored by Git):
+
+```properties
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
+```
+
+5. Sync Gradle and run the debug build. When both values are present, debug uses the real backend instead of the local preview. When they are absent, debug keeps the original local preview.
+6. The app provides email/password sign-in and member-account creation. If email confirmation is enabled in Supabase Auth, confirm the email before signing in.
+
+### Backend security model
+
+The mobile app uses only the Supabase **publishable** key. RLS is enabled on all M3–M6 tables. Members can read only their own profile, registrations, attendance and training records. Members can register/cancel only their own activity participation. Official attendance and training records have no member insert/update/delete policy. Profile contact edits and renewal requests use restricted Postgres functions rather than direct member updates.
+
+The SQL seed contains only published activity fixtures. Attendance/training are intentionally not auto-generated as fake official records; create controlled development records for a test user after sign-up. Club officer screens and trusted officer write workflows remain outside this package.

@@ -33,6 +33,9 @@ class ClubViewModel(private val repository: ClubRepository) : ViewModel() {
     fun renew() = act("Preview renewal request saved. Membership status is unchanged.") {
         repository.requestRenewal()
     }
+    fun setActivityRegistration(activityId: String, registered: Boolean) = act(
+        if (registered) "Activity registration saved." else "Activity registration cancelled."
+    ) { repository.setActivityRegistration(activityId, registered) }
 
     private fun act(success: String, operation: suspend () -> Unit) {
         if (mutable.value.busy) return
@@ -48,4 +51,26 @@ class ClubViewModel(private val repository: ClubRepository) : ViewModel() {
             }
         }
     }
+    fun refresh() {
+        if (mutable.value.busy) return
+
+        mutable.value = ActionState(busy = true)
+
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    repository.refresh()
+                }
+
+                mutable.value = ActionState()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (exception: Exception) {
+                mutable.value = ActionState(
+                    error = exception.message ?: "Unable to refresh records."
+                )
+            }
+        }
+    }
 }
+

@@ -94,11 +94,20 @@ class LocalPreviewRepositoryTest {
     @Test fun failedSaveDoesNotShowUnpersistedSuccess() = runBlocking {
         val store = MemoryStore()
         val repository = LocalPreviewRepository(store)
+        val initial = repository.snapshot.value
         store.failWrites = true
         try { repository.submitApplication(validForm()); fail("Storage error ignored") }
         catch (_: IllegalStateException) { }
         assertEquals(ApplicationStatus.DRAFT, repository.snapshot.value.application.status)
-        assertEquals(store.value, repository.snapshot.value)
+        assertEquals(initial, repository.snapshot.value)
+    }
+
+    @Test fun refreshLoadsLatestStoreData() = runBlocking {
+        val store = MemoryStore()
+        val repository = LocalPreviewRepository(store)
+        store.value = store.value.copy(member = store.value.member.copy(fullName = "Updated External Name"))
+        repository.refresh()
+        assertEquals("Updated External Name", repository.snapshot.value.member.fullName)
     }
 
     @Test fun invalidEmailAndMissingConfirmationHaveFieldErrors() {
