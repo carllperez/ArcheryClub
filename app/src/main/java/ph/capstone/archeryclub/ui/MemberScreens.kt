@@ -164,7 +164,6 @@ fun MemberDashboard(
     val present = attendance.count { it.status == AttendanceStatus.PRESENT }
     val counted = attendance.count { it.status != AttendanceStatus.EXCUSED }
     val attendancePercent = if (counted == 0) 0 else present * 100 / counted
-    val upcoming = activities.filter { !it.registered }.take(2)
     val urgentAnnouncement = announcements.firstOrNull()
 
     ScreenShell("Hello, ${member.fullName.substringBefore(' ')}.", onBack, snackbar) {
@@ -223,10 +222,6 @@ fun MemberDashboard(
         OutlinedButton(onClick = onActivities, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View activities") }
         OutlinedButton(onClick = onAttendance, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View attendance") }
         OutlinedButton(onClick = onTraining, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View training records") }
-        if (upcoming.isNotEmpty()) {
-            Text("Upcoming activities", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            upcoming.forEach { InfoCard(it.title, "${it.date} · ${it.time}\n${it.location}") }
-        }
         Text("Account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         OutlinedButton(onClick = onProfile, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View & edit my profile") }
         if (member.renewalPending) {
