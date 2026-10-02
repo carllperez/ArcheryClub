@@ -113,10 +113,51 @@ fun TrainingScreen(training: List<TrainingRecord>, onBack: () -> Unit, snackbar:
 }
 
 @Composable
+fun AnnouncementsScreen(
+    announcements: List<Announcement>,
+    onBack: () -> Unit,
+    snackbar: SnackbarHostState,
+    showPreviewNotice: Boolean = true,
+) {
+    ScreenShell("Announcements", onBack, snackbar) {
+        if (showPreviewNotice) PreviewNotice()
+        Text("Latest club news, schedule changes, and reminders", style = MaterialTheme.typography.bodyLarge)
+        if (announcements.isEmpty()) {
+            InfoCard("No announcements", "There are currently no club announcements.")
+        } else {
+            announcements.forEach { announcement ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            announcement.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            announcement.message,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            announcement.createdAt,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun MemberDashboard(
-    member: MemberProfile, activities: List<ClubActivity>, attendance: List<AttendanceRecord>, training: List<TrainingRecord>,
+    member: MemberProfile, activities: List<ClubActivity>, attendance: List<AttendanceRecord>, training: List<TrainingRecord>, announcements: List<Announcement>,
     busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
     onProfile: () -> Unit, onRenew: () -> Unit, onActivities: () -> Unit, onAttendance: () -> Unit, onTraining: () -> Unit,
+    onAnnouncements: () -> Unit,
     showPreviewNotice: Boolean = true,
 ) {
     var confirmRenewal by rememberSaveable { mutableStateOf(false) }
@@ -124,6 +165,8 @@ fun MemberDashboard(
     val counted = attendance.count { it.status != AttendanceStatus.EXCUSED }
     val attendancePercent = if (counted == 0) 0 else present * 100 / counted
     val upcoming = activities.filter { !it.registered }.take(2)
+    val urgentAnnouncement = announcements.firstOrNull()
+
     ScreenShell("Hello, ${member.fullName.substringBefore(' ')}.", onBack, snackbar) {
         if (showPreviewNotice) PreviewNotice()
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -138,7 +181,45 @@ fun MemberDashboard(
             MetricCard("Training", training.size.toString(), Modifier.weight(1f))
             MetricCard("Activities", activities.count { it.registered }.toString(), Modifier.weight(1f))
         }
+
+        if (urgentAnnouncement != null) {
+            Text(
+                "Latest announcement",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+            ) {
+                Column(
+                    Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        urgentAnnouncement.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        urgentAnnouncement.message,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        urgentAnnouncement.createdAt,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
         Text("Your records", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        if (announcements.isNotEmpty()) {
+            OutlinedButton(onClick = onAnnouncements, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text("View announcements (${announcements.size})")
+            }
+        }
         OutlinedButton(onClick = onActivities, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View activities") }
         OutlinedButton(onClick = onAttendance, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View attendance") }
         OutlinedButton(onClick = onTraining, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("View training records") }

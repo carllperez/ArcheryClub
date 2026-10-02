@@ -7,5 +7,6 @@ enum class AppScreen {
     PROFILE,
     ACTIVITIES,
     ATTENDANCE,
-    TRAINING
+    TRAINING,
+    ANNOUNCEMENTS
 }

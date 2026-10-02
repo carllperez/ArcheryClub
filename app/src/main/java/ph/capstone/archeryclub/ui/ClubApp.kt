@@ -43,17 +43,21 @@ fun ClubApp(viewModel: ClubViewModel, showPreviewNotice: Boolean = true) {
         AppScreen.TRAINING -> TrainingScreen(
             snapshot.training, onBack = { screen = AppScreen.DASHBOARD }, snackbar = snackbar, showPreviewNotice = showPreviewNotice
         )
+        AppScreen.ANNOUNCEMENTS -> AnnouncementsScreen(
+            snapshot.announcements, onBack = { screen = AppScreen.DASHBOARD }, snackbar = snackbar, showPreviewNotice = showPreviewNotice
+        )
         AppScreen.DASHBOARD -> {
             LaunchedEffect(Unit) {
                 viewModel.refresh()
             }
             BackHandler { if (!actions.busy) screen = AppScreen.WELCOME }
             MemberDashboard(
-                snapshot.member, snapshot.activities, snapshot.attendance, snapshot.training, actions.busy, snackbar,
+                snapshot.member, snapshot.activities, snapshot.attendance, snapshot.training, snapshot.announcements, actions.busy, snackbar,
                 onBack = { if (!actions.busy) screen = AppScreen.WELCOME },
                 onProfile = { screen = AppScreen.PROFILE }, onRenew = viewModel::renew,
                 onActivities = { screen = AppScreen.ACTIVITIES }, onAttendance = { screen = AppScreen.ATTENDANCE },
-                onTraining = { screen = AppScreen.TRAINING }, showPreviewNotice = showPreviewNotice
+                onTraining = { screen = AppScreen.TRAINING }, onAnnouncements = { screen = AppScreen.ANNOUNCEMENTS },
+                showPreviewNotice = showPreviewNotice
             )
         }
         else -> WelcomeScreen(onApplicant = { screen = AppScreen.APPLICATION }, onMember = { screen = AppScreen.DASHBOARD })
