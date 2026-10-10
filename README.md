@@ -9,6 +9,7 @@ The user approved Kotlin/Compose + Supabase as the technology exception to React
 
 ## Start here
 
+- [Group setup and integration notes](docs/team-setup.md)
 - [Setup and deployment](docs/backend-setup.md)
 - [Hosted deployment evidence and remaining checks](docs/hosted-deployment.md)
 - [Exact module requirements and verification matrix](docs/requirements-matrix.md)

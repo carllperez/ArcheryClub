@@ -89,3 +89,8 @@ fun DiscardDialog(onDismiss: () -> Unit, onDiscard: () -> Unit) {
         confirmButton = { TextButton(onClick = onDiscard) { Text("Discard changes") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Keep editing") } })
 }
+
+@Composable
+fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+}

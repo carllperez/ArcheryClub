@@ -1,0 +1,4 @@
+# Copy these entries into your local.properties after creating a Supabase project.
+# Do not commit local.properties.
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY

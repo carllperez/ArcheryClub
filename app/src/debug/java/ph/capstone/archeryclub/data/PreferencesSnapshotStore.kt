@@ -18,16 +18,17 @@ class PreferencesSnapshotStore(context: Context) : SnapshotStore {
         }
         val m = root.getJSONObject("member")
         return ClubSnapshot(
-            ApplicationRecord(
+            application = ApplicationRecord(
                 ApplicationForm(f.getString("name"), f.getString("email"), f.getString("phone"),
                     f.getString("studentNumber"), f.getString("experience"), attachment, f.getBoolean("confirmed")),
                 ApplicationStatus.valueOf(a.getString("status")),
                 a.optString("submittedAt").takeIf { it.isNotBlank() },
                 a.optString("correctionNote").takeIf { it.isNotBlank() },
             ),
-            MemberProfile(m.getString("name"), m.getString("email"), m.getString("phone"),
+            member = MemberProfile(m.getString("name"), m.getString("email"), m.getString("phone"),
                 m.getString("studentNumber"), m.getString("category"), m.getString("status"),
                 m.getBoolean("renewalPending")),
+            registeredActivityIds = root.optJSONArray("registeredActivities")?.let { array -> buildSet { for (i in 0 until array.length()) add(array.getString(i)) } } ?: emptySet(),
         )
     }
 
@@ -46,6 +47,7 @@ class PreferencesSnapshotStore(context: Context) : SnapshotStore {
             .put("member", JSONObject().put("name", m.fullName).put("email", m.email).put("phone", m.phone)
                 .put("studentNumber", m.studentNumber).put("category", m.category).put("status", m.status)
                 .put("renewalPending", m.renewalPending))
+            .put("registeredActivities", org.json.JSONArray(snapshot.registeredActivityIds.toList()))
         check(preferences.edit().putString("snapshot", root.toString()).commit()) {
             "The preview could not save your changes. Please try again."
         }
