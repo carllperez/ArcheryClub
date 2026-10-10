@@ -1,0 +1,3037 @@
+{
+  "modules": [
+    {
+      "number": 1,
+      "name": "Member Profile and Status",
+      "tables": [
+        "profiles",
+        "memberships",
+        "renewals"
+      ],
+      "actions": [
+        "save_profile",
+        "save_renewal",
+        "request_renewal"
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Applicant Submission and Screening Status",
+      "tables": [
+        "applications",
+        "documents"
+      ],
+      "actions": [
+        "save_application",
+        "submit_application"
+      ]
+    },
+    {
+      "number": 3,
+      "name": "Activity Information and Registration",
+      "tables": [
+        "events",
+        "announcements",
+        "registrations",
+        "attendance"
+      ],
+      "actions": [
+        "register_event",
+        "check_in"
+      ]
+    },
+    {
+      "number": 4,
+      "name": "Personal Participation and Training Records",
+      "tables": [
+        "attendance",
+        "training_records",
+        "corrections"
+      ],
+      "actions": [
+        "save_personal_training",
+        "submit_training",
+        "request_attendance_correction",
+        "request_training_correction"
+      ]
+    },
+    {
+      "number": 5,
+      "name": "Member Operations and Equipment Borrowing",
+      "tables": [
+        "equipment",
+        "borrowings",
+        "financial_records"
+      ],
+      "actions": [
+        "request_borrowing",
+        "save_financial_request",
+        "submit_financial_request"
+      ]
+    },
+    {
+      "number": 6,
+      "name": "Member Dashboard and Personal Monitoring",
+      "tables": [
+        "notifications",
+        "documents"
+      ],
+      "actions": []
+    },
+    {
+      "number": 7,
+      "name": "Membership and Applicant Processing",
+      "tables": [
+        "applications",
+        "memberships",
+        "renewals"
+      ],
+      "actions": [
+        "review_application",
+        "review_renewal",
+        "update_membership"
+      ]
+    },
+    {
+      "number": 8,
+      "name": "Announcement, Event, Registration, and Attendance Management",
+      "tables": [
+        "events",
+        "announcements",
+        "registrations",
+        "attendance_windows",
+        "attendance",
+        "corrections"
+      ],
+      "actions": [
+        "save_event",
+        "publish_event",
+        "archive_event",
+        "publish_announcement",
+        "open_attendance",
+        "record_attendance",
+        "review_attendance_correction"
+      ]
+    },
+    {
+      "number": 9,
+      "name": "Election Management",
+      "tables": [
+        "elections",
+        "candidates",
+        "eligible_voters",
+        "academic_terms",
+        "member_terms",
+        "leadership_records"
+      ],
+      "actions": [
+        "create_election",
+        "save_term",
+        "record_residency",
+        "file_candidacy",
+        "nominate_candidate",
+        "confirm_candidate",
+        "confirm_voter",
+        "set_election_status",
+        "record_external_results",
+        "confirm_results",
+        "record_leadership"
+      ]
+    },
+    {
+      "number": 10,
+      "name": "Equipment Inventory and Allocation Support",
+      "tables": [
+        "equipment",
+        "borrowings",
+        "equipment_history"
+      ],
+      "actions": [
+        "save_equipment",
+        "review_borrowing"
+      ]
+    },
+    {
+      "number": 11,
+      "name": "Training Performance Monitoring and Feedback",
+      "tables": [
+        "training_records",
+        "corrections"
+      ],
+      "actions": [
+        "save_training",
+        "validate_training",
+        "review_training_correction"
+      ]
+    },
+    {
+      "number": 12,
+      "name": "Financial Record Verification and Tracking",
+      "tables": [
+        "financial_records",
+        "financial_approvals",
+        "fee_assessments"
+      ],
+      "actions": [
+        "save_financial_request",
+        "submit_financial_request",
+        "approve_funds",
+        "verify_financial_request",
+        "assess_fee",
+        "link_fee_payment"
+      ]
+    },
+    {
+      "number": 13,
+      "name": "Reports, Dashboard Analytics, and Goal Monitoring",
+      "tables": [
+        "goals"
+      ],
+      "actions": [
+        "save_goal"
+      ]
+    },
+    {
+      "number": 14,
+      "name": "Cross-Layer System Administration and Role-Based Access Control",
+      "tables": [
+        "profiles",
+        "roles",
+        "role_assignments",
+        "settings",
+        "audit_log"
+      ],
+      "actions": [
+        "configure_club",
+        "define_role",
+        "assign_role",
+        "retire_role",
+        "set_account_status",
+        "invite_account"
+      ]
+    },
+    {
+      "number": 15,
+      "name": "Shared Interclub Event Coordination",
+      "tables": [
+        "interclub_events",
+        "partner_clubs",
+        "event_access",
+        "delegates",
+        "shared_participants",
+        "interclub_assignments",
+        "interclub_concerns",
+        "interclub_results",
+        "interclub_archives"
+      ],
+      "actions": [
+        "save_partner",
+        "share_interclub_event",
+        "invite_partner",
+        "revoke_event_access",
+        "save_delegate",
+        "review_delegate",
+        "substitute_delegate",
+        "assign_delegate",
+        "raise_concern",
+        "resolve_concern",
+        "record_result",
+        "verify_result",
+        "update_shared_event",
+        "archive_interclub"
+      ]
+    }
+  ],
+  "forms": {
+    "save_profile": {
+      "action": "save_profile",
+      "label": "Edit my profile",
+      "fields": [
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "phone",
+          "label": "Phone",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "account",
+      "table": "profiles",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "save_application": {
+      "action": "save_application",
+      "label": "Save application draft",
+      "fields": [
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "phone",
+          "label": "Phone",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "student_number",
+          "label": "Student number",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "experience",
+          "label": "Experience",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "confirmed",
+          "label": "Confirmed",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "account",
+      "table": "applications",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "submit_application": {
+      "action": "submit_application",
+      "label": "Submit application",
+      "fields": [
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "phone",
+          "label": "Phone",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "student_number",
+          "label": "Student number",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "experience",
+          "label": "Experience",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "confirmed",
+          "label": "Confirmed",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "account",
+      "table": "applications",
+      "seed": {},
+      "states": [
+        "draft",
+        "incomplete",
+        "returned_for_correction"
+      ],
+      "help": "Upload required documents to your saved draft before submitting."
+    },
+    "save_renewal": {
+      "action": "save_renewal",
+      "label": "Save renewal draft",
+      "fields": [
+        {
+          "name": "information",
+          "label": "Information",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "account",
+      "table": "renewals",
+      "seed": {},
+      "states": [
+        "draft",
+        "returned_for_correction"
+      ],
+      "help": ""
+    },
+    "request_renewal": {
+      "action": "request_renewal",
+      "label": "Submit renewal information",
+      "fields": [
+        {
+          "name": "information",
+          "label": "Information",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "account",
+      "table": "renewals",
+      "seed": {},
+      "states": [
+        "draft",
+        "returned_for_correction"
+      ],
+      "help": "Save a draft and attach all configured renewal requirements before submitting."
+    },
+    "review_application": {
+      "action": "review_application",
+      "label": "Review application",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "under_review",
+            "incomplete",
+            "returned_for_correction",
+            "approved",
+            "rejected"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "choice",
+          "options": [
+            "Regular member"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "requirements_verified",
+          "label": "Requirements verified",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "membership",
+      "table": "applications",
+      "seed": {},
+      "states": [
+        "pending",
+        "under_review"
+      ],
+      "help": ""
+    },
+    "review_renewal": {
+      "action": "review_renewal",
+      "label": "Review renewal",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "approved",
+            "rejected",
+            "returned_for_correction"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "membership",
+      "table": "renewals",
+      "seed": {},
+      "states": [
+        "pending"
+      ],
+      "help": ""
+    },
+    "update_membership": {
+      "action": "update_membership",
+      "label": "Update official standing",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "Active",
+            "Inactive",
+            "Suspended",
+            "Expired"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "choice",
+          "options": [
+            "Regular member"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "membership",
+      "table": "memberships",
+      "seed": {
+        "user_id": "user_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "register_event": {
+      "action": "register_event",
+      "label": "Register for activity",
+      "fields": [],
+      "permission": "member",
+      "table": "events",
+      "seed": {
+        "event_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "check_in": {
+      "action": "check_in",
+      "label": "Enter attendance code",
+      "fields": [
+        {
+          "name": "token",
+          "label": "Token",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "save_event": {
+      "action": "save_event",
+      "label": "Create or update activity",
+      "fields": [
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "venue",
+          "label": "Venue",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "starts_at",
+          "label": "Starts at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_at",
+          "label": "Ends at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "registration_opens",
+          "label": "Registration opens",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "registration_closes",
+          "label": "Registration closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "capacity",
+          "label": "Capacity",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "requirements",
+          "label": "Requirements",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "assigned_personnel",
+          "label": "Assigned personnel",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "activities",
+      "table": "events",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "publish_event": {
+      "action": "publish_event",
+      "label": "Publish activity",
+      "fields": [],
+      "permission": "activities",
+      "table": "events",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "archive_event": {
+      "action": "archive_event",
+      "label": "Archive activity",
+      "fields": [],
+      "permission": "activities",
+      "table": "events",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "publish_announcement": {
+      "action": "publish_announcement",
+      "label": "Publish announcement",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "message",
+          "label": "Message",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "activities",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "open_attendance": {
+      "action": "open_attendance",
+      "label": "Open QR attendance period",
+      "fields": [
+        {
+          "name": "opens_at",
+          "label": "Opens at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "closes_at",
+          "label": "Closes at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "activities",
+      "table": "events",
+      "seed": {
+        "event_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "record_attendance": {
+      "action": "record_attendance",
+      "label": "Record manual attendance",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": false
+        },
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "present",
+            "absent",
+            "excused"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "activities",
+      "table": "attendance",
+      "seed": {},
+      "states": [],
+      "help": "Manual fallback and corrections require an explanation."
+    },
+    "request_attendance_correction": {
+      "action": "request_attendance_correction",
+      "label": "Request attendance correction",
+      "fields": [
+        {
+          "name": "request",
+          "label": "Request",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": "attendance",
+      "seed": {
+        "record_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "review_attendance_correction": {
+      "action": "review_attendance_correction",
+      "label": "Review attendance correction",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "approved",
+            "rejected"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "attendance_status",
+          "label": "Attendance status",
+          "type": "choice",
+          "options": [
+            "present",
+            "absent",
+            "excused"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "decision",
+          "label": "Decision",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "activities",
+      "table": "corrections",
+      "seed": {},
+      "states": [
+        "pending"
+      ],
+      "help": ""
+    },
+    "save_term": {
+      "action": "save_term",
+      "label": "Add academic term",
+      "fields": [
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "sequence",
+          "label": "Sequence",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "starts_on",
+          "label": "Starts on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_on",
+          "label": "Ends on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "record_residency": {
+      "action": "record_residency",
+      "label": "Record completed residency",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "term_id",
+          "label": "Term id",
+          "type": "record",
+          "options": [],
+          "source": "academic_terms",
+          "optional": false
+        },
+        {
+          "name": "completed",
+          "label": "Completed",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "create_election": {
+      "action": "create_election",
+      "label": "Configure election",
+      "fields": [
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "label": "Kind",
+          "type": "choice",
+          "options": [
+            "annual",
+            "special"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "term_end",
+          "label": "Term end",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "announces_at",
+          "label": "Announces at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "candidacy_closes",
+          "label": "Candidacy closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "voting_opens",
+          "label": "Voting opens",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "voting_closes",
+          "label": "Voting closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "result_due",
+          "label": "Result due",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "threshold",
+          "label": "Threshold",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "residency_terms",
+          "label": "Residency terms",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules_validated",
+          "label": "Rules validated",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "method",
+          "label": "Method",
+          "type": "choice",
+          "options": [
+            "digital",
+            "paper",
+            "external"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "positions",
+          "label": "Positions",
+          "type": "lines",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": "Proposal defaults: announce 4 weeks before third-term end, candidacy +3 days, voting +7 days, results within +3 days, 60% turnout, 2 consecutive completed terms. Validate the club rules before opening."
+    },
+    "file_candidacy": {
+      "action": "file_candidacy",
+      "label": "File candidacy",
+      "fields": [
+        {
+          "name": "position",
+          "label": "Position",
+          "type": "choice",
+          "options": [
+            "President",
+            "Vice President"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "statement",
+          "label": "Statement",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": "elections",
+      "seed": {
+        "election_id": "id"
+      },
+      "states": [
+        "announced"
+      ],
+      "help": ""
+    },
+    "nominate_candidate": {
+      "action": "nominate_candidate",
+      "label": "Nominate a member",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "position",
+          "label": "Position",
+          "type": "choice",
+          "options": [
+            "President",
+            "Vice President"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "statement",
+          "label": "Statement",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": "elections",
+      "seed": {
+        "election_id": "id"
+      },
+      "states": [
+        "announced"
+      ],
+      "help": "The election officer reviews eligibility before the nomination appears on the ballot."
+    },
+    "confirm_candidate": {
+      "action": "confirm_candidate",
+      "label": "Review candidate eligibility",
+      "fields": [
+        {
+          "name": "confirmed",
+          "label": "Confirmed",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "candidates",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "confirm_voter": {
+      "action": "confirm_voter",
+      "label": "Confirm voter eligibility",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "label": "Reason",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "elections",
+      "seed": {
+        "election_id": "id"
+      },
+      "states": [
+        "draft",
+        "announced"
+      ],
+      "help": ""
+    },
+    "set_election_status": {
+      "action": "set_election_status",
+      "label": "Advance election stage",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "announced",
+            "voting",
+            "closed",
+            "archived"
+          ],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "elections",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "record_external_results": {
+      "action": "record_external_results",
+      "label": "Record paper/external results",
+      "fields": [
+        {
+          "name": "turnout",
+          "label": "Turnout",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "results",
+          "label": "Results",
+          "type": "tallies",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "verification",
+          "label": "Verification",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "elections",
+      "seed": {},
+      "states": [
+        "closed"
+      ],
+      "help": ""
+    },
+    "confirm_results": {
+      "action": "confirm_results",
+      "label": "Confirm official results",
+      "fields": [
+        {
+          "name": "confirmation",
+          "label": "Confirmation",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "elections",
+      "seed": {},
+      "states": [
+        "closed"
+      ],
+      "help": ""
+    },
+    "record_leadership": {
+      "action": "record_leadership",
+      "label": "Record appointment or turnover",
+      "fields": [
+        {
+          "name": "election_id",
+          "label": "Election id",
+          "type": "record",
+          "options": [],
+          "source": "elections",
+          "optional": true
+        },
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": true
+        },
+        {
+          "name": "position",
+          "label": "Position",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "label": "Kind",
+          "type": "choice",
+          "options": [
+            "appointment",
+            "deliberation",
+            "vacancy",
+            "succession",
+            "transition"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "starts_on",
+          "label": "Starts on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "ends_on",
+          "label": "Ends on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "documentation",
+          "label": "Documentation",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": "This records the decision. Assign or retire system permissions separately in M14."
+    },
+    "save_equipment": {
+      "action": "save_equipment",
+      "label": "Create or update equipment",
+      "fields": [
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "specifications",
+          "label": "Specifications",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "handedness",
+          "label": "Handedness",
+          "type": "choice",
+          "options": [
+            "left",
+            "right",
+            "ambidextrous",
+            "not_applicable"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "draw_weight",
+          "label": "Draw weight",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "bow_setup",
+          "label": "Bow setup",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "condition",
+          "label": "Condition",
+          "type": "choice",
+          "options": [
+            "serviceable",
+            "maintenance",
+            "damaged",
+            "retired"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "acquired_on",
+          "label": "Acquired on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "notes",
+          "label": "Notes",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "equipment",
+      "table": "equipment",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "request_borrowing": {
+      "action": "request_borrowing",
+      "label": "Request equipment",
+      "fields": [
+        {
+          "name": "equipment_id",
+          "label": "Equipment id",
+          "type": "record",
+          "options": [],
+          "source": "equipment",
+          "optional": false
+        },
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "starts_at",
+          "label": "Starts at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_at",
+          "label": "Ends at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "handedness",
+          "label": "Handedness",
+          "type": "choice",
+          "options": [
+            "left",
+            "right",
+            "not_applicable"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "maximum_draw_weight",
+          "label": "Maximum draw weight",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "bow_setup",
+          "label": "Bow setup",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": "borrowings",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "review_borrowing": {
+      "action": "review_borrowing",
+      "label": "Review, release or return",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "approved",
+            "rejected",
+            "returned_for_correction",
+            "released",
+            "returned"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "compatibility_confirmed",
+          "label": "Compatibility confirmed",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "condition",
+          "label": "Condition",
+          "type": "choice",
+          "options": [
+            "serviceable",
+            "maintenance",
+            "damaged",
+            "retired"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "equipment",
+      "table": "borrowings",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "save_personal_training": {
+      "action": "save_personal_training",
+      "label": "Save personal scorecard",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "training_date",
+          "label": "Training date",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "distance",
+          "label": "Distance",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "target_face",
+          "label": "Target face",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "scoring_format",
+          "label": "Scoring format",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "score",
+          "label": "Score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "maximum_score",
+          "label": "Maximum score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "grouping",
+          "label": "Grouping",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "level",
+          "label": "Level",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "observations",
+          "label": "Observations",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "member",
+      "table": "training_records",
+      "seed": {},
+      "states": [],
+      "help": "Personal entries remain distinct from official coach-validated records."
+    },
+    "save_training": {
+      "action": "save_training",
+      "label": "Record or correct official scorecard",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "training_date",
+          "label": "Training date",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "distance",
+          "label": "Distance",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "target_face",
+          "label": "Target face",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "scoring_format",
+          "label": "Scoring format",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "score",
+          "label": "Score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "maximum_score",
+          "label": "Maximum score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "grouping",
+          "label": "Grouping",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "level",
+          "label": "Level",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "observations",
+          "label": "Observations",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "feedback",
+          "label": "Feedback",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "training",
+      "table": "training_records",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "submit_training": {
+      "action": "submit_training",
+      "label": "Send personal scorecard for review",
+      "fields": [],
+      "permission": "member",
+      "table": "training_records",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "validate_training": {
+      "action": "validate_training",
+      "label": "Validate scorecard and give feedback",
+      "fields": [
+        {
+          "name": "validation",
+          "label": "Validation",
+          "type": "choice",
+          "options": [
+            "validated",
+            "returned_for_correction"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "feedback",
+          "label": "Feedback",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "training",
+      "table": "training_records",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "request_training_correction": {
+      "action": "request_training_correction",
+      "label": "Request scorecard correction",
+      "fields": [
+        {
+          "name": "request",
+          "label": "Request",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "member",
+      "table": "training_records",
+      "seed": {
+        "record_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "review_training_correction": {
+      "action": "review_training_correction",
+      "label": "Resolve training correction",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "approved",
+            "rejected"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "decision",
+          "label": "Decision",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "training",
+      "table": "corrections",
+      "seed": {},
+      "states": [
+        "pending"
+      ],
+      "help": "For approval, the corrected scorecard is included in this transaction.",
+      "correction_fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "training_date",
+          "label": "Training date",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "distance",
+          "label": "Distance",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "target_face",
+          "label": "Target face",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "scoring_format",
+          "label": "Scoring format",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "score",
+          "label": "Score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "maximum_score",
+          "label": "Maximum score",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "grouping",
+          "label": "Grouping",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "level",
+          "label": "Level",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "observations",
+          "label": "Observations",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "feedback",
+          "label": "Feedback",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ]
+    },
+    "save_financial_request": {
+      "action": "save_financial_request",
+      "label": "Save payment, expense or reimbursement",
+      "fields": [
+        {
+          "name": "kind",
+          "label": "Kind",
+          "type": "choice",
+          "options": [
+            "payment",
+            "expense",
+            "reimbursement"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "amount",
+          "label": "Amount",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "reference",
+          "label": "Reference",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "account",
+      "table": "financial_records",
+      "seed": {},
+      "states": [],
+      "help": "Save a draft, attach proof or receipts, then submit. The app records transactions; it does not move money."
+    },
+    "submit_financial_request": {
+      "action": "submit_financial_request",
+      "label": "Submit for financial verification",
+      "fields": [],
+      "permission": "account",
+      "table": "financial_records",
+      "seed": {},
+      "states": [
+        "draft",
+        "incomplete",
+        "returned_for_correction"
+      ],
+      "help": ""
+    },
+    "approve_funds": {
+      "action": "approve_funds",
+      "label": "Record prior approval",
+      "fields": [
+        {
+          "name": "office",
+          "label": "Office",
+          "type": "choice",
+          "options": [
+            "president",
+            "finance"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "funds",
+      "table": "financial_records",
+      "seed": {},
+      "states": [
+        "pending_verification"
+      ],
+      "help": ""
+    },
+    "verify_financial_request": {
+      "action": "verify_financial_request",
+      "label": "Verify financial submission",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "verified",
+            "incomplete",
+            "rejected",
+            "returned_for_correction"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "finance",
+      "table": "financial_records",
+      "seed": {},
+      "states": [
+        "pending_verification"
+      ],
+      "help": ""
+    },
+    "assess_fee": {
+      "action": "assess_fee",
+      "label": "Record fee assessment",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "member_directory",
+          "optional": false
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "amount",
+          "label": "Amount",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "due_on",
+          "label": "Due on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "finance",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "link_fee_payment": {
+      "action": "link_fee_payment",
+      "label": "Reconcile verified payment",
+      "fields": [
+        {
+          "name": "payment_id",
+          "label": "Payment id",
+          "type": "record",
+          "options": [],
+          "source": "financial_records",
+          "optional": false
+        }
+      ],
+      "permission": "finance",
+      "table": "fee_assessments",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "save_goal": {
+      "action": "save_goal",
+      "label": "Set measurable goal",
+      "fields": [
+        {
+          "name": "metric",
+          "label": "Metric",
+          "type": "choice",
+          "options": [
+            "active_members",
+            "applicant_conversion",
+            "attendance_rate",
+            "equipment_readiness",
+            "training_average",
+            "collection_completion"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "target",
+          "label": "Target",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "starts_on",
+          "label": "Starts on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_on",
+          "label": "Ends on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "reports",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "configure_club": {
+      "action": "configure_club",
+      "label": "Configure validated club rules",
+      "fields": [
+        {
+          "name": "club_name",
+          "label": "Club name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "application_requirements",
+          "label": "Application requirements",
+          "type": "lines",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "renewal_requirements",
+          "label": "Renewal requirements",
+          "type": "lines",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "membership_categories",
+          "label": "Membership categories",
+          "type": "lines",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "retention_policy",
+          "label": "Retention policy",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules_validated",
+          "label": "Rules validated",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": "settings",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "define_role": {
+      "action": "define_role",
+      "label": "Define role and permissions",
+      "fields": [
+        {
+          "name": "role_id",
+          "label": "Role id",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "permissions",
+          "label": "Permissions",
+          "type": "permissions",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": "roles",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "assign_role": {
+      "action": "assign_role",
+      "label": "Assign time-limited officer role",
+      "fields": [
+        {
+          "name": "user_id",
+          "label": "User id",
+          "type": "record",
+          "options": [],
+          "source": "profiles",
+          "optional": false
+        },
+        {
+          "name": "role_id",
+          "label": "Role id",
+          "type": "record",
+          "options": [],
+          "source": "roles",
+          "optional": false
+        },
+        {
+          "name": "position",
+          "label": "Position",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "starts_at",
+          "label": "Starts at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_at",
+          "label": "Ends at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "label": "Reason",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": "profiles",
+      "seed": {
+        "user_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "retire_role": {
+      "action": "retire_role",
+      "label": "Retire outgoing officer access",
+      "fields": [
+        {
+          "name": "reason",
+          "label": "Reason",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": "role_assignments",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "set_account_status": {
+      "action": "set_account_status",
+      "label": "Enable or disable account",
+      "fields": [
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "label": "Reason",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": "profiles",
+      "seed": {
+        "user_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "invite_account": {
+      "action": "invite_account",
+      "label": "Create account and send invitation",
+      "fields": [
+        {
+          "name": "email",
+          "label": "Email",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "label": "Reason",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "administration",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": "This sends an invitation email. The recipient verifies the invitation code and chooses a password. It does not grant membership or officer permissions."
+    },
+    "save_partner": {
+      "action": "save_partner",
+      "label": "Add partner club",
+      "fields": [
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "official_channel",
+          "label": "Official channel",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "interclub",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "share_interclub_event": {
+      "action": "share_interclub_event",
+      "label": "Share an official event",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": false
+        },
+        {
+          "name": "shared_details",
+          "label": "Shared details",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "requirements",
+          "label": "Requirements",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "registration_closes",
+          "label": "Registration closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "interclub",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "invite_partner": {
+      "action": "invite_partner",
+      "label": "Invite registered representative",
+      "fields": [
+        {
+          "name": "email",
+          "label": "Email",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "partner_id",
+          "label": "Partner id",
+          "type": "record",
+          "options": [],
+          "source": "partner_clubs",
+          "optional": true
+        },
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "choice",
+          "options": [
+            "partner",
+            "coordinator"
+          ],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "interclub",
+      "table": "interclub_events",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": "The representative first registers and verifies their account. This invitation gives access only to this event."
+    },
+    "revoke_event_access": {
+      "action": "revoke_event_access",
+      "label": "Revoke event access",
+      "fields": [],
+      "permission": "interclub",
+      "table": "event_access",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "save_delegate": {
+      "action": "save_delegate",
+      "label": "Register or correct own delegation",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "interclub_events",
+          "optional": false
+        },
+        {
+          "name": "partner_id",
+          "label": "Partner id",
+          "type": "record",
+          "options": [],
+          "source": "partner_clubs",
+          "optional": false
+        },
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "affiliation",
+          "label": "Affiliation",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "requirements",
+          "label": "Requirements",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "logistical_needs",
+          "label": "Logistical needs",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        },
+        {
+          "name": "equipment_needs",
+          "label": "Equipment needs",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": true
+        }
+      ],
+      "permission": "partner",
+      "table": "delegates",
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "review_delegate": {
+      "action": "review_delegate",
+      "label": "Review eligibility or check in",
+      "fields": [
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "eligible",
+            "incomplete",
+            "rejected",
+            "checked_in"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "delegates",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "substitute_delegate": {
+      "action": "substitute_delegate",
+      "label": "Approve substitution",
+      "fields": [
+        {
+          "name": "full_name",
+          "label": "Full name",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "requirements",
+          "label": "Requirements",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "remark",
+          "label": "Remark",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "delegates",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "assign_delegate": {
+      "action": "assign_delegate",
+      "label": "Assign target or group",
+      "fields": [
+        {
+          "name": "starts_at",
+          "label": "Starts at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "ends_at",
+          "label": "Ends at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "responsibility",
+          "label": "Responsibility",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "delegates",
+      "seed": {
+        "event_id": "event_id",
+        "delegate_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "raise_concern": {
+      "action": "raise_concern",
+      "label": "Raise coordination concern",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "interclub_events",
+          "optional": false
+        },
+        {
+          "name": "concern",
+          "label": "Concern",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "partner",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": ""
+    },
+    "resolve_concern": {
+      "action": "resolve_concern",
+      "label": "Resolve concern",
+      "fields": [
+        {
+          "name": "resolution",
+          "label": "Resolution",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "interclub_concerns",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [
+        "open"
+      ],
+      "help": ""
+    },
+    "record_result": {
+      "action": "record_result",
+      "label": "Record official result for review",
+      "fields": [
+        {
+          "name": "result",
+          "label": "Result",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "delegates",
+      "seed": {
+        "event_id": "event_id",
+        "delegate_id": "id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "verify_result": {
+      "action": "verify_result",
+      "label": "Verify and publish result",
+      "fields": [],
+      "permission": "coordinator",
+      "table": "interclub_results",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "update_shared_event": {
+      "action": "update_shared_event",
+      "label": "Update shared event",
+      "fields": [
+        {
+          "name": "shared_details",
+          "label": "Shared details",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "shared_venue",
+          "label": "Shared venue",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "shared_start",
+          "label": "Shared start",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "shared_end",
+          "label": "Shared end",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "preparation",
+            "active",
+            "completed"
+          ],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "interclub_events",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [],
+      "help": ""
+    },
+    "archive_interclub": {
+      "action": "archive_interclub",
+      "label": "Archive completed event",
+      "fields": [
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "procedures",
+          "label": "Procedures",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "agreements",
+          "label": "Agreements",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "approval_references",
+          "label": "Approval references",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "minutes",
+          "label": "Minutes",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "issues",
+          "label": "Issues",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "evaluation",
+          "label": "Evaluation",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "recommendations",
+          "label": "Recommendations",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "coordinator",
+      "table": "interclub_events",
+      "seed": {
+        "event_id": "event_id"
+      },
+      "states": [
+        "completed"
+      ],
+      "help": ""
+    }
+  }
+}

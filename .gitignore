@@ -14,3 +14,10 @@ secrets.properties
 *.p12
 *.pem
 .DS_Store
+node_modules/
+supabase/.temp/
+backend.properties
+portal/config.js
+deployment.local.json
+backend.local.properties
+local-test-account.json

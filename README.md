@@ -1,110 +1,78 @@
-# Archery Club — Android project
+# Archery Club — CAPSTONE 1
 
-A new Kotlin + Jetpack Compose project for the CAPSTONE applicant and member experience.
-This is a working **local development preview**, not a deployed service or a production-ready app.
-No code from BasicFrontEnd was reused. Build versions match the available Android toolchain.
+Kotlin/Jetpack Compose Android application with Supabase Auth, PostgreSQL, private storage,
+and a browser companion for applicants and partner representatives.
 
-## Open and run
+The approved proposal is the authoritative specification. **All 15 modules are in scope**.
+The earlier README's officer/interclub deferral and separate sample identities are superseded.
+The user approved Kotlin/Compose + Supabase as the technology exception to React/Prisma.
 
-1. In Android Studio, choose **Open** and select this `ArcheryClub` directory.
-2. Let Gradle sync. Use the bundled Android Studio JDK (JDK 17 or newer compatible with Gradle 9.6).
-3. Select the **debug** build variant and an Android device/emulator with API 26 or later.
-4. Run `app`. The launcher label is **Archery Club Preview**.
-5. Choose **Explore applicant preview** or **Explore sample member**.
+## Start here
 
-Build requirements: Android SDK 37, Android Gradle Plugin 9.4.0, Gradle 9.6.0,
-Kotlin Compose compiler plugin 2.2.10, Compose BOM 2026.02.01.
-AGP 9 uses built-in Kotlin; do not add the old `org.jetbrains.kotlin.android` plugin.
-`local.properties` contains this machine's SDK location and is ignored by Git.
+- [Setup and deployment](docs/backend-setup.md)
+- [Hosted deployment evidence and remaining checks](docs/hosted-deployment.md)
+- [Exact module requirements and verification matrix](docs/requirements-matrix.md)
+- [Current checkpoint and remaining work](docs/progress-checkpoint.md)
+- [Mac presentation and later phone setup](docs/presentation-demo.md)
 
-## Working in milestone 01
+Open this directory in Android Studio with its bundled JDK and Android SDK 37.
+Copy `backend.properties.example` to ignored `backend.properties` and supply the development
+URL and publishable key. Build with `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`.
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk`, labelled **Archery Club Dev**.
 
-- **M2:** edit/save an application draft, validate a submission, select a local PDF/JPG/PNG,
-  submit to a local Pending review state, and view a locked submitted record.
-  Domain support includes under-review, incomplete, correction, approved and rejected states;
-  club decisions are deliberately absent from the applicant interface.
-- **M1:** view a separate sample member, update permitted contact fields, and request renewal.
-  Official membership fields are read-only. A renewal request does not approve membership.
-- **M6:** display the sample member's standing, pending renewal and profile shortcut.
-- Device-local saved state, form validation, duplicate-action protection, unsaved-change prompts,
-  light/dark themes, scrolling forms, and error feedback.
+Both app variants now open the connected system. Users sign in with real Supabase accounts.
+Membership approval preserves the applicant's account identity. Role assignments and protected
+transitions are enforced by database functions and row-level permissions.
 
-The sample member and sample applicant are independent fixtures. Switching previews is not
-authentication, approval, or applicant-to-member conversion. Use fictional data only.
-Documents remain on the device: only their selected URI and metadata are saved, not uploaded.
-Final required application fields, supporting documents, renewal rules and editable member fields
-still require club validation. Current form choices are development assumptions.
+## Proposal modules
 
-To repeat a submitted application or renewal from a clean slate, clear **Archery Club Preview**
-storage in Android Settings. This deletes only the preview app's saved data.
+1. Member Profile and Status
+2. Applicant Submission and Screening Status
+3. Activity Information and Registration
+4. Personal Participation and Training Records
+5. Member Operations and Equipment Borrowing
+6. Member Dashboard and Personal Monitoring
+7. Membership and Applicant Processing
+8. Announcement, Event, Registration, and Attendance Management
+9. Election Management
+10. Equipment Inventory and Allocation Support
+11. Training Performance Monitoring and Feedback
+12. Financial Record Verification and Tracking
+13. Reports, Dashboard Analytics, and Goal Monitoring
+14. Cross-Layer System Administration and Role-Based Access Control
+15. Shared Interclub Event Coordination
 
-## Structure
+## Source map
 
-```text
-app/src/main/java/ph/capstone/archeryclub/
-  domain/        Records, statuses and form validation
-  data/          Repository and persistence contracts
-  ui/            Compose screens, theme and ViewModel
-app/src/debug/   Sample account entry point and local preview repository/storage
-app/src/release/ Service-not-connected entry point; no preview account access
-app/src/testDebug/  Workflow regression tests
-```
+| Location | Purpose |
+|---|---|
+| `app/src/main/java/ph/capstone/archeryclub/connected/` | Connected Compose screens, forms, session state and Supabase gateway |
+| `tools/generate_catalog.py` | Shared exact module/form catalogue |
+| `app/src/main/assets/modules.json` | Generated Android catalogue |
+| `portal/` | Responsive applicant and partner browser interface |
+| `supabase/migrations/` | Database tables, constraints, permissions and workflow functions |
+| `supabase/functions/verify-training-video/` | Server-side MP4 duration verification |
+| `supabase/bootstrap-admin.sql` | Trusted initial administrator setup |
+| `backend-tests/` | Database workflow/security and video-parser tests |
+| `app/src/test/` | Connected input/CSV regression tests |
+| `app/src/testDebug/` | Historical local-preview regression tests |
 
-The screens use a ViewModel and repository contract. A future Supabase implementation replaces
-the local repository; the app must derive the current user from an authenticated session.
-The local checks are **not server-side authorization**. Sample storage is excluded from release
-source sets; the release build intentionally displays a service-not-connected screen.
+The earlier preview domain and repository code is retained for reference; it is not used by
+the connected entry point. Everything under the parent project's `sources/` remains read-only.
 
-## Next development milestones
+## Verification and limits
 
-1. **Connected identity and membership:** Supabase development project; registration, email
-   verification, login, password recovery/session lifecycle; database migrations and ownership
-   policies; private document uploads; persisted applications; authoritative membership lookup.
-2. **Member activities (M3):** announcements, event details, deadlines and eligible registrations.
-3. **Member records (M4):** attendance/training history, personal-versus-official records and
-   coach feedback, with official records read-only.
-4. **Member requests (M5) and extended M6:** equipment/reimbursement submissions, attachments,
-   pending actions and summaries connected to their authoritative records.
+The connected Android build and automated checks have passed during development. Local
+database tests cover key successful and denied workflows across the proposal modules.
+Consult the matrix for test coverage and unresolved criteria.
 
-Club officer interfaces (M7–M14) and interclub coordination (M15) are deferred. Basic backend
-authentication and authorization cannot be deferred once real user data is connected. Review
-decisions must come from a trusted officer workflow; applicants never choose their own roles.
-Before the officer interface exists, use controlled development fixtures for review decisions.
+**The hosted development backend was deployed on 9 October 2026.** All 12 migrations and
+both server functions are installed. The five owner-approved demo accounts passed hosted
+login, refresh, role-boundary and private-storage checks. Android Studio's normal app/Run
+configuration connects to this online backend; the local fallback is a separate build.
+These accounts are explicitly provisioned test identities, not proof of email ownership or
+real club membership. Public signup still requires email confirmation; SMTP delivery,
+recovery, full device workflows, browser deployment, human UAT/SUS and all-module acceptance
+remain to be verified. Club-specific configuration remains awaiting club validation.
 
-## Before deployment
-
-- Choose the final application ID before first publication; `ph.capstone.archeryclub` is provisional.
-- Agree with the team on one shared schema, account identity and status model before integration.
-- Implement Supabase Auth and database/file policies, then test with two separate user accounts
-  to prove neither can read or change the other's application, documents or member records.
-- Enforce ownership and column restrictions in the backend, including protection of roles,
-  membership status, reviewer notes and decisions. App-only checks are insufficient.
-- Use only a publishable Supabase key in the app. Never bundle a secret/service-role key.
-- Separate development and production projects. Keep database migrations in version control.
-- Complete privacy/data-retention decisions, failure/retry testing, accessibility checks,
-  device testing, signing setup and release distribution testing.
-- Connect the production entry point only after the backend workflow and permissions pass testing.
-
-## Verification
-
-```sh
-./gradlew assembleDebug testDebugUnitTest lintDebug
-```
-
-The tests cover invalid submissions, persistence/recreation, locked statuses, correction
-resubmission, protected membership fields, duplicate renewals and failed writes.
-They verify the local workflow; they do not establish production backend security.
-
-Verified on 23 September 2026: debug and unsigned release builds succeed; all 10 workflow
-tests pass; Android lint reports no errors. The remaining nine lint warnings concern newer
-dependency versions and a preferences-helper suggestion. Dependency versions are intentionally
-pinned; preference writes explicitly check the synchronous commit result for save failures.
-
-An emulator smoke check confirmed application draft persistence, submission and persistence
-after process restart, the separate member profile, and pending renewal. The preview installed
-in the emulator contains fictional test records (Taylor Sample and Alex Reyes).
-The release build is a service-not-connected placeholder, not a production deployment.
-
-References: [Android architecture](https://developer.android.com/topic/architecture/recommendations),
-[Supabase Kotlin quickstart](https://supabase.com/docs/guides/getting-started/quickstarts/kotlin),
-[Supabase row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+This repository is a development implementation in progress, not a claim of production readiness.

@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val localBackend = providers.gradleProperty("localBackend").orNull == "true"
+val backend = Properties().apply {
+    rootProject.file(if(localBackend) "backend.local.properties" else "backend.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun backendString(key: String): String = "\"" + backend.getProperty(key, "")
+    .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "") + "\""
 
 android {
     namespace = "ph.capstone.archeryclub"
@@ -13,11 +22,14 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SUPABASE_URL", backendString("SUPABASE_URL"))
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", backendString("SUPABASE_PUBLISHABLE_KEY"))
+        buildConfigField("boolean", "LOCAL_BACKEND", localBackend.toString())
     }
     buildTypes {
         debug {
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-preview"
+            applicationIdSuffix = if(localBackend) ".local" else ".dev"
+            versionNameSuffix = if(localBackend) "-local-test" else "-dev"
             buildConfigField("boolean", "LOCAL_PREVIEW", "true")
         }
         release {
@@ -34,6 +46,12 @@ android {
 }
 
 dependencies {
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.2.2"))
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.ktor:ktor-client-okhttp:3.2.2")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")

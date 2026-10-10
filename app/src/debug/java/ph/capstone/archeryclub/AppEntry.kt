@@ -1,28 +1,47 @@
 package ph.capstone.archeryclub
 
 import androidx.activity.ComponentActivity
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import ph.capstone.archeryclub.data.LocalPreviewRepository
-import ph.capstone.archeryclub.data.PreferencesSnapshotStore
-import ph.capstone.archeryclub.ui.*
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import ph.capstone.archeryclub.connected.ConnectedEntry
+import ph.capstone.archeryclub.ui.ScreenShell
 
 @Composable
 fun AppEntry(activity: ComponentActivity) {
-    val result = remember(activity) {
-        runCatching {
-            val factory = object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ClubViewModel(LocalPreviewRepository(PreferencesSnapshotStore(activity.applicationContext))) as T
+    // Only the isolated local test build needs LAN access. Hosted builds use HTTPS.
+    if (BuildConfig.LOCAL_BACKEND && Build.VERSION.SDK_INT >= 37) {
+        val permission = "android.permission.ACCESS_LOCAL_NETWORK"
+        fun allowed() = activity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+        var granted by remember { mutableStateOf(allowed()) }
+        val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+        DisposableEffect(activity) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) granted = allowed()
             }
-            ViewModelProvider(activity, factory)[ClubViewModel::class.java]
+            activity.lifecycle.addObserver(observer)
+            onDispose { activity.lifecycle.removeObserver(observer) }
+        }
+        if (!granted) {
+            ScreenShell("Connect to your test backend") {
+                Text("This local test app connects to the club database running on your computer. Allow nearby device access so Android can make that connection.")
+                Button(onClick = { request.launch(permission) }) { Text("Allow local connection") }
+                TextButton(onClick = {
+                    activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${activity.packageName}")))
+                }) { Text("Open app permissions") }
+            }
+            return
         }
     }
-    result.getOrNull()?.let { ClubApp(it) } ?: SetupScreen(
-        "Preview data could not be read",
-        "Your saved data has not been overwritten. Restart the app, or clear this preview app’s storage in Android Settings to start again.",
-    )
+    ConnectedEntry(activity)
 }
