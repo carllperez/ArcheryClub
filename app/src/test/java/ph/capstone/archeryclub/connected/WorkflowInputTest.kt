@@ -22,4 +22,19 @@ class WorkflowInputTest {
     @Test fun decimalAmountsAreNotRoundedByInputConversion() {
         assertEquals("120.25",fieldValue(buildJsonObject{put("type","number")},"120.25").jsonPrimitive.content)
     }
+    @Test fun exportedScorecardsRoundTripWithoutGrantingValidationOrChangingImportKeys() {
+        val row=buildJsonObject {
+            put("id","saved-scorecard");put("user_id","member-id");put("training_date","2026-10-10")
+            put("distance","18");put("target_face","40cm");put("category","recurve")
+            put("scoring_format","30 arrows");put("score","240.25");put("maximum_score","300")
+            put("observations","Wind, then rain\nCoach said \"steady\"");put("validation","validated")
+            put("validated_by","officer-id");put("source","coach")
+        }
+        val imported=trainingCsv(trainingImportCsv(listOf(row))).single().jsonObject
+        assertEquals("record:saved-scorecard",imported.text("import_key"))
+        assertEquals(row.text("observations"),imported.text("observations"))
+        assertEquals("240.25",imported.text("score"))
+        assertFalse(imported.containsKey("validated_by"));assertFalse(imported.containsKey("validation"))
+        assertEquals(imported,trainingCsv(trainingImportCsv(listOf(imported))).single())
+    }
 }

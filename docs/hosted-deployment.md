@@ -6,6 +6,11 @@ Supabase CLI is authenticated on this Mac; its credential is outside the reposit
 
 ## Installed
 
+October 12 handoff: migration `202610100013_workflow_completion.sql` is committed for
+deployment but has **not** been applied here. The installed state below remains unchanged.
+Its new workflow behavior is verified locally only. Email setup and portal hosting are
+deferred by the user.
+
 - All 12 migrations, through `202610020012_cross_module_reads`, using CLI migration history.
 - 42 private application tables; all have row-level security enabled. No direct authenticated
   INSERT/UPDATE/DELETE grants. Protected public RPCs perform authorized operations.

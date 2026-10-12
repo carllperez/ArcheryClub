@@ -139,14 +139,19 @@ fun trainingCsv(csv:String):JsonArray {
 @Composable fun TrainingHistory(records:List<JsonObject>,vm:SystemViewModel){
     val context=LocalContext.current
     val columns=listOf("user_id","training_date","distance","target_face","category","scoring_format","score","maximum_score","grouping","level","observations","feedback","source","validation","validated_at")
+    var importable by remember { mutableStateOf(false) }
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){uri->if(uri!=null)runCatching{
-        context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{out->
+        requireNotNull(context.contentResolver.openOutputStream(uri)) { "Cannot open export destination." }.bufferedWriter().use{out->
+            if(importable) out.write(trainingImportCsv(records)) else {
             fun cell(value:String)="\""+value.replace("\"","\"\"")+"\""
             out.write(columns.joinToString(",",transform=::cell)+"\r\n")
             records.forEach{row->out.write(columns.joinToString(","){key->cell(row.text(key))}+"\r\n")}
+            }
         }
     }.onFailure{vm.error("The scorecard export could not be saved.")}}
-    OutlinedButton(onClick={export.launch("archery-scorecards.csv")}){Text("Export scorecards")}
+    OutlinedButton(onClick={importable=false;export.launch("archery-scorecards-report.csv")}){Text("Export scorecard report")}
+    OutlinedButton(onClick={importable=true;export.launch("archery-scorecards-import.csv")},enabled=records.isNotEmpty()){Text("Export importable scorecards")}
+    Text("The report retains source and validation details. The importable file retains stable keys to prevent duplicate imports; a training officer must review it before importing.")
     val groups=records.filter{it.text("validation")=="validated"}.groupBy{row->listOf("user_id","distance","target_face","category","scoring_format","maximum_score").map(row::text)}
     groups.forEach{(_,rows)->
         val sorted=rows.sortedBy{it.text("training_date")};val first=sorted.first()
@@ -156,6 +161,19 @@ fun trainingCsv(csv:String):JsonArray {
         else Text("More validated sessions are needed for a progress comparison.")
     }
     if(groups.isEmpty())Text("No validated training is available for comparison yet.")
+}
+
+/** Stable import keys make a repeated export/import fail safely instead of duplicating rows. */
+fun trainingImportCsv(records:List<JsonObject>):String {
+    val columns=listOf("import_key","user_id","training_date","distance","target_face","category","scoring_format","score","maximum_score","event_id","grouping","level","observations","feedback")
+    fun cell(value:String)="\""+value.replace("\"","\"\"")+"\""
+    return buildString {
+        append(columns.joinToString(",",transform=::cell));append("\r\n")
+        records.forEach { row ->
+            val key=row.text("import_key").ifBlank { "record:"+row.text("id").also { require(it.isNotBlank()){ "A saved scorecard is required for export." } } }
+            append(columns.joinToString(","){column->cell(if(column=="import_key")key else row.text(column))});append("\r\n")
+        }
+    }
 }
 
 @Composable private fun JsonSummary(value:JsonElement,label:String=""){

@@ -1,6 +1,28 @@
-# Development checkpoint — 9 October 2026
+# Development checkpoint — 12 October 2026
 
-## Hosted deployment — 9 October (latest)
+## GitHub handoff — 12 October
+
+The proposal backend milestone and the parallel member/announcement contributions were
+merged and pushed as `e8a6af3`. The follow-up changes prepared for this push add member
+tasks and linked notices, import-compatible training CSV exports, camera capture for training
+clips, editable draft election configuration, protected interclub schedule/stage transitions,
+and source-driven review/fee/return notification completion.
+
+Verification: Android assembleDebug, all 20 unit tests and lint passed; all 19 backend tests
+passed, including election and interclub lifecycle scenarios and resubmission notices.
+Camera capture and the new screens still need device checks. No all-module acceptance is claimed.
+
+Migration `202610100013_workflow_completion.sql` is tested locally but **not deployed to hosted
+Supabase**. The shared project remains on the twelve October 9 migrations. Apply only this
+pending migration after reviewing the linked project and dry-run; do not run the fresh-project
+SQL bundle on the existing database. Draft-election editing and the new backend safeguards
+are not live until that deployment succeeds.
+
+The user explicitly deferred SMTP/email setup and instructed not to host the browser portal.
+Club configuration and final stakeholder/device acceptance remain pending. Sources under
+the parent `sources/` directory remain untouched. No credentials are included in the push.
+
+## Hosted deployment — 9 October (historical evidence)
 
 The owner authorized Supabase CLI access and deployment, then explicitly approved recreating
 the five demo accounts online with the existing supplied passwords and roles. They are tagged

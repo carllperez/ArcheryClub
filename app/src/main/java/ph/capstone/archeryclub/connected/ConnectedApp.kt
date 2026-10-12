@@ -86,6 +86,15 @@ fun ConnectedApp(vm:SystemViewModel){
         }
         editing=form to initial
     }
+    fun openNotice(notice:JsonObject) {
+        val destination=notice.text("module").toIntOrNull()?:return
+        if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
+        val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
+        module=destination
+        selected=tables.firstNotNullOfOrNull { table -> workspace.records(table).find {
+            it.text("id")==notice.text("record_id") || (table=="interclub_events"&&it.text("event_id")==notice.text("record_id"))
+        }?.let { table to it } }
+    }
     val scan=rememberLauncherForActivityResult(ScanContract()){result->
         result.contents?.let{value->
             val uri=Uri.parse(value)
@@ -114,6 +123,18 @@ fun ConnectedApp(vm:SystemViewModel){
             TextButton(onClick={vm.auth("signout","","")},enabled=!state.busy){Text("Sign out")}
         }
         if(state.recovery)PasswordChange(vm,state.busy)
+        val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()}
+        if(notices.isNotEmpty()){
+            Text("Notices to review (${notices.size})",style=MaterialTheme.typography.titleMedium)
+            notices.sortedByDescending{it.text("notified_at")}.take(5).forEach { notice ->
+                Text(notice.text("message"))
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    TextButton(onClick={openNotice(notice)}){Text("Open related records")}
+                    TextButton(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},enabled=!state.busy){Text("Acknowledge")}
+                }
+            }
+            Text("Acknowledging a notice does not complete its application, request or review.")
+        }
         if(isMember||allowed("equipment"))OutlinedButton(onClick={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))}){Text("Scan club code")}
         modules.filter{visible(it.text("number").toInt())}.forEach{m->
             Card(Modifier.fillMaxWidth().clickable{module=m.text("number").toInt()}){Column(Modifier.padding(18.dp)){
@@ -135,6 +156,7 @@ fun ConnectedApp(vm:SystemViewModel){
             RecordDetails(row,workspace)
             if(table=="documents")Button(onClick={vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}){Text("Open private document")}
             if(table=="notifications")Button(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}){Text("Acknowledge notice")}
+            if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
             if(table=="attendance_windows")QrImage("archeryclub://attendance?token=${row.text("token")}")
             if(table=="equipment"&&allowed("equipment"))QrImage(row.text("id"))
             if(table=="events")QrImage("archeryclub://event?id=${row.text("id")}")
@@ -154,7 +176,7 @@ fun ConnectedApp(vm:SystemViewModel){
     ScreenShell("M$module: ${current.text("name")}",onBack={module=0},snackbar=snackbar){
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
-        if(module==6)MemberOverview(workspace){module=it;selected=null}
+        if(module==6)MemberOverview(workspace,onNavigate={module=it;selected=null},onTask={task->module=task.module;selected=task.table to task.row})
         if(module==13)ReportsPanel(workspace,vm)
         if(module==10||module==5)AvailabilityPanel(vm)
         if(module==11)TrainingImport(vm)
@@ -248,12 +270,23 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
         else OutlinedTextField(requirement,{requirement=it},label={Text("Requirement or document label")},modifier=Modifier.fillMaxWidth())
         OutlinedButton(onClick={picker.launch(if(module==11)arrayOf("application/pdf","image/jpeg","image/png","text/csv","video/mp4") else arrayOf("application/pdf","image/jpeg","image/png","text/csv"))},enabled=!busy&&requirement.isNotBlank()&&(names.isEmpty()||requirement in names)){Text("Upload supporting document")}
     }
-    if(module==11)Text("Training videos: MP4, no longer than 10 seconds. The server validates the duration.")
+    if(module==11){
+        Text("Training videos: MP4, no longer than 10 seconds. The server validates the duration.")
+        val coach=(workspace["permissions"] as? JsonArray).orEmpty().any{it.jsonPrimitive.content=="training"}
+        if(coach||(row?.text("user_id")==workspace.text("user_id")&&row.text("validation") in setOf("personal","returned_for_correction")))TrainingVideoCapture(record,vm,busy)
+    }
 }
-@Composable private fun MemberOverview(workspace:JsonObject,onNavigate:(Int)->Unit){
+@Composable private fun MemberOverview(workspace:JsonObject,onNavigate:(Int)->Unit,onTask:(MemberTask)->Unit){
     val user=workspace.text("user_id")
     val m=workspace.records("memberships").find{it.text("user_id")==user}
     InfoCard("Membership",m?.text("status")?:"No official membership")
+    val tasks=memberTasks(workspace)
+    Text("Pending tasks and requests",style=MaterialTheme.typography.titleMedium)
+    if(tasks.isEmpty())Text("No outstanding tasks in your currently loaded records.")
+    tasks.forEach{task->
+        InfoCard(task.title,task.status)
+        TextButton(onClick={onTask(task)}){Text("Open ${task.title.lowercase()}")}
+    }
     listOf("registrations" to 3,"attendance" to 4,"training_records" to 4,"borrowings" to 5,"financial_records" to 12).forEach{(key,target)->
         InfoCard(human(key),"${workspace.records(key).count{it.text("user_id")==user}} recorded entries")
         TextButton(onClick={onNavigate(target)}){Text("Open ${human(key).lowercase()}")}

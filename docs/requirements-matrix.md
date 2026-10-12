@@ -38,6 +38,19 @@ failure/retry behavior, persistence after restart, and relevant cross-module tes
 
 ### Hosted evidence — 9 October 2026
 
+Subsequent local evidence (changes prepared for the October 12 GitHub handoff): M6 tasks
+link to their current source records and remain pending after notice acknowledgement;
+M4/M11 CSV export/import round trips preserve decimal values and stable import keys;
+M11 camera capture is implemented but not device-verified. M9 now allows authorized,
+version-checked draft rule/schedule edits. M15 rejects assignments outside the shared
+period and reopening completed events. M6/M12 review notices reopen on resubmission;
+fee and equipment-return notices track due dates and source completion.
+All 20 Android unit tests, assembleDebug and lint passed. All 19 backend tests passed,
+including nomination/residency/paper-result/archive, two-partner isolation/substitution/
+verified-result/archive, and notification lifecycle scenarios. The new migration 013 is
+**not yet hosted-deployed**. Email setup and portal hosting are deferred by the user.
+These are partial implementation/verification updates; all modules remain In progress.
+
 All modules remain **In progress**. The baseline gap column below is historical; deployment
 does not by itself complete any module's acceptance criteria.
 

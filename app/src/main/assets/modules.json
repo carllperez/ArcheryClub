@@ -126,6 +126,7 @@
       ],
       "actions": [
         "create_election",
+        "update_election",
         "save_term",
         "record_residency",
         "file_candidacy",
@@ -1110,6 +1111,138 @@
         "announced"
       ],
       "help": ""
+    },
+    "update_election": {
+      "action": "update_election",
+      "label": "Edit draft election rules and schedule",
+      "fields": [
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "label": "Kind",
+          "type": "choice",
+          "options": [
+            "annual",
+            "special"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "term_end",
+          "label": "Term end",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "announces_at",
+          "label": "Announces at",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "candidacy_closes",
+          "label": "Candidacy closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "voting_opens",
+          "label": "Voting opens",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "voting_closes",
+          "label": "Voting closes",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "result_due",
+          "label": "Result due",
+          "type": "timestamp",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "threshold",
+          "label": "Threshold",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "residency_terms",
+          "label": "Residency terms",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "rules_validated",
+          "label": "Rules validated",
+          "type": "boolean",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "method",
+          "label": "Method",
+          "type": "choice",
+          "options": [
+            "digital",
+            "paper",
+            "external"
+          ],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "positions",
+          "label": "Positions",
+          "type": "lines",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "elections",
+      "table": "elections",
+      "seed": {},
+      "states": [
+        "draft"
+      ],
+      "help": "Proposal defaults: announce 4 weeks before third-term end, candidacy +3 days, voting +7 days, results within +3 days, 60% turnout, 2 consecutive completed terms. Validate the club rules before opening."
     },
     "nominate_candidate": {
       "action": "nominate_candidate",

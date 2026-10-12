@@ -211,3 +211,102 @@ test('M14 administrator account creation is audited and cannot grant roles throu
  assert.equal((await db.query('select count(*)::int n from app_private.memberships where user_id=$1',[user])).rows[0].n,0);
  await as(null,()=>denied(()=>db.exec('select public.initialize_account()')));
 });
+
+test('M9 draft validation, nomination, residency, external results and archive use protected commands',async()=>{
+ const config={title:'External election lifecycle',kind:'special',term_end:'2030-01-01',announces_at:future(-1),candidacy_closes:future(1),voting_opens:future(2),voting_closes:future(3),result_due:future(4),threshold:60,residency_terms:2,rules:'Awaiting club validation',rules_validated:false,method:'paper',positions:['President']};
+ const e=await command('officer','create_election',config);
+ await denied(()=>command('officer','set_election_status',{id:e.id,version:1,status:'announced'}),/Validate/);
+ await denied(()=>command('applicant','update_election',{...config,id:e.id,version:1,rules_validated:true}));
+ await command('officer','update_election',{...config,id:e.id,version:1,rules:'Approved fixture rules',rules_validated:true});
+ await denied(()=>command('officer','update_election',{...config,id:e.id,version:1}),/changed/);
+ await command('officer','set_election_status',{id:e.id,version:2,status:'announced'});
+ await denied(()=>command('officer','update_election',{...config,id:e.id,version:3}),/draft/);
+ const c=await command('applicant','nominate_candidate',{election_id:e.id,user_id:ids.successor,position:'President',statement:'Candidate platform'});
+ await command('officer','confirm_candidate',{id:c.id,confirmed:true,remark:'Eligibility checked'});
+ await denied(()=>command('officer','confirm_voter',{election_id:e.id,user_id:ids.applicant,reason:'Not resident yet'}),/residency/);
+ for(const [sequence,start,end] of [[1,'2020-01-01','2020-04-30'],[2,'2020-05-01','2020-08-31']]) {
+  const t=await command('officer','save_term',{name:'Fixture term '+sequence,sequence,starts_on:start,ends_on:end});
+  await command('officer','record_residency',{user_id:ids.applicant,term_id:t.id,completed:true});
+ }
+ await command('officer','confirm_voter',{election_id:e.id,user_id:ids.applicant,reason:'Two consecutive completed terms reviewed'});
+ // Advance only the fixture clock window; transitions themselves use the real API.
+ await db.query("update app_private.elections set candidacy_closes=now()-interval '2 minutes',voting_opens=now()-interval '1 minute' where id=$1",[e.id]);
+ await denied(()=>command('applicant','file_candidacy',{election_id:e.id,position:'President',statement:'Too late'}),/not open/);
+ await command('officer','set_election_status',{id:e.id,version:3,status:'voting'});
+ await db.query("update app_private.elections set voting_closes=now()-interval '1 second' where id=$1",[e.id]);
+ await command('officer','set_election_status',{id:e.id,version:4,status:'closed'});
+ await denied(()=>command('officer','record_external_results',{id:e.id,version:5,turnout:2,results:[{id:c.id,votes:2}],verification:'Excess turnout'}),/Turnout/);
+ await command('officer','record_external_results',{id:e.id,version:5,turnout:1,results:[{id:c.id,votes:1}],verification:'Paper count independently checked'});
+ await denied(()=>rpc('applicant','election_summary',[e.id],'$1'),/restricted/);
+ await command('officer','confirm_results',{id:e.id,version:6,confirmation:'Verified official result'});
+ assert.equal((await rpc('applicant','election_summary',[e.id],'$1')).rate,100);
+ const rolesBefore=(await db.query('select count(*)::int n from app_private.role_assignments')).rows[0].n;
+ await command('officer','record_leadership',{election_id:e.id,user_id:ids.successor,position:'President',kind:'transition',starts_on:'2030-01-01',ends_on:'2030-12-31',documentation:'Election result confirmed; access assignment remains separate'});
+ assert.equal((await db.query('select count(*)::int n from app_private.role_assignments')).rows[0].n,rolesBefore);
+ await command('officer','set_election_status',{id:e.id,version:7,status:'archived'});
+ assert.equal((await rpc('applicant','election_summary',[e.id],'$1')).status,'archived');
+});
+
+test('M15 two partner boundaries, scheduling, substitution, verified results and immutable archive',async()=>{
+ const activity={title:'Interclub lifecycle fixture',description:'Synthetic fixture',venue:'Test range',starts_at:future(24),ends_at:future(28),registration_opens:future(-1),registration_closes:future(12),capacity:20};
+ const e=await command('officer','save_event',activity);
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e.id,shared_details:'Shared fixture',requirements:'Reviewed club approval',registration_closes:future(12),rules:'Fixture rules'});
+ const p1=await command('officer','save_partner',{name:'Boundary Partner A',official_channel:'a@example.test'});
+ const p2=await command('officer','save_partner',{name:'Boundary Partner B',official_channel:'b@example.test'});
+ await command('officer','invite_partner',{event_id:e.id,email:'other@example.test',partner_id:p1.id,role:'partner'});
+ await command('officer','invite_partner',{event_id:e.id,email:'successor@example.test',partner_id:p2.id,role:'partner'});
+ const delegate={event_id:e.id,partner_id:p1.id,full_name:'Archer A',affiliation:'Partner A',category:'Recurve',requirements:'Provided'};
+ const a=await command('other','save_delegate',delegate);
+ const b=await command('successor','save_delegate',{...delegate,partner_id:p2.id,full_name:'Archer B',affiliation:'Partner B'});
+ await denied(()=>command('other','save_delegate',{...delegate,id:b.id,partner_id:p2.id,version:1}),/Permission/);
+ await command('officer','review_delegate',{event_id:e.id,id:a.id,version:1,status:'eligible',remark:'Reviewed'});
+ await command('officer','review_delegate',{event_id:e.id,id:b.id,version:1,status:'eligible',remark:'Reviewed'});
+ const assignment={event_id:e.id,delegate_id:a.id,starts_at:future(25),ends_at:future(26),target_group:'Target 1',responsibility:'Round 1'};
+ await denied(()=>command('officer','assign_delegate',{...assignment,starts_at:future(23)}),/shared event period/);
+ await command('officer','assign_delegate',assignment);
+ await denied(()=>command('officer','assign_delegate',{...assignment,delegate_id:b.id}),/conflict/);
+ const replacement=await command('officer','substitute_delegate',{event_id:e.id,id:a.id,version:2,full_name:'Substitute A',requirements:'Replacement checked',remark:'Approved substitution'});
+ assert.equal((await db.query('select delegate_id from app_private.interclub_assignments where event_id=$1',[e.id])).rows[0].delegate_id,replacement.id);
+ const concern=await command('other','raise_concern',{event_id:e.id,concern:'Confirm substitute schedule'});
+ await command('officer','resolve_concern',{event_id:e.id,id:concern.id,resolution:'Schedule transferred to approved substitute'});
+ const update={event_id:e.id,shared_details:'Shared fixture',shared_venue:activity.venue,shared_start:activity.starts_at,shared_end:activity.ends_at};
+ await denied(()=>command('officer','update_shared_event',{...update,version:1,status:'completed'}),/transition/);
+ await command('officer','update_shared_event',{...update,version:1,status:'active'});
+ await command('officer','review_delegate',{event_id:e.id,id:replacement.id,version:1,status:'checked_in',remark:'Authorized check-in'});
+ const result=await command('officer','record_result',{event_id:e.id,delegate_id:replacement.id,result:'Verified scoring file reference: fixture result'});
+ assert.equal((await rpc('other','club_workspace',[],'')).interclub_results.filter(r=>r.event_id===e.id).length,0);
+ await command('officer','verify_result',{event_id:e.id,id:result.id});
+ assert.equal((await rpc('other','club_workspace',[],'')).interclub_results.filter(r=>r.event_id===e.id).length,1);
+ await command('officer','update_shared_event',{...update,version:2,status:'completed'});
+ await denied(()=>command('officer','update_shared_event',{...update,version:3,status:'preparation'}),/transition/);
+ await command('officer','archive_interclub',{event_id:e.id,summary:'Fixture complete',procedures:'Fixture procedures',agreements:'Fixture agreement',approval_references:'Fixture reference only',minutes:'Fixture minutes',issues:'Resolved schedule question',evaluation:'Test passed',recommendations:'Retain history'});
+ await denied(()=>command('officer','record_result',{event_id:e.id,delegate_id:replacement.id,result:'Rewrite archive'}),/Editable/);
+ const archives=(await rpc('officer','club_workspace',[],'')).interclub_archives;
+ assert.equal(archives.find(r=>r.event_id===e.id).snapshot.results[0].id,result.id);
+ assert.equal((await rpc('other','club_workspace',[],'')).interclub_archives.length,0);
+});
+
+test('M6/M12 review notices track resubmissions and fee completion independently of acknowledgement',async()=>{
+ const f=await command('applicant','save_financial_request',{kind:'payment',purpose:'Membership fee test',amount:'100.25',reference:'SYNTHETIC-REFERENCE'});
+ await upload('applicant',12,f.id);
+ await command('applicant','submit_financial_request',{id:f.id,version:1});
+ const getNotice=async()=> (await db.query("select * from app_private.notifications where record_id=$1 and user_id=$2 and kind='review'",[f.id,ids.officer])).rows[0];
+ const notice=await getNotice();
+ await command('officer','acknowledge_notification',{id:notice.id});
+ assert.notEqual((await getNotice()).acknowledged_at,null);
+ assert.equal((await getNotice()).completed_at,null);
+ await command('officer','verify_financial_request',{id:f.id,version:2,status:'returned_for_correction',remark:'Correct the payment reference'});
+ assert.notEqual((await getNotice()).completed_at,null);
+ await command('applicant','save_financial_request',{id:f.id,version:3,kind:'payment',purpose:'Membership fee test',amount:'100.25',reference:'CORRECTED-SYNTHETIC'});
+ await command('applicant','submit_financial_request',{id:f.id,version:4});
+ assert.equal((await getNotice()).completed_at,null);assert.equal((await getNotice()).acknowledged_at,null);
+ assert.equal((await getNotice()).id,notice.id);
+ await command('officer','verify_financial_request',{id:f.id,version:5,status:'verified',remark:'Proof checked'});
+ const fee=await command('officer','assess_fee',{user_id:ids.applicant,purpose:'Membership fee test',amount:'100.25',due_on:'2030-01-01'});
+ const feeNotice=(await rpc('applicant','club_workspace',[],'')).notifications.find(n=>n.record_id===fee.id);
+ assert.ok(feeNotice.due_at);assert.equal(feeNotice.completed_at,null);
+ await denied(()=>command('applicant','link_fee_payment',{id:fee.id,payment_id:f.id}));
+ await command('officer','link_fee_payment',{id:fee.id,payment_id:f.id});
+ assert.notEqual((await rpc('applicant','club_workspace',[],'')).notifications.find(n=>n.record_id===fee.id).completed_at,null);
+});

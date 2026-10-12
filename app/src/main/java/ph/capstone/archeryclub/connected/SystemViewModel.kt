@@ -56,8 +56,9 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         withContext(Dispatchers.Main){onDone()}
     }
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
-    fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String)=runAction {
+    fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String,onDone:()->Unit={})=runAction {
         gateway.upload(context,uri,module,record,requirement);mutable.value=mutable.value.copy(workspace=gateway.workspace(),message="Document uploaded.")
+        withContext(Dispatchers.Main){onDone()}
     }
     fun openDocument(path:String,onReady:(String)->Unit)=runAction {val url=gateway.signedUrl(path);withContext(Dispatchers.Main){onReady(url)}}
     private fun runAction(block:suspend ()->Unit){

@@ -37,6 +37,7 @@ form('save_term','Add academic term','name;sequence:number;starts_on:date;ends_o
 form('record_residency','Record completed residency','user_id:record:member_directory;term_id:record:academic_terms;completed:boolean','elections')
 form('create_election','Configure election','title;kind:choice:annual|special;term_end:date;announces_at:timestamp;candidacy_closes:timestamp;voting_opens:timestamp;voting_closes:timestamp;result_due:timestamp;threshold:number;residency_terms:number;rules:long;rules_validated:boolean;method:choice:digital|paper|external;positions:lines','elections',help='Proposal defaults: announce 4 weeks before third-term end, candidacy +3 days, voting +7 days, results within +3 days, 60% turnout, 2 consecutive completed terms. Validate the club rules before opening.')
 form('file_candidacy','File candidacy','position:choice:President|Vice President;statement:long','member','elections',{'election_id':'id'},['announced'])
+forms['update_election']={**forms['create_election'],'action':'update_election','label':'Edit draft election rules and schedule','table':'elections','states':['draft']}
 form('nominate_candidate','Nominate a member','user_id:record:member_directory;position:choice:President|Vice President;statement:long','member','elections',{'election_id':'id'},['announced'],help='The election officer reviews eligibility before the nomination appears on the ballot.')
 form('confirm_candidate','Review candidate eligibility','confirmed:boolean;remark:long','elections','candidates')
 form('confirm_voter','Confirm voter eligibility','user_id:record:member_directory;reason:long','elections','elections',{'election_id':'id'},['draft','announced'])
@@ -89,7 +90,7 @@ module(5,'equipment borrowings financial_records','request_borrowing save_financ
 module(6,'notifications documents','')
 module(7,'applications memberships renewals','review_application review_renewal update_membership')
 module(8,'events announcements registrations attendance_windows attendance corrections','save_event publish_event archive_event publish_announcement open_attendance record_attendance review_attendance_correction')
-module(9,'elections candidates eligible_voters academic_terms member_terms leadership_records','create_election save_term record_residency file_candidacy nominate_candidate confirm_candidate confirm_voter set_election_status record_external_results confirm_results record_leadership')
+module(9,'elections candidates eligible_voters academic_terms member_terms leadership_records','create_election update_election save_term record_residency file_candidacy nominate_candidate confirm_candidate confirm_voter set_election_status record_external_results confirm_results record_leadership')
 module(10,'equipment borrowings equipment_history','save_equipment review_borrowing')
 module(11,'training_records corrections','save_training validate_training review_training_correction')
 module(12,'financial_records financial_approvals fee_assessments','save_financial_request submit_financial_request approve_funds verify_financial_request assess_fee link_fee_payment')
