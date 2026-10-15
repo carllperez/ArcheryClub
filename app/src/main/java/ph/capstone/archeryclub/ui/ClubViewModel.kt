@@ -73,3 +73,4 @@ class ClubViewModel(private val repository: ClubRepository) : ViewModel() {
         }
     }
 }
+

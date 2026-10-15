@@ -131,22 +131,54 @@ class SupabaseClubRepository : ClubRepository {
 
     override suspend fun refresh() {
         val user = client.auth.currentUserOrNull() ?: throw WorkflowException("Please sign in first.")
-        val profile = client.from("profiles").select {
-            filter { eq("id", user.id) }
-        }.decodeSingle<ProfileRow>()
 
-        val activities = client.from("activities").select {
-            filter { eq("published", true) }
-        }.decodeList<ActivityRow>()
+        val userMeta = user.userMetadata
+        val metaName = userMeta?.get("full_name")?.let {
+            runCatching { it.toString().removeSurrounding("\"") }.getOrNull()
+        }?.takeIf { it.isNotBlank() } ?: user.email?.substringBefore('@')?.replace(".", " ")?.replaceFirstChar { it.uppercase() } ?: "Club Member"
 
-        val registrations = client.from("activity_registrations").select {
-            filter { eq("member_id", user.id) }
-        }.decodeList<RegistrationRow>()
+        val metaStudent = userMeta?.get("student_number")?.let {
+            runCatching { it.toString().removeSurrounding("\"") }.getOrNull()
+        } ?: ""
+
+        val metaPhone = userMeta?.get("phone")?.let {
+            runCatching { it.toString().removeSurrounding("\"") }.getOrNull()
+        } ?: ""
+
+        val profile = runCatching {
+            client.from("profiles").select {
+                filter { eq("id", user.id) }
+            }.decodeSingleOrNull<ProfileRow>()
+        }.getOrNull()
+
+        val memberProfile = MemberProfile(
+            fullName = profile?.fullName ?: metaName,
+            email = profile?.email ?: user.email ?: "",
+            phone = profile?.phone ?: metaPhone,
+            studentNumber = profile?.studentNumber ?: metaStudent,
+            category = profile?.category ?: "Regular member",
+            status = profile?.membershipStatus ?: ACTIVE,
+            renewalPending = profile?.renewalPending ?: false,
+        )
+
+        val activities = runCatching {
+            client.from("activities").select {
+                filter { eq("published", true) }
+            }.decodeList<ActivityRow>()
+        }.getOrDefault(emptyList())
+
+        val registrations = runCatching {
+            client.from("activity_registrations").select {
+                filter { eq("member_id", user.id) }
+            }.decodeList<RegistrationRow>()
+        }.getOrDefault(emptyList())
         val registeredIds = registrations.filter { it.status == "registered" }.map { it.activityId }.toSet()
 
-        val attendance = client.from("attendance_records").select {
-            filter { eq("member_id", user.id) }
-        }.decodeList<AttendanceRow>()
+        val attendance = runCatching {
+            client.from("attendance_records").select {
+                filter { eq("member_id", user.id) }
+            }.decodeList<AttendanceRow>()
+        }.getOrDefault(emptyList())
 
         val activityById = activities.associateBy { it.id }
         val attendanceRecords = attendance.map { row ->
@@ -160,15 +192,19 @@ class SupabaseClubRepository : ClubRepository {
             )
         }
 
-        val training = client.from("training_records").select {
-            filter { eq("member_id", user.id) }
-        }.decodeList<TrainingRow>().map {
+        val training = runCatching {
+            client.from("training_records").select {
+                filter { eq("member_id", user.id) }
+            }.decodeList<TrainingRow>()
+        }.getOrDefault(emptyList()).map {
             TrainingRecord(it.id, it.trainingDate, it.trainingType, it.focus, it.score, it.coach, it.feedback)
         }
 
-        val announcements = client.from("announcements").select {
-            filter { eq("published", true) }
-        }.decodeList<AnnouncementRow>().map {
+        val announcements = runCatching {
+            client.from("announcements").select {
+                filter { eq("published", true) }
+            }.decodeList<AnnouncementRow>()
+        }.getOrDefault(emptyList()).map {
             Announcement(
                 id = it.id,
                 title = it.title,
@@ -178,15 +214,7 @@ class SupabaseClubRepository : ClubRepository {
         }
 
         mutable.value = ClubSnapshot(
-            member = MemberProfile(
-                fullName = profile.fullName,
-                email = profile.email,
-                phone = profile.phone,
-                studentNumber = profile.studentNumber,
-                category = profile.category,
-                status = profile.membershipStatus,
-                renewalPending = profile.renewalPending,
-            ),
+            member = memberProfile,
             activities = activities.map {
                 ClubActivity(
                     id = it.id,
@@ -198,7 +226,7 @@ class SupabaseClubRepository : ClubRepository {
                     location = it.location,
                     description = it.description,
                     registrationDeadline = it.registrationDeadline,
-                    eligible = profile.membershipStatus == ACTIVE,
+                    eligible = memberProfile.status == ACTIVE,
                     registered = it.id in registeredIds,
                 )
             },
