@@ -10,6 +10,7 @@ The user approved Kotlin/Compose + Supabase as the technology exception to React
 ## Start here
 
 - [Group setup and integration notes](docs/team-setup.md)
+- [October 16 contribution integration and officer demo](docs/group-contribution-integration.md)
 - [Setup and deployment](docs/backend-setup.md)
 - [Hosted deployment evidence and remaining checks](docs/hosted-deployment.md)
 - [Exact module requirements and verification matrix](docs/requirements-matrix.md)
@@ -20,6 +21,10 @@ Open this directory in Android Studio with its bundled JDK and Android SDK 37.
 Copy `backend.properties.example` to ignored `backend.properties` and supply the development
 URL and publishable key. Build with `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`.
 The debug APK is `app/build/outputs/apk/debug/app-debug.apk`, labelled **Archery Club Dev**.
+
+Debug builds include a second launcher, **Archery Officer Demo**, for the group's
+six fictional UI prototypes. Its data resets when the activity is recreated; it does
+not connect to Supabase. Use **Archery Club Dev** for the authenticated system.
 
 Both app variants now open the connected system. Users sign in with real Supabase accounts.
 Membership approval preserves the applicant's account identity. Role assignments and protected
@@ -56,7 +61,8 @@ transitions are enforced by database functions and row-level permissions.
 | `supabase/bootstrap-admin.sql` | Trusted initial administrator setup |
 | `backend-tests/` | Database workflow/security and video-parser tests |
 | `app/src/test/` | Connected input/CSV regression tests |
-| `app/src/testDebug/` | Historical local-preview regression tests |
+| `app/src/debug/java/ph/capstone/archeryclub/prototype/` | Separate fictional officer-demo launcher and state |
+| `app/src/testDebug/` | Local-preview and officer-demo regression tests |
 
 The earlier preview domain and repository code is retained for reference; it is not used by
 the connected entry point. Everything under the parent project's `sources/` remains read-only.

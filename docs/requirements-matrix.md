@@ -28,6 +28,13 @@ The original document is read-only and is not copied into the source repository.
 
 ## Status definitions
 
+Integration update, 16 October 2026: the group's M5/M7/M9/M10/M12/M13 UI prototypes
+are included as a separate debug-only officer demo. They are fictional and memory-only,
+not completed production workflows. The normal app retains the existing connected
+gateway and full module catalogue. Prototype M9 elected positions and module headings
+were aligned with the proposal. No module acceptance status is upgraded by this merge.
+See `group-contribution-integration.md` for the integration decisions and test evidence.
+
 Implementation: **Absent**, **Local preview**, **In progress**, **Implemented**.
 Verification: **Not run**, **Local automated**, **Device checked**, **Hosted integration checked**,
 **Stakeholder accepted**. These are independent. A screen or passing build is not completion.

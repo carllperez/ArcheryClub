@@ -1,4 +1,22 @@
-# Development checkpoint — 12 October 2026
+# Development checkpoint — 16 October 2026
+
+## Group contributions — 16 October
+
+Combined the reviewed GitHub commit `2b758c2` and the separate officer-demo folder
+with the existing connected application. Normal debug/release entry points still use
+`ConnectedEntry`; incompatible public-schema routing and manufactured Active-member
+fallbacks were not retained. Training-video provider and local permission handling
+were preserved. Compatible build/configuration changes were retained.
+
+The six fictional prototypes are available through the debug-only **Archery Officer
+Demo** launcher. Their module titles and President/Vice President ballot now match
+the proposal. They remain memory-only and are not new production workflow completion.
+Android assembly, all 27 unit tests and lint passed. Release-manifest checks confirm
+the demo is excluded and the training provider remains. No live backend or device
+verification was performed in this integration; migration 013 is still pending hosted
+deployment. SMTP and portal hosting remain deferred. See `group-contribution-integration.md`.
+
+The combined work is saved locally; this integration has not been pushed to GitHub.
 
 ## GitHub handoff — 12 October
 
