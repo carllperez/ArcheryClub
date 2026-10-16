@@ -1,5 +1,9 @@
 # Officer module UI prototype handoff — M5, M7, M9, M10, M12, M13
 
+**Historical handoff:** the instructions below describe the original standalone
+prototype. The later main-app integration removed its launcher. Use Archery Club Dev
+and its authenticated modules instead; see `group-contribution-integration.md`.
+
 ## IMPORTANT: This is NOT a deployed feature or a Supabase change
 
 This handoff adds a **separate debug-only Android launcher** named **Archery Officer Demo**.

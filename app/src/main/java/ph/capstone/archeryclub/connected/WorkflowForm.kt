@@ -65,8 +65,9 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                 "choice" -> {
                     val options=if(name=="category" && form.text("action") in setOf("review_application","update_membership"))
                         workspace.records("settings").firstOrNull()?.get("membership_categories") as? JsonArray
-                        else field["options"] as? JsonArray
+                        else JsonArray(workflowChoiceOptions(form,field,initial,workspace).map(::JsonPrimitive))
                     SelectField(label,value,options.orEmpty().map{it.jsonPrimitive.content to human(it.jsonPrimitive.content)}){values[name]=it}
+                    if(options.isNullOrEmpty())Text("No permitted choices are available for this record.")
                 }
                 "record" -> {
                     val source=field.text("source")
@@ -95,7 +96,12 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
             runCatching {
                 buildJsonObject {
                     listOf("id","version","user_id","event_id","election_id","record_id","delegate_id").forEach{key->initial[key]?.let{put(key,it)}}
-                    form.records("fields").forEach {field->put(field.text("name"),fieldValue(field,values[field.text("name")].orEmpty()))}
+                    form.records("fields").forEach {field->
+                        val input=values[field.text("name")].orEmpty()
+                        if(field.text("type")=="choice"&&form.text("action") in setOf("review_borrowing","approve_funds"))
+                            require(input in workflowChoiceOptions(form,field,initial,workspace)){"Choose an allowed ${field.text("label").lowercase()}."}
+                        put(field.text("name"),fieldValue(field,input))
+                    }
                     if(form.text("action")=="review_training_correction" && values["status"]=="approved")put("corrected_record",buildJsonObject{
                         correctionRecord?.get("version")?.let{put("version",it)}
                         correctionFields.forEach{field->put(field.text("name").removePrefix("corrected_"),fieldValue(field,values[field.text("name")].orEmpty()))}

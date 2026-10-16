@@ -2,6 +2,21 @@
 
 ## Group contributions — 16 October
 
+Latest follow-up: the six contributed layouts are now adapted into the normal main
+app, not just included as a separate demo. `ClubModuleScreens.kt` supplies real-data
+overview cards, queue search/status filters, equipment handedness/condition filters,
+member-owned borrowing and finance lists, inventory editing and existing protected
+record-detail workflows. M13 exports the permission-filtered server report to CSV.
+Borrowing decisions are limited to valid next stages, finance approval office choices
+follow actual permissions, and self-approval controls are hidden. The backend remains
+authoritative. The separate demo Activity registration was removed; there is one launcher.
+
+Verification: assembleDebug, lintDebug, 32 Android tests and 19 local backend tests
+passed. Merged-manifest inspection confirms MainActivity is the only launcher.
+No new hosted or device acceptance test was performed. Migration 013 deployment and
+the deferred SMTP/portal setup remain pending. This follow-up is saved locally and
+has not been pushed. The following paragraphs describe the earlier merge stage.
+
 Combined the reviewed GitHub commit `2b758c2` and the separate officer-demo folder
 with the existing connected application. Normal debug/release entry points still use
 `ConnectedEntry`; incompatible public-schema routing and manufactured Active-member

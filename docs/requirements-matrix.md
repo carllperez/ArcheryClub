@@ -28,12 +28,15 @@ The original document is read-only and is not copied into the source repository.
 
 ## Status definitions
 
-Integration update, 16 October 2026: the group's M5/M7/M9/M10/M12/M13 UI prototypes
-are included as a separate debug-only officer demo. They are fictional and memory-only,
-not completed production workflows. The normal app retains the existing connected
-gateway and full module catalogue. Prototype M9 elected positions and module headings
-were aligned with the proposal. No module acceptance status is upgraded by this merge.
-See `group-contribution-integration.md` for the integration decisions and test evidence.
+Integration update, 16 October 2026: the group's M5/M7/M9/M10/M12/M13 layouts are
+adapted into the normal authenticated app through `ClubModuleScreens.kt`. Their
+cards, filters and review navigation use the real workspace and existing protected
+forms/commands; M13 CSV uses the server report and calculated goal actuals. The separate
+demo launcher is removed. Additional tests cover member ownership, finance self-review,
+separate approval offices, borrowing transitions and report export. All 32 Android
+tests, 19 local backend tests, assembly and lint pass. No new device/hosted walkthrough
+or final stakeholder acceptance is claimed; all modules remain In progress.
+See `group-contribution-integration.md` for verification and remaining deployment gaps.
 
 Implementation: **Absent**, **Local preview**, **In progress**, **Implemented**.
 Verification: **Not run**, **Local automated**, **Device checked**, **Hosted integration checked**,

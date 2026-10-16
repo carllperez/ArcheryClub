@@ -154,6 +154,14 @@ fun ConnectedApp(vm:SystemViewModel){
         val row=workspace.records(table).find{it.text("id")==original.text("id")&&it.text("user_id")==original.text("user_id")&&it.text("event_id")==original.text("event_id")}?:original
         ScreenShell(recordTitle(row,workspace),onBack={selected=null},snackbar=snackbar){
             RecordDetails(row,workspace)
+            if(module in integratedClubModules) {
+                workspace.records("financial_approvals").filter{table=="financial_records"&&it.text("record_id")==row.text("id")}.forEach{
+                    InfoCard("${human(it.text("office"))} approval", "${it.text("remark")} · ${it.text("approved_at")}")
+                }
+                workspace.records("audit_log").filter{it.text("record_id")==row.text("id")}.sortedByDescending{it.text("created_at")}.take(10).forEach{
+                    Text("${human(it.text("action"))} · ${it.text("created_at")}",style=MaterialTheme.typography.bodySmall)
+                }
+            }
             if(table=="documents")Button(onClick={vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}){Text("Open private document")}
             if(table=="notifications")Button(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}){Text("Acknowledge notice")}
             if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
@@ -166,7 +174,7 @@ fun ConnectedApp(vm:SystemViewModel){
                 if(table=="interclub_events")Text("Event documents are shared with this event's invited representatives. Attach only approved event materials.")
                 DocumentsPanel(row.text("id").ifBlank{row.text("event_id")},docModule,workspace,vm,state.busy)
             }
-            available.filter{it.text("table")==table}.filter{it.text("permission")!="account"||row.text("user_id").isBlank()||row.text("user_id")==user}.filter{f->f["states"]!!.jsonArray.isEmpty()||row.text("status") in f["states"]!!.jsonArray.map{it.jsonPrimitive.content}}.forEach{form->
+            recordWorkflowActions(available,table,row,user).forEach{form->
                 Button(onClick={start(form.text("action"),row)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
             }
         };return
@@ -176,6 +184,7 @@ fun ConnectedApp(vm:SystemViewModel){
     ScreenShell("M$module: ${current.text("name")}",onBack={module=0},snackbar=snackbar){
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
+        if(module in integratedClubModules)ClubModuleOverview(module,workspace)
         if(module==6)MemberOverview(workspace,onNavigate={module=it;selected=null},onTask={task->module=task.module;selected=task.table to task.row})
         if(module==13)ReportsPanel(workspace,vm)
         if(module==10||module==5)AvailabilityPanel(vm)
@@ -195,6 +204,11 @@ fun ConnectedApp(vm:SystemViewModel){
                 start(form.text("action"),initial?:buildJsonObject{})
             },enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
         }
+        if(module in integratedClubModules){
+            ClubModuleRecords(module,current,workspace,available,state.busy,
+                onOpen={recordTable,row->selected=recordTable to row},
+                onAction={action,row->if(available.any{it.text("action")==action})start(action,row)})
+        } else {
         SelectField("Records",table,current["tables"]!!.jsonArray.map{it.jsonPrimitive.content to human(it.jsonPrimitive.content)}){table=it}
         OutlinedTextField(search,{search=it},label={Text("Search records")},modifier=Modifier.fillMaxWidth())
         val rows=workspace.records(table).filter{r->
@@ -212,6 +226,7 @@ fun ConnectedApp(vm:SystemViewModel){
             Text(recordTitle(r,workspace),style=MaterialTheme.typography.titleMedium)
             listOf("status","validation","category","starts_at","training_date","amount","notified_at").map{r.text(it)}.filter{it.isNotBlank()}.take(3).forEach{Text(human(it))}
         }}}
+        }
     }
 }
 

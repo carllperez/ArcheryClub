@@ -38,13 +38,19 @@ import java.time.LocalDate
     var from by remember{mutableStateOf(LocalDate.now().withDayOfMonth(1).toString())}
     var to by remember{mutableStateOf(LocalDate.now().toString())}
     var report by remember{mutableStateOf<JsonElement?>(null)}
+    var csvToExport by remember{mutableStateOf("")}
     val context=LocalContext.current
+    val csvExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){uri->
+        if(uri!=null)runCatching{
+            requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use{it.write(csvToExport)}
+        }.onFailure{vm.error("The CSV report could not be saved.")}
+    }
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
         if(uri!=null&&report!=null)runCatching{context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{it.write(report.toString())}}
             .onFailure{vm.error("The report could not be saved.")}
     }
-    OutlinedTextField(from,{from=it},label={Text("Report from (YYYY-MM-DD)")})
-    OutlinedTextField(to,{to=it},label={Text("Report to (YYYY-MM-DD)")})
+    OutlinedTextField(from,{from=it;report=null},label={Text("Report from (YYYY-MM-DD)")})
+    OutlinedTextField(to,{to=it;report=null},label={Text("Report to (YYYY-MM-DD)")})
     Button(onClick={if(runCatching{!LocalDate.parse(to).isBefore(LocalDate.parse(from))}.getOrDefault(false))
         vm.rpc("club_report",buildJsonObject{put("p_from",from);put("p_to",to)}){report=it}
         else vm.error("Choose a valid reporting period.")}){Text("Generate report")}
@@ -62,6 +68,7 @@ import java.time.LocalDate
             else Text("Attendance rate unavailable: no registrations.")
         }
         JsonSummary(value);OutlinedButton(onClick={export.launch("archery-report-$from-$to.json")}){Text("Export report")}
+        OutlinedButton(onClick={csvToExport=clubReportCsv(objectReport);csvExport.launch("archery-report-$from-$to.csv")}){Text("Export CSV report")}
     }
 }
 

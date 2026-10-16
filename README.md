@@ -22,9 +22,9 @@ Copy `backend.properties.example` to ignored `backend.properties` and supply the
 URL and publishable key. Build with `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`.
 The debug APK is `app/build/outputs/apk/debug/app-debug.apk`, labelled **Archery Club Dev**.
 
-Debug builds include a second launcher, **Archery Officer Demo**, for the group's
-six fictional UI prototypes. Its data resets when the activity is recreated; it does
-not connect to Supabase. Use **Archery Club Dev** for the authenticated system.
+The group's M5/M7/M9/M10/M12/M13 layouts are integrated into **Archery Club Dev**.
+Sign in and open the modules allowed by your role. Cards, filters, reviews and exports
+use the existing authenticated backend workflows. There is no separate demo launcher.
 
 Both app variants now open the connected system. Users sign in with real Supabase accounts.
 Membership approval preserves the applicant's account identity. Role assignments and protected
@@ -61,7 +61,8 @@ transitions are enforced by database functions and row-level permissions.
 | `supabase/bootstrap-admin.sql` | Trusted initial administrator setup |
 | `backend-tests/` | Database workflow/security and video-parser tests |
 | `app/src/test/` | Connected input/CSV regression tests |
-| `app/src/debug/java/ph/capstone/archeryclub/prototype/` | Separate fictional officer-demo launcher and state |
+| `app/src/main/java/ph/capstone/archeryclub/connected/ClubModuleScreens.kt` | Integrated borrowing, officer queues, inventory, election and report controls |
+| `app/src/debug/java/ph/capstone/archeryclub/prototype/` | Historical fictional prototype reference; not registered as an Activity |
 | `app/src/testDebug/` | Local-preview and officer-demo regression tests |
 
 The earlier preview domain and repository code is retained for reference; it is not used by

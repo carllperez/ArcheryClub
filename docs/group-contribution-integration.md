@@ -1,5 +1,41 @@
 # Group contribution integration — 16 October 2026
 
+## Current result: integrated in the main app
+
+The follow-up replaces the separate-demo delivery with adapted main-app screens in
+`connected/ClubModuleScreens.kt`. **Archery Club Dev is the only launcher.** Sign in
+normally, then select the exact proposal module allowed by the server's role permissions.
+The fictional store is not instantiated by any main-app path. Its original source and
+tests remain as historical reference only.
+
+| Module | Integrated main-app behavior |
+|---|---|
+| M5 | Own borrowing/financial records, equipment selection, availability checks, protected requests, receipt/document detail and submission |
+| M7 | Real application/renewal queues, search/status filters, membership counts, document inspection, protected screening and standing forms |
+| M9 | Real election cards and status filters leading to the existing candidacy/eligibility, private ballot, turnout/results and leadership workflows |
+| M10 | Real inventory, condition/hand filters, edit forms, borrowing calendar, conflict-aware availability and review/release/return forms |
+| M12 | Real submission/review queues, private documents, displayed approval history, authorized office selection and protected verification |
+| M13 | Server-derived goals/reports with period selection and CSV export alongside JSON; no manual fictional progress counter |
+
+All writes still flow through `SystemViewModel.command` → `SupabaseGateway` →
+`club_command`. Forms preserve record IDs and versions for protected transitions.
+Borrowing choices match the record's current stage; finance office choices match
+permissions and prior approvals. UI filtering supplements, never replaces, server checks.
+The same-identity membership conversion, document storage and role separation use the
+existing implementation and migrations. This change introduces no new schema.
+
+Final checks: debug assembly, lint, 32 Android unit tests and 19 local backend tests
+passed. The five new Android tests cover ownership, self-review/office restrictions,
+borrowing transitions and exact report export. Merged-manifest checks confirm a single
+main launcher. The debug APK is `app/build/outputs/apk/debug/app-debug.apk`.
+
+The adapted screens have not yet received a live-device/hosted walkthrough. Existing
+migration 013 still awaits hosted deployment (including draft-election edits); SMTP
+and portal hosting remain deferred. No proposal module is upgraded to fully accepted.
+This follow-up is local and has not been pushed to GitHub.
+
+## Earlier source-only merge (superseded launcher arrangement)
+
 The integration combines the reviewed GitHub commit `2b758c2` with our existing
 `704a16d` implementation and the five-file `ArcheryClub_Officer_Modules_Changes_Only`
 handoff. The two contributions have separate purposes; the officer folder is not a
