@@ -21,11 +21,9 @@ and preview `ui/` implementation remains available for reuse, but is not the lau
 The parallel SQL package was moved to `supabase/reference/member_backend_202610020001.sql`.
 It creates a different public-schema data model with its own signup behavior. It must
 not be applied alongside the deployed `app_private` schema or treated as migration 13.
-All thirteen files in `supabase/migrations/` were deployed by October 16, including
-`202610100013_workflow_completion.sql`. Do not redeploy the fresh-project SQL bundle.
-The post-deployment election test timed out and the interclub retry remains unrun; deployment
-alone does not establish those workflows as verified. See `team-handoff-2026-10-20.md`.
-Configuration
+The first twelve files in `supabase/migrations/` are the current hosted deployment history.
+Migration `202610100013_workflow_completion.sql` is a tested, pending update; its draft-election
+editing and workflow safeguards are not live until the project owner deploys it. Configuration
 comes from `backend.properties`, not the historical `local.properties` backend example.
 The accidental self-referencing Git link `ArcheryClub-git` is excluded from the merged tree;
 the actual source and its Git history are retained.

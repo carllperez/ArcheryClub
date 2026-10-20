@@ -1,40 +1,4 @@
-# Development checkpoint — 20 October 2026
-
-## October 20 GitHub handoff
-
-Owner requested pushing the current work and a comprehensive new-groupmate overview with
-an owner-based task plan before Friday October 23. See `team-handoff-2026-10-20.md` and
-`finish-before-friday-2026-10-23.md`. These summarize existing evidence; no new live backend
-changes/tests were authorized by this documentation/push request. October 16 unresolved
-findings remain open. The pending test script and unapplied partial Auth configuration are
-included for handoff, with explicit cautions about expired/partially completed fixtures.
-
-## Paused after hosted checks — 16 October 2026
-
-User requested a stop. Supabase CLI authorization succeeded after the owner unlocked
-Keychain. A dry-run listed only migration 202610100013; db push then confirmed it
-applied successfully. Older pending-migration statements below are historical.
-
-Live API run: 21/23 checks passed (hosted-workflows-latest.json). Follow-up: 19/22
-passed (hosted-followup-before-retry.json). These runs overlap; do not sum them.
-Verified five logins/refresh/permissions, private-schema denial, borrowing lifecycle
-and conflict prevention, event registration/attendance, training validation, financial
-receipt ownership/separate approvals/ledger totals, and backend-calculated goal actuals.
-These are API tests, not complete Android UI acceptance.
-
-Open findings: signup email confirmation is currently disabled; no configuration
-change was applied. Post-deployment election edit test timed out (read its current
-record before retrying). Interclub test stopped with a database rejection after creating
-its delegate; test sequence was updated to check in the delegate before recording a
-result, but that correction has NOT been run. Test artifacts are labelled QA and IDs
-are recorded in the JSON reports. No real funds were transferred or emails sent.
-
-The configuration preview and focused retry were declined; then the user stopped work.
-Do not resume remote actions until requested. Prepared partial auth configuration is
-in tools/hosted-auth/supabase/config.toml; it is unapplied. Temporary private test-login
-input was removed at pause. Test scripts/docs remain uncommitted and unpushed.
-SMTP, portal hosting, full applicant/renewal/election acceptance, Android role walkthroughs,
-camera/CSV/exports, poor-network behavior and physical-phone checks remain outstanding.
+# Development checkpoint — 16 October 2026
 
 ## Group contributions — 16 October
 
@@ -49,12 +13,7 @@ authoritative. The separate demo Activity registration was removed; there is one
 
 Verification: assembleDebug, lintDebug, 32 Android tests and 19 local backend tests
 passed. Merged-manifest inspection confirms MainActivity is the only launcher.
-Device smoke check: Android Studio built, installed and launched the updated app on
-Pixel 7 API 37.2. The existing signed-in session opened the club workspace. A loading/
-retry screen appeared during initial refresh; Retry connection restored the workspace.
-M5 opened with the integrated request summary and equipment-availability form. This
-checks launch/navigation only; no new record submission, officer workflow, or complete
-hosted acceptance test was performed. Migration 013 deployment and
+No new hosted or device acceptance test was performed. Migration 013 deployment and
 the deferred SMTP/portal setup remain pending. This follow-up is saved locally and
 has not been pushed. The following paragraphs describe the earlier merge stage.
 

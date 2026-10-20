@@ -28,19 +28,6 @@ The original document is read-only and is not copied into the source repository.
 
 ## Status definitions
 
-Current verification update, October 20 (evidence from October 16): migration 013 is
-hosted-deployed. All five auth/permission checks and tested API paths for M3/M8 attendance,
-M4/M11 score validation, M5/M10 borrowing/conflicts, M12 receipt/approvals/ledger and M13
-calculated goals passed. This is partial hosted coverage, not full acceptance. M14 signup
-email confirmation is disabled; correction is pending. M9 post-deployment edit timed out.
-M15 live lifecycle failed; a revised test sequence is unrun. Android launch, session restoration
-and M5 navigation were observed; remaining role/device workflows are unverified.
-See [module-by-module handoff](team-handoff-2026-10-20.md) and
-[remaining acceptance work](finish-before-friday-2026-10-23.md). Raw evidence is in
-`verification/hosted-workflows-latest.json` and `verification/hosted-followup-before-retry.json`.
-All fifteen modules remain **In progress**. Historical deployment/verification statements
-below describe earlier checkpoints and are superseded where they conflict with this update.
-
 Integration update, 16 October 2026: the group's M5/M7/M9/M10/M12/M13 layouts are
 adapted into the normal authenticated app through `ClubModuleScreens.kt`. Their
 cards, filters and review navigation use the real workspace and existing protected
