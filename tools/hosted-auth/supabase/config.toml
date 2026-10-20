@@ -1,0 +1,5 @@
+# Partial hosted configuration: preserve every undeclared setting.
+project_id = "cidxuzrzgexkejssoglk"
+
+[auth.email]
+enable_confirmations = true

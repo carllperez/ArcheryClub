@@ -1,8 +1,26 @@
-# Hosted development deployment — 9 October 2026
+# Hosted development deployment — updated 20 October 2026
 
 Project: `cidxuzrzgexkejssoglk`, `https://cidxuzrzgexkejssoglk.supabase.co`.
 Owner explicitly authorized deployment and recreating the five approved demo accounts.
 Supabase CLI is authenticated on this Mac; its credential is outside the repository.
+
+## Current status (evidence collected October 16)
+
+Migration 013 was deployed after a dry-run selected only that pending file. The project
+has thirteen tracked migrations. Live workflow results and unresolved checks are documented
+in [the October 20 handoff](team-handoff-2026-10-20.md) and `verification/`.
+
+Five-account auth/permissions, borrowing, attendance, training validation, receipt ownership,
+separate finance approvals, ledger totals and calculated goals passed the tested live API paths.
+The first run passed 21/23 checks; the follow-up passed 19/22. These runs overlap.
+
+Signup email confirmation was found disabled, superseding the October 9 finding below.
+No fix was applied. The post-deployment election edit timed out; interclub sequence correction
+is prepared but not rerun. Email delivery and portal hosting remain deferred. No all-module
+or full Android acceptance is claimed. No live recheck was performed on October 20.
+
+Everything below is the historical October 9 deployment record, including its then-pending
+migration note; use the current status above for the handoff.
 
 ## Installed
 

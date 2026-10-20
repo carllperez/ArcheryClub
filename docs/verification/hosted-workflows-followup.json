@@ -1,0 +1,145 @@
+{
+  "timestamp": "2026-10-16T08:33:20.022Z",
+  "project": "cidxuzrzgexkejssoglk",
+  "scope": "Hosted API checks; not Android UI or full module acceptance",
+  "label": "QA 2026-10-16T08:32:03.980Z",
+  "results": [
+    {
+      "name": "Auth requires confirmation for ordinary email signup",
+      "status": "FAIL",
+      "reason": "Expected values to be strictly equal:\n\ntrue !== false\n"
+    },
+    {
+      "name": "Anonymous workspace denied",
+      "status": "PASS"
+    },
+    {
+      "name": "admin: login, refresh, exact permissions, ownership",
+      "status": "PASS"
+    },
+    {
+      "name": "member: login, refresh, exact permissions, ownership",
+      "status": "PASS"
+    },
+    {
+      "name": "applicant: login, refresh, exact permissions, ownership",
+      "status": "PASS"
+    },
+    {
+      "name": "officer: login, refresh, exact permissions, ownership",
+      "status": "PASS"
+    },
+    {
+      "name": "partner: login, refresh, exact permissions, ownership",
+      "status": "PASS"
+    },
+    {
+      "name": "Private schema inaccessible to signed-in member",
+      "status": "PASS"
+    },
+    {
+      "name": "Split finance and partner review permissions",
+      "status": "PASS"
+    },
+    {
+      "name": "Report access permitted for officer and denied for member",
+      "status": "PASS"
+    },
+    {
+      "name": "create-account: unauthenticated execution denied",
+      "status": "PASS"
+    },
+    {
+      "name": "verify-training-video: unauthenticated execution denied",
+      "status": "PASS"
+    },
+    {
+      "name": "Member cannot provision accounts",
+      "status": "PASS"
+    },
+    {
+      "name": "M12 private receipt, separate approvals, verified ledger totals",
+      "status": "PASS"
+    },
+    {
+      "name": "M13 goal actuals calculated from backend records",
+      "status": "PASS"
+    },
+    {
+      "name": "M9 existing draft edit, stale edit and unvalidated publication denied",
+      "status": "FAIL",
+      "reason": "The operation was aborted due to timeout"
+    },
+    {
+      "name": "M15 partner delegation, scheduling, results and archive",
+      "status": "FAIL",
+      "reason": "HTTP 400; code P0001"
+    },
+    {
+      "name": "admin: fresh login retains access; sign out test session",
+      "status": "PASS"
+    },
+    {
+      "name": "member: fresh login retains access; sign out test session",
+      "status": "PASS"
+    },
+    {
+      "name": "applicant: fresh login retains access; sign out test session",
+      "status": "PASS"
+    },
+    {
+      "name": "officer: fresh login retains access; sign out test session",
+      "status": "PASS"
+    },
+    {
+      "name": "partner: fresh login retains access; sign out test session",
+      "status": "PASS"
+    }
+  ],
+  "artifacts": [
+    {
+      "table": "equipment",
+      "id": "e40242f4-2afb-48d0-8ab5-5c39ad8b81f8"
+    },
+    {
+      "table": "borrowings",
+      "id": "f628e8a9-c42c-424b-8303-2f4ef8a591c7"
+    },
+    {
+      "table": "borrowings",
+      "id": "7a2b10c4-6067-4c93-b67a-a81a0b278e53"
+    },
+    {
+      "table": "events",
+      "id": "179be2d8-3cdb-4c97-b39c-1d3183281ef7"
+    },
+    {
+      "table": "training_records",
+      "id": "2b20a77a-030a-4d9d-9737-c70aa62c2f79"
+    },
+    {
+      "table": "financial_records",
+      "id": "0d39b1d0-a23c-4a00-a810-b53062da561b"
+    },
+    {
+      "table": "elections",
+      "id": "e680d707-d534-4e0a-ad99-d20b30e6e17a"
+    },
+    {
+      "table": "storage.objects",
+      "path": "f384d5b4-40f8-4ba2-919e-5f4e02f5102e/12/0d39b1d0-a23c-4a00-a810-b53062da561b/04e683d9-9e08-4596-b31d-aaed5404b271.pdf"
+    },
+    {
+      "table": "goals",
+      "id": "75039978-0f13-4976-9814-cd54c3c1e832"
+    },
+    {
+      "table": "partners",
+      "id": "5663cad0-127c-411c-93e6-007933e1f273"
+    },
+    {
+      "table": "delegates",
+      "id": "e22e129d-fe65-47b9-bc6e-e1c2ee3693e6"
+    }
+  ]
+}

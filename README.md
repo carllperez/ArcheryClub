@@ -9,6 +9,9 @@ The user approved Kotlin/Compose + Supabase as the technology exception to React
 
 ## Start here
 
+- [New groupmate overview — October 20](docs/team-handoff-2026-10-20.md)
+- [Owners, checklist and schedule before Friday October 23](docs/finish-before-friday-2026-10-23.md)
+
 - [Group setup and integration notes](docs/team-setup.md)
 - [October 16 contribution integration and officer demo](docs/group-contribution-integration.md)
 - [Setup and deployment](docs/backend-setup.md)
@@ -74,13 +77,19 @@ The connected Android build and automated checks have passed during development.
 database tests cover key successful and denied workflows across the proposal modules.
 Consult the matrix for test coverage and unresolved criteria.
 
-**The hosted development backend was deployed on 9 October 2026.** All 12 migrations and
-both server functions are installed. The five owner-approved demo accounts passed hosted
-login, refresh, role-boundary and private-storage checks. Android Studio's normal app/Run
-configuration connects to this online backend; the local fallback is a separate build.
-These accounts are explicitly provisioned test identities, not proof of email ownership or
-real club membership. Public signup still requires email confirmation; SMTP delivery,
-recovery, full device workflows, browser deployment, human UAT/SUS and all-module acceptance
-remain to be verified. Club-specific configuration remains awaiting club validation.
+**Hosted status last verified October 16, 2026:** thirteen migrations are deployed,
+including workflow completion migration 013. Both server functions are installed. Five
+owner-approved demo accounts passed login, refresh and role-boundary checks. Additional
+live tests passed borrowing, attendance, training validation, receipt approvals, report
+totals and goal calculations. Full Android workflows are not yet accepted.
+
+Open findings: signup email confirmation was observed **disabled** and its correction is
+unapplied; the post-deployment election test timed out; the corrected interclub test sequence
+has not been rerun. SMTP delivery/recovery, device workflows, portal deployment, human
+UAT/SUS and club-rule validation remain outstanding. Email setup and portal hosting are
+still deferred by the owner. See the October 20 handoff for precise evidence and priorities.
+
+The normal Android app connects to the hosted backend; local fallback uses a separate build.
+Demo identities do not establish real email ownership or screened club membership.
 
 This repository is a development implementation in progress, not a claim of production readiness.
