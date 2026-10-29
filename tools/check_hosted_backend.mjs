@@ -10,14 +10,20 @@ async function request(path,options={}){
  return {status:response.status,data:await response.json().catch(()=>({}))};
 }
 const auth=await request('/auth/v1/settings');
-assert.equal(auth.status,200);assert.equal(auth.data.mailer_autoconfirm,false);
-console.log('PASS hosted Auth reachable; ordinary email signup still requires confirmation');
+assert.equal(auth.status,200);
+if(process.argv.includes('--email-pending')){
+ console.log('PASS hosted Auth reachable');
+ console.log(`PENDING email acceptance; hosted email confirmation ${auth.data.mailer_autoconfirm?'is not enforced':'is required'}. No email was sent.`);
+}else{
+ assert.equal(auth.data.mailer_autoconfirm,false);
+ console.log('PASS hosted Auth reachable; ordinary email signup requires confirmation');
+}
 const schema=await request('/rest/v1/profiles?select=id&limit=0',{headers:{'Accept-Profile':'app_private'}});
 assert.ok([401,403,406].includes(schema.status));
 if(schema.status===406)assert.equal(schema.data.code,'PGRST106');
 console.log('PASS anonymous private-schema request denied; inspect exposed schemas separately');
-if(process.argv[2]){
- const inputPath=process.argv[2];
+const inputPath=process.argv.slice(2).find(arg=>!arg.startsWith('--'));
+if(inputPath){
  const account=JSON.parse(await readFile(inputPath,'utf8'));
  assert.equal(account.email.toLowerCase(),'testmember@dlsu.edu.ph');
  const login=await request('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify(account)});
@@ -36,7 +42,7 @@ assert.ok([401,403].includes(anonymous.status));
 console.log('PASS anonymous workspace access denied');
 for(const fn of ['create-account','verify-training-video']){
  const denied=await request('/functions/v1/'+fn,{method:'POST',body:'{}'});
- assert.equal(denied.status,400);
+ assert.ok([400,401,403].includes(denied.status));
  assert.ok(typeof denied.data.error==='string');
  console.log(`PASS ${fn} deployed and rejects unauthenticated execution`);
 }

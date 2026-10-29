@@ -9,6 +9,18 @@ class ClubModuleIntegrationTest {
     private fun form(action: String, table: String, permission: String, states: String = "[]") =
         obj("""{"action":"$action","table":"$table","permission":"$permission","states":$states}""")
 
+    @Test fun electionAndDelegateControlsFollowProtectedTransitions(){
+        val field=obj("""{"name":"status"}""");val w=obj("{}")
+        assertEquals(listOf("voting"),workflowChoiceOptions(form("set_election_status","elections","elections"),field,obj("""{"status":"announced"}"""),w))
+        assertEquals(listOf("checked_in"),workflowChoiceOptions(form("review_delegate","delegates","coordinator"),field,obj("""{"status":"eligible"}"""),w))
+        assertTrue(recordWorkflowActions(listOf(form("record_result","delegates","coordinator")),"delegates",obj("""{"status":"pending"}"""),"me").isEmpty())
+    }
+    @Test fun officialTrainingCannotBeEditedOrSubmittedByMember(){
+        val forms=listOf(form("save_personal_training","training_records","member"),form("submit_training","training_records","member"),form("request_training_correction","training_records","member"))
+        val row=obj("""{"user_id":"me","validation":"validated"}""")
+        assertEquals(listOf("request_training_correction"),recordWorkflowActions(forms,"training_records",row,"me").map{it.text("action")})
+    }
+
     @Test fun memberBorrowingScreenDoesNotExposeOfficersOtherMemberRecords() {
         val workspace = obj("""{"user_id":"me","equipment":[{"id":"bow"}],
             "borrowings":[{"id":"mine","user_id":"me"},{"id":"other","user_id":"other"}],

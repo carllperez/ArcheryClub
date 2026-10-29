@@ -3,6 +3,7 @@
 // --write-demo leaves clearly labelled synthetic workflow records for inspection.
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
 const config=await readFile(new URL('../backend.properties',import.meta.url),'utf8');
 const base=config.match(/^SUPABASE_URL=(.*)$/m)?.[1].trim();
 const key=config.match(/^SUPABASE_PUBLISHABLE_KEY=(.*)$/m)?.[1].trim();
@@ -10,9 +11,12 @@ assert.equal(base,'https://cidxuzrzgexkejssoglk.supabase.co');
 const accounts=JSON.parse(await readFile(process.argv[2],'utf8'));
 const results=[], users={}, artifacts=[];
 const label=`QA ${new Date().toISOString()}`;
+const outputDir=resolve(process.argv.find(x=>x.startsWith('--output-dir='))?.slice(13)??'build/verification');
 async function api(path,body,token,method='POST',extra={}) {
- const r=await fetch(base+path,{method,signal:AbortSignal.timeout(30000),headers:{apikey:key,'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} :{}),...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});
- return {status:r.status,ok:r.ok,data:await r.json().catch(()=>({}))};
+ try{
+  const r=await fetch(base+path,{method,signal:AbortSignal.timeout(30000),headers:{apikey:key,'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} :{}),...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  return {status:r.status,ok:r.ok,data:await r.json().catch(()=>({}))};
+ }catch{throw Error(`${body?.p_action??path.split('?')[0]}: connection failed or timed out; inspect saved state before retrying`);}
 }
 async function good(path,body,token,method,extra){const r=await api(path,body,token,method,extra);assert.ok(r.ok,`${body?.p_action??path.split('?')[0]}: HTTP ${r.status}; code ${r.data.code??'unavailable'}; ${String(r.data.message??'').slice(0,250)}`);return r.data;}
 const workspace=u=>good('/rest/v1/rpc/club_workspace',{},u.token);
@@ -21,7 +25,8 @@ async function denied(u,action,data={}){const r=await api('/rest/v1/rpc/club_com
 const only=process.argv.find(x=>x.startsWith('--only='))?.slice(7).split(',');
 async function check(name,fn){if(only&&/^M\d/.test(name)&&!only.some(m=>name.startsWith(m+' ')))return;try{await fn();results.push({name,status:'PASS'});console.log(`PASS ${name}`);}catch(e){const reason=e.message.replace(/https?:\/\/\S+/g,'[URL]');results.push({name,status:'FAIL',reason});console.log(`FAIL ${name}: ${reason}`);}}
 const future=h=>new Date(Date.now()+h*3600000).toISOString();
-await check('Auth requires confirmation for ordinary email signup',async()=>{const a=await good('/auth/v1/settings',undefined,null,'GET');assert.equal(a.mailer_autoconfirm,false);});
+if(process.argv.includes('--email-pending')){results.push({name:'Email signup, verification, recovery and invitations',status:'PENDING',reason:'Explicitly deferred by project owner; no email requests sent.'});}
+else await check('Auth requires confirmation for ordinary email signup',async()=>{const a=await good('/auth/v1/settings',undefined,null,'GET');assert.equal(a.mailer_autoconfirm,false);});
 await check('Anonymous workspace denied',async()=>{const r=await api('/rest/v1/rpc/club_workspace',{});assert.ok([401,403].includes(r.status));});
 for(const role of ['admin','member','applicant','officer','partner']){
  await check(`${role}: login, refresh, exact permissions, ownership`,async()=>{
@@ -39,12 +44,28 @@ for(const role of ['admin','member','applicant','officer','partner']){
  });
 }
 const {admin,member,applicant,officer,partner}=users;
+if(process.argv.includes('--private-development')){
+ await check('Private development rejects public signup',async()=>{const a=await good('/auth/v1/settings',undefined,null,'GET');assert.equal(a.disable_signup,true);});
+ if(admin)await check('Administrator invitation is disabled server-side without email',async()=>{const r=await api('/functions/v1/create-account',{},admin.token);assert.equal(r.status,503);assert.equal(r.data.error,'Email invitations are not enabled yet. Use existing club accounts.');});
+}
 if(member)await check('Private schema inaccessible to signed-in member',async()=>{const r=await api('/rest/v1/profiles?select=id&limit=0',undefined,member.token,'GET',{'Accept-Profile':'app_private'});assert.equal(r.status,406);assert.equal(r.data.code,'PGRST106');});
 if(officer&&admin&&partner)await check('Split finance and partner review permissions',async()=>{await denied(officer,'approve_funds',{office:'president',id:crypto.randomUUID()});await denied(admin,'verify_financial_request',{id:crypto.randomUUID()});await denied(partner,'review_delegate',{event_id:crypto.randomUUID(),id:crypto.randomUUID(),status:'eligible'});});
 if(member&&officer)await check('Report access permitted for officer and denied for member',async()=>{const body={p_from:'2026-10-01',p_to:'2026-10-31'};const r=await good('/rest/v1/rpc/club_report',body,officer.token);assert.ok(r.finance&&r.equipment);const blocked=await api('/rest/v1/rpc/club_report',body,member.token);assert.equal(blocked.ok,false);});
 for(const fn of ['create-account','verify-training-video'])await check(`${fn}: unauthenticated execution denied`,async()=>{const r=await api('/functions/v1/'+fn,{});assert.ok([400,401,403].includes(r.status));});
 if(member)await check('Member cannot provision accounts',async()=>{const r=await api('/functions/v1/create-account',{},member.token);assert.equal(r.status,403);});
 if(process.argv.includes('--write-demo')&&member&&officer){
+ await check('M8 announcement edit, stale conflict and member notification',async()=>{
+  const a=await command(officer,'publish_announcement',{title:label+' announcement',message:'Synthetic QA announcement only; no club activity is scheduled.'});
+  artifacts.push({table:'announcements',id:a.id});
+  const notice=(await workspace(member)).notifications.find(n=>n.record_id===a.id);assert.ok(notice);
+  await command(member,'acknowledge_notification',{id:notice.id});
+  await denied(member,'update_announcement',{id:a.id,version:1,title:'Spoof',message:'Denied'});
+  await command(officer,'update_announcement',{id:a.id,version:1,title:label+' announcement',message:'Synthetic QA correction only.'});
+  const stale=await api('/rest/v1/rpc/club_command',{p_action:'update_announcement',p_data:{id:a.id,version:1,title:'Stale',message:'Must not overwrite'}},officer.token);
+  assert.equal(stale.status,409);assert.equal(stale.data.code,'PT409');
+  const w=await workspace(member);assert.equal(w.announcements.find(r=>r.id===a.id)?.message,'Synthetic QA correction only.');
+  assert.equal(w.notifications.find(n=>n.id===notice.id)?.acknowledged_at,null);
+ });
  await check('M5/M10 borrowing lifecycle, double booking, persistence',async()=>{
   const eq=await command(officer,'save_equipment',{label:label+' Bow',category:'Bow',specifications:'Synthetic QA fixture only',handedness:'right',draw_weight:24,bow_setup:'recurve',condition:'serviceable'});artifacts.push({table:'equipment',id:eq.id});
   const data={equipment_id:eq.id,starts_at:future(48),ends_at:future(50),handedness:'right',maximum_draw_weight:28,bow_setup:'recurve',purpose:label+' synthetic borrowing'};
@@ -86,7 +107,7 @@ if(process.argv.includes('--write-demo')&&member&&officer){
   await denied(member,'submit_financial_request',{id:f.id,version:1});
   assert.equal((await workspace(member)).financial_records.find(x=>x.id===f.id)?.status,'draft');
  });
- await check('M9 pending migration: draft election editing',async()=>{
+ await check('M9 draft election editing',async()=>{
   const data={title:label+' draft election',kind:'special',term_end:'2027-01-01',announces_at:future(24),candidacy_closes:future(48),voting_opens:future(72),voting_closes:future(96),result_due:future(120),threshold:60,residency_terms:2,rules:'Synthetic QA only; awaiting club validation',rules_validated:false,method:'digital',positions:['President']};
   const e=await command(officer,'create_election',data);artifacts.push({table:'elections',id:e.id});
   await command(officer,'update_election',{...data,id:e.id,version:1,title:label+' edited draft election'});
@@ -94,7 +115,7 @@ if(process.argv.includes('--write-demo')&&member&&officer){
  });
 }
 if(process.argv.includes('--continue-demo')&&member&&officer&&admin&&partner){
- const previous=JSON.parse(await readFile(new URL(process.argv.includes('--resume')?'../docs/verification/hosted-workflows-followup.json':'../docs/verification/hosted-workflows-latest.json',import.meta.url),'utf8'));
+ const previous=JSON.parse(await readFile(join(outputDir,process.argv.includes('--resume')?'hosted-workflows-followup.json':'hosted-workflows-latest.json'),'utf8'));
  artifacts.push(...previous.artifacts);
  const fixture=table=>{const a=artifacts.find(x=>x.table===table);assert.ok(a,`Missing ${table} fixture`);return a.id;};
  const report=()=>good('/rest/v1/rpc/club_report',{p_from:'2026-10-01',p_to:'2026-10-31'},officer.token);
@@ -164,8 +185,8 @@ if(process.argv.includes('--continue-demo')&&member&&officer&&admin&&partner){
 }
 for(const [role,u] of Object.entries(users))await check(`${role}: fresh login retains access; sign out test session`,async()=>{const s=await good('/auth/v1/token?grant_type=password',accounts[role]);assert.equal((await workspace({token:s.access_token})).user_id,u.id);await good('/auth/v1/logout?scope=local',{},s.access_token);await good('/auth/v1/logout?scope=local',{},u.token);});
 const report={timestamp:new Date().toISOString(),project:'cidxuzrzgexkejssoglk',scope:'Hosted API checks; not Android UI or full module acceptance',label,results,artifacts};
-const dir=new URL('../docs/verification/',import.meta.url);await mkdir(dir,{recursive:true});
-await writeFile(new URL(`hosted-${report.timestamp.replace(/[:.]/g,'-')}.json`,dir),JSON.stringify(report,null,2)+'\n');
-await writeFile(new URL(process.argv.includes('--continue-demo')?'hosted-workflows-followup.json':'hosted-workflows-latest.json',dir),JSON.stringify(report,null,2)+'\n');
-console.log(`${results.filter(r=>r.status==='PASS').length}/${results.length} checks passed. Synthetic artifacts: ${artifacts.length}.`);
+const dir=outputDir;await mkdir(dir,{recursive:true});
+await writeFile(join(dir,`hosted-${report.timestamp.replace(/[:.]/g,'-')}.json`),JSON.stringify(report,null,2)+'\n');
+await writeFile(join(dir,process.argv.includes('--continue-demo')?'hosted-workflows-followup.json':'hosted-workflows-latest.json'),JSON.stringify(report,null,2)+'\n');
+console.log(`${results.filter(r=>r.status==='PASS').length} passed; ${results.filter(r=>r.status==='FAIL').length} failed; ${results.filter(r=>r.status==='PENDING').length} explicitly pending. Synthetic artifacts: ${artifacts.length}.`);
 process.exitCode=results.some(r=>r.status==='FAIL')?1:0;

@@ -16,6 +16,7 @@ secrets.properties
 .DS_Store
 node_modules/
 supabase/.temp/
+**/supabase/.temp/
 backend.properties
 portal/config.js
 deployment.local.json

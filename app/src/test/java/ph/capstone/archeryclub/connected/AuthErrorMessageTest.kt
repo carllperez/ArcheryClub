@@ -16,4 +16,9 @@ class AuthErrorMessageTest {
     @Test fun unverifiedEmailHasAnActionableExplanation() {
         assertEquals("Verify your email before signing in.", authErrorMessage("email_not_confirmed"))
     }
+    @Test fun workflowConflictsGiveSafeRecoveryGuidance() {
+        assertEquals("This record changed. Refresh before trying again.",workflowErrorMessage("PT409","headers and internals"))
+        assertEquals("Missing requirement: Proof",workflowErrorMessage("P0001","Missing requirement: Proof"))
+        for(code in listOf("23514","23505","42501",null))assertFalse(workflowErrorMessage(code,"private table details").contains("private"))
+    }
 }

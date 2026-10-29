@@ -6,6 +6,87 @@ All pages were reviewed, including the framework diagram, Gantt chart, survey ch
 and interviews. References below use **PDF page / printed page**; printed page = PDF page - 6.
 The original document is read-only and is not copied into the source repository.
 
+## Current verification — 29 October 2026
+
+### Subsequent Pixel 7 device checks
+
+With explicit owner authorization, ADB/UI Automator tested the latest installed debug APK
+on the existing Pixel 7 AVD against the hosted backend. Passed: all five logins and exact
+role-specific module navigation; member authenticated restart; persistent sign-out;
+wrong-password rejection; unsaved-change warning/keep/discard; profile save and persistence
+after restart; restoration of the original Test Member name; M14 screen rendering.
+Evidence and screenshots: ignored `build/verification/device/`.
+
+The broader screen walkthrough remains unfinished: after officer sign-in, the app returned
+to **Loading your club** during the next navigation test. Investigate connection/refresh
+behavior before treating all module screens as device-verified. Android Studio itself froze
+repeatedly; the emulator also reported snapshot disk-space failure. Tests used the same
+AVD without snapshots, via the explicitly approved Android testing tools. No full workflow,
+camera/QR, physical-device or stakeholder acceptance is claimed.
+
+
+This section supersedes dated deployment/status statements below. Those sections record
+historical evidence, not the current deployment state. **All 15 modules remain in scope.**
+Their connected workflows exist, but final module acceptance is not claimed until device,
+browser and human criteria are demonstrated. Implementation and verification remain separate.
+
+- Existing hosted project: `cidxuzrzgexkejssoglk`; migrations 001–015 are installed.
+  Migration 014 adds protected announcement edits and renewed notices. Migration 015 uses
+  HTTP 409 for stale versions, preventing PostgREST serialization retries on expected conflicts.
+- Unused local preview and separate officer-prototype code/tests were removed. The integrated
+  M5/M7/M9/M10/M12/M13 layouts remain in the connected app. Parent `sources/` was not changed.
+- Android: 20 current unit tests pass; debug and optimized unsigned release APKs build;
+  debug/release lint pass with no errors. Remaining lint warnings concern dependency updates
+  and Kotlin extension style. The release guard also rejected an emulator-local backend
+  in a deliberate negative check. Final release signing is not configured.
+- Backend/portal/server: 33 automated tests pass. Coverage includes ownership and role denials,
+  workflow transitions, stale writes, atomic CSV, election privacy, document permissions,
+  session refresh/failure behavior and the server-side email-invitation switch.
+- Hosted announcement and election checks each passed 18 checks; all five accounts passed
+  sign-in/refresh/fresh-login/permission checks. These reports are in ignored
+  `build/verification/announcement-final/` and `build/verification/hosted-workflows-followup.json`.
+- Final post-update hosted check: **19 passed, 0 failed**, with email acceptance explicitly
+  pending. All five accounts still sign in; public signup is disabled; even administrators
+  receive a server refusal for invitations. Evidence: ignored
+  `build/verification/private-development-final/hosted-workflows-latest.json`.
+- Android sign-out targets only the current session and clears local credentials even on
+  network failure. Forms preserve values across rotation and confirm discarding changes.
+  Private-file buttons follow editable-state/ownership rules. Failed attachment registration
+  attempts cleanup only under the server's orphan-file deletion policy.
+- Email and public hosting remain deferred by the owner. Public signup is now closed on the
+  hosted development project while existing accounts retain sign-in. Invitation emails have
+  a server-side `ARCHERY_EMAIL_ENABLED` switch, default false. Client email flags remain false.
+  Future email/recovery acceptance requires approved SMTP/Auth/redirect configuration.
+- Android Studio inspection timed out during this pass; no new device verification is claimed.
+  Real camera MP4 upload, QR scanning, all-role device/browser workflows, physical-phone checks,
+  validated club rules and human UAT/SUS remain required. Test role terms expire 1 November
+  2026 at 00:00 Asia/Manila; extensions/successors require an approved M14 assignment.
+
+The exact names, page references, roles, workflow requirements and acceptance IDs are retained
+in the catalogue below. The current module status is:
+
+| Module | Implemented connected scope | Verification available | Outstanding acceptance |
+|---|---|---|---|
+| M1: Member Profile and Status | Own profile, standing and renewal with same identity | Local renewal/ownership tests; hosted profile/session persistence | Device profile edit/restart and full hosted renewal chain |
+| M2: Applicant Submission and Screening Status | Draft, documents, submit/correct and officer-sourced status in app/portal | Local correction/approval/document-lock tests; hosted applicant access | Browser/device submission, private-file walkthrough and notices |
+| M3: Activity Information and Registration | Published events/calendar, registration and reminders | Local constraints; hosted registration/duplicate/attendance checks | Device QR links and calendar/reminder walkthrough |
+| M4: Personal Participation and Training Records | Attendance, personal/validated training, comparisons and correction requests | Local privacy/correction tests; hosted validation and score bounds | Device trend, CSV and correction walkthrough |
+| M5: Member Operations and Equipment Borrowing | Borrowing/history and reimbursement forms | Local constraints; hosted borrowing lifecycle/double booking/persistence | Member device walkthrough and receipt/correction usability |
+| M6: Member Dashboard and Personal Monitoring | Source-derived cards, tasks, notifications and links | Local notice/task lifecycle and ownership tests | Full dashboard reconciliation and restart checks |
+| M7: Membership and Applicant Processing | Officer queues, decisions, corrections, same-account conversion and renewals | Local end-to-end identity/approval/turnover tests | Hosted full conversion/renewal, portal entry QR and officer-device acceptance |
+| M8: Announcement, Event, Registration, and Attendance Management | Announcement updates, events, registrations, QR/manual attendance and corrections | Local workflow tests; hosted updates, reopened notices and stale-write denial | Device QR/corrections, concurrent roster refresh and reports |
+| M9: Election Management | Rules/terms, candidacy, eligibility, ballot, tally, leadership and archives | Local nomination/residency/anonymous ballot/external result/archive tests; hosted edit/stale/invalid-publish checks | Validated club rules, full hosted ballot/turnout and all-role device acceptance |
+| M10: Equipment Inventory and Allocation Support | Inventory, availability, compatibility, explicit allocation/release/return and QR | Local incompatibility/overlap tests; hosted lifecycle and double-booking denial | Physical scan, calendar usability and equipment officer UAT |
+| M11: Training Performance Monitoring and Feedback | Scorecards, CSV, validation, feedback, correction and short video | Local CSV/video parser tests; hosted validation and bounds | Real camera MP4 through deployed verifier, device capture/review and CSV usability |
+| M12: Financial Record Verification and Tracking | Proof/receipts, corrections, separate approvals, fees and ledger | Local separate-duty/ledger tests; hosted required-receipt/persistence evidence | Full hosted two-office receipt/ledger reconciliation and device walkthrough |
+| M13: Reports, Dashboard Analytics, and Goal Monitoring | Permission-filtered reports/exports, calculated goals and source links | Local metric/denominator tests; hosted report permission checks | All-domain reconciliation and chart/export/source usability |
+| M14: Cross-Layer System Administration and Role-Based Access Control | Real Auth, granular time-bound roles, account controls, audit and turnover | Five hosted accounts/refresh/role checks; local spoof/turnover/last-admin tests | Latest Android sign-out/restart, expired/disabled hosted cases; email remains deferred |
+| M15: Shared Interclub Event Coordination | Event-scoped partner portal, delegation, review, scheduling, substitution, results and archive | Local two-partner isolation/full lifecycle tests; hosted event-scope restrictions | Full hosted partner/coordinator browser-device scenario and archive-document review |
+
+All rows: **Implementation — In progress; verification — partial local automated and hosted
+integration evidence as listed; stakeholder acceptance — pending.** Builds do not substitute
+for the proposal's acceptance criteria. No public app release or portal publication was made.
+
 ## Authority and discrepancies
 
 - Section 1.4 is the canonical module catalogue. All fifteen modules are in scope.

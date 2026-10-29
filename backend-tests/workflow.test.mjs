@@ -20,6 +20,13 @@ async function command(name,action,data={}){return as(name,async()=> (await db.q
 for(const name of Object.keys(ids)) await as(name,()=>db.exec('select public.initialize_account()'));
 await db.query("insert into app_private.role_assignments(user_id,role_id,position,ends_at,reason) values($1,'administrator','Administrator',now()+interval '1 year','Test bootstrap'),($2,'membership_officer','Membership officer',now()+interval '1 year','Fixture')",[ids.admin,ids.officer]);
 const denied=async(fn,pattern=/permission|denied|locked|changed|required|invalid|cannot|verify|not found|keep|verified/i)=>assert.rejects(fn,pattern);
+test('Version conflicts return a non-retryable HTTP conflict instead of serialization failure',async()=>{
+ for(const version of [undefined,1,3])await assert.rejects(
+  ()=>db.query('select app_private.check_version($1,$2::jsonb)',[2,JSON.stringify({version})]),
+  error=>error.code==='PT409'&&error.message.includes('Refresh')
+ );
+ await db.query('select app_private.check_version($1,$2::jsonb)',[2,JSON.stringify({version:2})]);
+});
 test('M14 anonymous access and metadata cannot grant authority',async()=>{
  await denied(()=>command(null,'save_profile',{full_name:'Intruder'}));
  await denied(()=>command('applicant','assign_role',{user_id:ids.applicant,role_id:'administrator',position:'Admin',ends_at:'2030-01-01',reason:'spoof'}));
@@ -72,6 +79,26 @@ async function upload(person,module,record,requirement='Proof',mime='application
  await rpc(person,'register_document',[{module,record_id:record,requirement,name:'Proof',path}],'$1::jsonb');return path;
 }
 let eventId;
+test('M8 announcement edits notify members, reject stale writes and protect unpublished events',async()=>{
+ await grant('officer','activity_officer');
+ const a=await command('officer','publish_announcement',{title:'Training notice',message:'Original venue'});
+ await denied(()=>command('applicant','update_announcement',{id:a.id,version:1,title:'Spoof',message:'Spoof'}));
+ await db.query("update app_private.notifications set acknowledged_at=now() where record_id=$1",[a.id]);
+ await command('officer','update_announcement',{id:a.id,version:1,title:'Training notice',message:'Corrected venue'});
+ await denied(()=>command('officer','update_announcement',{id:a.id,version:1,title:'Stale',message:'Overwrite'}));
+ assert.equal((await row('announcements',a.id)).version,2);
+ await as('applicant',async()=>{
+  assert.equal((await db.query('select message from app_private.announcements where id=$1',[a.id])).rows[0].message,'Corrected venue');
+  const n=(await db.query('select * from app_private.notifications where record_id=$1',[a.id])).rows;
+  assert.equal(n.length,1);assert.equal(n[0].acknowledged_at,null);
+ });
+ const e=await command('officer','save_event',{title:'Draft event',description:'Private draft',venue:'Range',starts_at:future(24),ends_at:future(25),registration_opens:future(-2),registration_closes:future(12),capacity:2});
+ await denied(()=>command('officer','publish_announcement',{event_id:e.id,title:'Leaked draft',message:'Private'}),/published/);
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','update_announcement',{id:a.id,version:2,title:'Training notice',message:'Published venue',event_id:e.id});
+ await denied(()=>command('officer','update_announcement',{id:a.id,version:3,title:'',message:'Invalid'}),/valid/);
+ assert.equal((await row('announcements',a.id)).version,3);
+});
 test('M3/M8 published registration, capacity, QR, manual correction and ownership',async()=>{
  await grant('officer','activity_officer');
  const event={title:'Practice',description:'Club practice',venue:'Range',starts_at:future(24),ends_at:future(26),registration_opens:future(-24),registration_closes:future(12),capacity:1};

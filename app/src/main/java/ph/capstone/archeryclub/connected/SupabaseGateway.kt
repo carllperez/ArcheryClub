@@ -8,6 +8,10 @@ import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.OtpType
+import io.github.jan.supabase.auth.SignOutScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.Storage
@@ -52,7 +56,10 @@ class SupabaseGateway {
     }
     suspend fun recover(email: String) = client.auth.resetPasswordForEmail(email.trim())
     suspend fun changePassword(password: String) = client.auth.updateUser { this.password=password }
-    suspend fun signOut() = client.auth.signOut()
+    suspend fun signOut() {
+        try { withTimeoutOrNull(8000) { client.auth.signOut(SignOutScope.LOCAL) } }
+        finally { withContext(NonCancellable) { client.auth.clearSession() } }
+    }
     suspend fun initialize() { client.postgrest.rpc("initialize_account") }
     suspend fun workspace(): JsonObject = Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })
@@ -80,10 +87,17 @@ class SupabaseGateway {
         val extension=mapOf("application/pdf" to "pdf","image/jpeg" to "jpg","image/png" to "png","text/csv" to "csv","video/mp4" to "mp4").getValue(mime)
         val path="$user/$module/$recordId/${UUID.randomUUID()}.$extension"
         client.storage.from("club-documents").upload(path,bytes) { upsert=false;contentType=ContentType.parse(mime) }
-        if(mime=="video/mp4") verifyVideo(path)
-        rpc("register_document",buildJsonObject { put("p_data",buildJsonObject {
-            put("module",module);put("record_id",recordId);put("requirement",requirement);put("name",name);put("path",path)
-        }) })
+        try {
+            if(mime=="video/mp4") verifyVideo(path)
+            rpc("register_document",buildJsonObject { put("p_data",buildJsonObject {
+                put("module",module);put("record_id",recordId);put("requirement",requirement);put("name",name);put("path",path)
+            }) })
+        } catch(e:Exception) {
+            // The delete policy permits only unattached, caller-owned objects. If registration
+            // committed but its response was lost, cleanup cannot delete the attached file.
+            withContext(NonCancellable) { withTimeoutOrNull(5000) { runCatching { client.storage.from("club-documents").delete(path) } } }
+            throw e
+        }
     }
     private fun verifyVideo(path:String) {
         val connection=URL(BuildConfig.SUPABASE_URL.trimEnd('/')+"/functions/v1/verify-training-video").openConnection() as HttpURLConnection

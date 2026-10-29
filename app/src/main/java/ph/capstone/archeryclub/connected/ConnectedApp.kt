@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +31,7 @@ import ph.capstone.archeryclub.ui.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import ph.capstone.archeryclub.BuildConfig
 
 @Composable
 fun ConnectedEntry(activity:ComponentActivity) {
@@ -50,8 +52,14 @@ fun ConnectedApp(vm:SystemViewModel){
     val catalog=remember{Json.parseToJsonElement(context.assets.open("modules.json").bufferedReader().use{it.readText()}).jsonObject}
     val modules=catalog.records("modules");val forms=catalog.getValue("forms").jsonObject
     var module by rememberSaveable{mutableIntStateOf(0)}
-    var selected by remember{mutableStateOf<Pair<String,JsonObject>?>(null)}
-    var editing by remember{mutableStateOf<Pair<JsonObject,JsonObject>?>(null)}
+    var selected by rememberSaveable(stateSaver=Saver<Pair<String,JsonObject>?,String>(
+        save={it?.let{pair->JsonArray(listOf(JsonPrimitive(pair.first),pair.second)).toString()}.orEmpty()},
+        restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonPrimitive.content to a[1].jsonObject}}}
+    )){mutableStateOf<Pair<String,JsonObject>?>(null)}
+    var editing by rememberSaveable(stateSaver=Saver<Pair<JsonObject,JsonObject>?,String>(
+        save={it?.let{pair->JsonArray(listOf(pair.first,pair.second)).toString()}.orEmpty()},
+        restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonObject to a[1].jsonObject}}}
+    )){mutableStateOf<Pair<JsonObject,JsonObject>?>(null)}
     val snackbar=remember{SnackbarHostState()}
     LaunchedEffect(state.error,state.message,state.signedIn){
         if(state.signedIn)(state.error?:state.message)?.let{snackbar.showSnackbar(it);vm.clearMessage()}
@@ -117,6 +125,8 @@ fun ConnectedApp(vm:SystemViewModel){
     if(module==0){ScreenShell("Your club",snackbar=snackbar){
         val settings=workspace.records("settings").firstOrNull()
         Text(settings?.text("club_name")?:"Archery Club",style=MaterialTheme.typography.titleLarge)
+        Text("Signed in as ${workspace.records("profiles").find{it.text("id")==user}?.text("full_name")?.takeIf{it.isNotBlank()}?:"Club account"}",style=MaterialTheme.typography.bodyMedium)
+        if(BuildConfig.DEBUG)Text(if(BuildConfig.LOCAL_BACKEND)"Local test connection" else "Online development connection",style=MaterialTheme.typography.labelSmall)
         if(settings?.text("rules_validated")!="true")InfoCard("Configuration awaiting club validation","Club-specific requirements and rules must be reviewed before operational use.")
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh")}
@@ -147,7 +157,7 @@ fun ConnectedApp(vm:SystemViewModel){
     if(!visible(module)){LaunchedEffect(module){module=0;selected=null;editing=null};return}
     val current=modules.first{it.text("number").toInt()==module}
     val actionIds=current["actions"]!!.jsonArray.map{it.jsonPrimitive.content}
-    val available=actionIds.mapNotNull{forms[it] as? JsonObject}.filter{allowed(it.text("permission"))}
+    val available=actionIds.mapNotNull{forms[it] as? JsonObject}.filter{allowed(it.text("permission"))&&(BuildConfig.EMAIL_ENABLED||it.text("action")!="invite_account")}
     val item=selected
     if(item!=null){
         val(table,original)=item
@@ -194,10 +204,15 @@ fun ConnectedApp(vm:SystemViewModel){
         if(module==4||module==11)TrainingHistory(workspace.records("training_records").filter{module==11||it.text("user_id")==user},vm)
         val createActions=setOf("save_profile","request_renewal","save_application","check_in","save_event","publish_announcement","record_attendance","save_term","record_residency","create_election","record_leadership","save_equipment","request_borrowing","save_personal_training","save_training","save_financial_request","assess_fee","save_goal","configure_club","define_role","save_partner","share_interclub_event","save_delegate","raise_concern")
         available.filter{it.text("action") in createActions && it.text("action")!="request_renewal" || it.text("action") in setOf("save_renewal","invite_account")}.forEach{form->
+            val application=workspace.records("applications").find{it.text("user_id")==user}
+            val renewal=workspace.records("renewals").find{it.text("user_id")==user&&it.text("status") in setOf("draft","returned_for_correction","pending")}
+            if(form.text("action")=="save_application"&&(workspace.records("memberships").any{it.text("user_id")==user}||(application!=null&&application.text("status") !in setOf("draft","incomplete","returned_for_correction"))))return@forEach
+            if(form.text("action")=="save_renewal"&&renewal?.text("status")=="pending")return@forEach
             OutlinedButton(onClick={
                 val initial=when(form.text("action")){
                     "save_profile"->workspace.records("profiles").find{it.text("id")==user}
                     "save_application"->workspace.records("applications").find{it.text("user_id")==user}
+                    "save_renewal"->renewal
                     "configure_club"->workspace.records("settings").firstOrNull()
                     else->null
                 }
@@ -239,11 +254,13 @@ fun ConnectedApp(vm:SystemViewModel){
         Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Sign in")}
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         state.message?.let{Text(it)}
+        if(BuildConfig.EMAIL_ENABLED){
         OutlinedButton(onClick={vm.auth("signup",email,password)},enabled=!state.busy){Text("Create account")}
         TextButton(onClick={vm.auth("recover",email,"")},enabled=!state.busy){Text("Forgot password")}
         OutlinedTextField(code,{code=it},label={Text("Email verification or recovery code")},singleLine=true,modifier=Modifier.fillMaxWidth())
         TextButton(onClick={vm.auth("verify",email,"",code)},enabled=!state.busy){Text("Verify email code")}
         TextButton(onClick={vm.auth("verify_invite",email,"",code)},enabled=!state.busy){Text("Accept officer invitation code")}
+        }else Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
@@ -277,9 +294,7 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
     workspace.records("documents").filter{it.text("record_id")==record}.forEach{d->TextButton(onClick={vm.openDocument(d.text("path")){context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(it)))}}){Text("Open ${d.text("name")}")}}
     val names=if(module in setOf(1,2))(workspace.records("settings").firstOrNull()?.get(if(module==1)"renewal_requirements" else "application_requirements") as? JsonArray).orEmpty().map{it.jsonPrimitive.content} else emptyList()
     names.forEach{name->Text("$name: ${if(workspace.records("documents").any{it.text("record_id")==record&&it.text("requirement")==name})"Uploaded" else "Required"}")}
-    val table=mapOf(1 to "renewals",2 to "applications",9 to "candidates",11 to "training_records",12 to "financial_records",15 to "delegates")[module].orEmpty()
-    val row=workspace.records(table).find{it.text("id")==record}
-    val canAttach=when(module){1,2,12->row?.text("user_id")==workspace.text("user_id")&&row.text("status") in setOf("draft","incomplete","returned_for_correction");else->true}
+    val canAttach=canAttachDocument(module,record,workspace)
     if(canAttach){
         if(names.isNotEmpty())SelectField("Requirement",requirement,names.map{it to it}){requirement=it}
         else OutlinedTextField(requirement,{requirement=it},label={Text("Requirement or document label")},modifier=Modifier.fillMaxWidth())
@@ -287,8 +302,7 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
     }
     if(module==11){
         Text("Training videos: MP4, no longer than 10 seconds. The server validates the duration.")
-        val coach=(workspace["permissions"] as? JsonArray).orEmpty().any{it.jsonPrimitive.content=="training"}
-        if(coach||(row?.text("user_id")==workspace.text("user_id")&&row.text("validation") in setOf("personal","returned_for_correction")))TrainingVideoCapture(record,vm,busy)
+        if(canAttach)TrainingVideoCapture(record,vm,busy)
     }
 }
 @Composable private fun MemberOverview(workspace:JsonObject,onNavigate:(Int)->Unit,onTask:(MemberTask)->Unit){

@@ -3,10 +3,15 @@ package ph.capstone.archeryclub.connected
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.ScreenShell
+import ph.capstone.archeryclub.ui.DiscardDialog
 import java.time.*
 
 /** Translates user input only. The server independently validates every command. */
@@ -33,15 +38,22 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                  onBack:()->Unit,onSubmit:(JsonObject)->Unit,snackbar:SnackbarHostState) {
     val correctionRecord=workspace.records("training_records").find{it.text("id")==initial.text("record_id")}
     val correctionFields=form.records("correction_fields").map{JsonObject(it+ ("name" to JsonPrimitive("corrected_"+it.text("name"))))}
-    val values=remember(form,initial){mutableStateMapOf<String,String>().apply {
+    val initialValues=remember(form,initial){mutableMapOf<String,String>().apply {
         (form.records("fields")+correctionFields).forEach { field ->
             val name=field.text("name")
             val value=if(name.startsWith("corrected_"))correctionRecord?.get(name.removePrefix("corrected_")) else initial[name]
             put(name,when(value){is JsonArray->value.joinToString("\n"){it.jsonPrimitive.content};is JsonPrimitive->value.contentOrNull.orEmpty();else->""})
         }
     }}
+    val values=rememberSaveable(form.text("action"),initial.toString(),saver=Saver<SnapshotStateMap<String,String>,HashMap<String,String>>(
+        save={HashMap(it)},restore={mutableStateMapOf<String,String>().apply{putAll(it)}}
+    )){mutableStateMapOf<String,String>().apply{putAll(initialValues)}}
     var error by remember{mutableStateOf<String?>(null)}
-    ScreenShell(form.text("label"),onBack,snackbar) {
+    var confirmDiscard by remember{mutableStateOf(false)}
+    val leave:()->Unit={if(!busy){if(values.toMap()!=initialValues)confirmDiscard=true else onBack()}}
+    BackHandler(onBack=leave)
+    if(confirmDiscard)DiscardDialog(onDismiss={confirmDiscard=false},onDiscard={confirmDiscard=false;onBack()})
+    ScreenShell(form.text("label"),leave,snackbar) {
         if(form.text("help").isNotEmpty())Text(form.text("help"))
         (form.records("fields")+if(values["status"]=="approved")correctionFields else emptyList()).forEach { field ->
             val name=field.text("name");val value=values[name].orEmpty()
@@ -98,7 +110,7 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                     listOf("id","version","user_id","event_id","election_id","record_id","delegate_id").forEach{key->initial[key]?.let{put(key,it)}}
                     form.records("fields").forEach {field->
                         val input=values[field.text("name")].orEmpty()
-                        if(field.text("type")=="choice"&&form.text("action") in setOf("review_borrowing","approve_funds"))
+                        if(field.text("type")=="choice"&&form.text("action") in setOf("review_borrowing","approve_funds","set_election_status","review_delegate","update_shared_event"))
                             require(input in workflowChoiceOptions(form,field,initial,workspace)){"Choose an allowed ${field.text("label").lowercase()}."}
                         put(field.text("name"),fieldValue(field,input))
                     }

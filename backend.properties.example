@@ -1,3 +1,5 @@
 # Copy to backend.properties (ignored). These are public client configuration, never privileged keys.
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME
+# Keep false while email signup, recovery and account invitations are deferred.
+ENABLE_EMAIL=false

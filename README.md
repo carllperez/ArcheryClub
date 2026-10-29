@@ -10,11 +10,10 @@ The user approved Kotlin/Compose + Supabase as the technology exception to React
 ## Start here
 
 - [Group setup and integration notes](docs/team-setup.md)
-- [October 16 contribution integration and officer demo](docs/group-contribution-integration.md)
+- [Group contribution integration history](docs/group-contribution-integration.md)
 - [Setup and deployment](docs/backend-setup.md)
 - [Hosted deployment evidence and remaining checks](docs/hosted-deployment.md)
 - [Exact module requirements and verification matrix](docs/requirements-matrix.md)
-- [Current checkpoint and remaining work](docs/progress-checkpoint.md)
 - [Mac presentation and later phone setup](docs/presentation-demo.md)
 
 Open this directory in Android Studio with its bundled JDK and Android SDK 37.
@@ -62,25 +61,46 @@ transitions are enforced by database functions and row-level permissions.
 | `backend-tests/` | Database workflow/security and video-parser tests |
 | `app/src/test/` | Connected input/CSV regression tests |
 | `app/src/main/java/ph/capstone/archeryclub/connected/ClubModuleScreens.kt` | Integrated borrowing, officer queues, inventory, election and report controls |
-| `app/src/debug/java/ph/capstone/archeryclub/prototype/` | Historical fictional prototype reference; not registered as an Activity |
-| `app/src/testDebug/` | Local-preview and officer-demo regression tests |
 
-The earlier preview domain and repository code is retained for reference; it is not used by
-the connected entry point. Everything under the parent project's `sources/` remains read-only.
+The unused local preview and separate officer prototype were removed on 28 October. Their
+integrated connected features remain in the normal app; historical source is available in Git.
+Everything under the parent project's `sources/` remains read-only.
 
-## Verification and limits
+## Verification and limits — 28 October 2026
 
-The connected Android build and automated checks have passed during development. Local
-database tests cover key successful and denied workflows across the proposal modules.
-Consult the matrix for test coverage and unresolved criteria.
+The existing hosted development project has **15 versioned migrations** and both server
+functions. Five approved test accounts passed online sign-in, refresh, fresh-session
+persistence and role-boundary checks. Announcement updates and stale election edits passed
+hosted regression tests. Backend tests cover the fifteen modules' protected workflows;
+the matrix distinguishes these checks from device and stakeholder acceptance.
 
-**The hosted development backend was deployed on 9 October 2026.** All 12 migrations and
-both server functions are installed. The five owner-approved demo accounts passed hosted
-login, refresh, role-boundary and private-storage checks. Android Studio's normal app/Run
-configuration connects to this online backend; the local fallback is a separate build.
-These accounts are explicitly provisioned test identities, not proof of email ownership or
-real club membership. Public signup still requires email confirmation; SMTP delivery,
-recovery, full device workflows, browser deployment, human UAT/SUS and all-module acceptance
-remain to be verified. Club-specific configuration remains awaiting club validation.
+The app uses the hosted backend by default. `-PlocalBackend=true` is an isolated debug-only
+option. Release builds reject local or placeholder backend configuration. Build both variants
+with `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease`.
+The debug APK is installable; the optimized release APK remains unsigned until the owner
+configures a release signing key. No public app release or portal hosting is authorized.
 
-This repository is a development implementation in progress, not a claim of production readiness.
+Email signup, recovery and invitations are **disabled in the clients** (`ENABLE_EMAIL=false`,
+portal `emailEnabled:false`) at the owner's request. Public signup is closed on the hosted development backend; existing users still sign in.
+The invitation function also requires server-side `ARCHERY_EMAIL_ENABLED=true` before any
+email can be sent (currently false). Hosted email confirmation is not currently enforced,
+so provisioned test identities are not proof of email ownership. SMTP and the hosted Auth/redirect settings must be reviewed together before
+public signup is enabled. Account passwords were not changed.
+
+Club rules remain awaiting validation. Full device/portal workflows, real camera MP4
+verification, physical-phone testing and proposal-required human UAT/SUS remain outstanding.
+Android Studio UI inspection timed out during the October 28 verification attempt; the latest
+build's device checks are not claimed. The current result is a tested development build,
+not final production or stakeholder acceptance.
+
+Repeatable checks (after installing the locked backend-test dependencies):
+
+```sh
+python3 tools/generate_catalog.py --check
+(cd backend-tests && node --test workflow.test.mjs video.test.mjs portal.test.mjs account.test.mjs)
+./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
+```
+
+Hosted checks use owner-approved private test-account input and write evidence under ignored
+`build/verification/`. Do not commit credentials or rerun initial database bootstrap on the
+shared project. Synthetic hosted records are explicitly labelled QA and are not club approvals.

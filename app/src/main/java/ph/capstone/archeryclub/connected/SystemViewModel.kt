@@ -7,9 +7,12 @@ import androidx.lifecycle.viewModelScope
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.exception.AuthRestException
+import io.github.jan.supabase.postgrest.exception.PostgrestRestException
+import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
+import ph.capstone.archeryclub.BuildConfig
 
 data class SystemState(val signedIn:Boolean=false,val busy:Boolean=false,val workspace:JsonObject?=null,val message:String?=null,val error:String?=null,val recovery:Boolean=false)
 class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
@@ -27,7 +30,10 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
                     }
                 }
                 is SessionStatus.NotAuthenticated -> { operation?.cancel();mutable.value=SystemState() }
-                is SessionStatus.RefreshFailure -> mutable.value=SystemState(error="Your session could not be refreshed. Please sign in again.")
+                is SessionStatus.RefreshFailure -> {
+                    operation?.cancel()
+                    mutable.value=SystemState(error="Your session could not be refreshed. Please sign in again.")
+                }
                 else -> Unit
             }
         }
@@ -35,6 +41,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     fun clearMessage(){mutable.value=mutable.value.copy(message=null,error=null)}
     fun error(message:String){mutable.value=mutable.value.copy(error=message)}
     fun auth(action:String,email:String,password:String,code:String="")=runAction {
+        require(BuildConfig.EMAIL_ENABLED || action !in setOf("signup","recover","verify","verify_invite")){"Email services are not enabled yet. Use an existing account."}
         when(action){
             "signin"->{gateway.signIn(email,password);gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace())}
             "signup"->{require(password.length>=8){"Use at least 8 characters for your password."};gateway.signUp(email,password);mutable.value=mutable.value.copy(message="Check your email to verify your account, then sign in.")}
@@ -51,14 +58,24 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         catch(e:Exception){mutable.value=mutable.value.copy(workspace=null);throw e}
     }
     fun command(action:String,data:JsonObject,onDone:()->Unit={})=runAction {
+        require(BuildConfig.EMAIL_ENABLED || action!="invite_account"){"Email invitations are not enabled yet."}
         if(action=="invite_account")gateway.inviteAccount(data) else gateway.command(action,data)
-        mutable.value=mutable.value.copy(workspace=gateway.workspace(),message="Saved to the club system.")
+        // Close a successfully saved form even if the following read fails. Retrying that
+        // form could otherwise create a duplicate payment, event or equipment request.
         withContext(Dispatchers.Main){onDone()}
+        refreshAfterSave("Saved to the club system.")
     }
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
     fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String,onDone:()->Unit={})=runAction {
-        gateway.upload(context,uri,module,record,requirement);mutable.value=mutable.value.copy(workspace=gateway.workspace(),message="Document uploaded.")
+        gateway.upload(context,uri,module,record,requirement)
         withContext(Dispatchers.Main){onDone()}
+        refreshAfterSave("Document uploaded.")
+    }
+    private suspend fun refreshAfterSave(message:String){
+        mutable.value=mutable.value.copy(message=message)
+        try{mutable.value=mutable.value.copy(workspace=gateway.workspace())}
+        catch(e:CancellationException){throw e}
+        catch(e:Exception){mutable.value=mutable.value.copy(error="$message Refresh to load the updated records; do not submit it again.")}
     }
     fun openDocument(path:String,onReady:(String)->Unit)=runAction {val url=gateway.signedUrl(path);withContext(Dispatchers.Main){onReady(url)}}
     private fun runAction(block:suspend ()->Unit){
@@ -66,9 +83,11 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         mutable.value=mutable.value.copy(busy=true,error=null,message=null)
         operation=viewModelScope.launch {
             try {withTimeout(45000){withContext(Dispatchers.IO){block()}}}
-            catch(e:TimeoutCancellationException){mutable.value=mutable.value.copy(error="The connection timed out. Check your connection and retry.")}
+            catch(e:TimeoutCancellationException){mutable.value=mutable.value.copy(error="The connection timed out. Refresh and check whether your change was saved before submitting again.")}
             catch(e:CancellationException){throw e}
             catch(e:AuthRestException){mutable.value=mutable.value.copy(error=authErrorMessage(e.error))}
+            catch(e:PostgrestRestException){mutable.value=mutable.value.copy(error=workflowErrorMessage(e.code,e.error))}
+            catch(e:RestException){mutable.value=mutable.value.copy(error=if(e.statusCode==401)"Your session expired. Sign in again." else "The request could not be completed. Refresh and try again.")}
             catch(e:Exception){
                 // Never expose request headers, access tokens or database internals in the UI/logs.
                 val raw=e.message.orEmpty()
@@ -77,6 +96,15 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
             } finally {mutable.value=mutable.value.copy(busy=false)}
         }
     }
+}
+internal fun workflowErrorMessage(code:String?,message:String):String=when(code){
+    "PT409"->"This record changed. Refresh before trying again."
+    "42501"->"Your account does not have permission for this action."
+    "23505"->"This record already exists. Refresh to view it."
+    "23503"->"A related record is missing or no longer available. Refresh and choose it again."
+    "23514","23502","22P02","22007","22008","22003"->"Check the required fields, amounts and dates before saving."
+    "P0001"->message.lineSequence().firstOrNull()?.take(240)?.takeUnless{it.contains("Bearer",true)||it.contains("apikey",true)}?:"Check your entries and try again."
+    else->"The request could not be completed. Refresh and try again."
 }
 internal fun authErrorMessage(code:String):String=when(code){
     "invalid_credentials"->"The email or password is incorrect. Please try again."

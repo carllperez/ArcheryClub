@@ -13,6 +13,20 @@ import kotlinx.serialization.json.*
 val integratedClubModules = setOf(5, 7, 9, 10, 12, 13)
 
 fun workflowChoiceOptions(form: JsonObject, field: JsonObject, initial: JsonObject, workspace: JsonObject): List<String> {
+    if(field.text("name")=="status") when(form.text("action")) {
+        "set_election_status" -> return when(initial.text("status")) {
+            "draft"->listOf("announced");"announced"->listOf("voting");"voting"->listOf("closed")
+            "confirmed","requires_revote"->listOf("archived");else->emptyList()
+        }
+        "review_delegate" -> return when(initial.text("status")) {
+            "pending","incomplete"->listOf("eligible","incomplete","rejected")
+            "eligible"->listOf("checked_in");else->emptyList()
+        }
+        "update_shared_event" -> return when(initial.text("status")) {
+            "preparation"->listOf("preparation","active");"active"->listOf("active","completed")
+            "completed"->listOf("completed");else->emptyList()
+        }
+    }
     if (form.text("action") == "review_borrowing" && field.text("name") == "status") return when (initial.text("status")) {
         "pending" -> listOf("approved", "rejected", "returned_for_correction")
         "approved" -> listOf("released", "rejected")
@@ -46,7 +60,24 @@ fun recordWorkflowActions(forms: List<JsonObject>, table: String, row: JsonObjec
             (action != "request_borrowing" || row.text("status") == "returned_for_correction") &&
             (action !in setOf("approve_funds", "verify_financial_request") || row.text("user_id") != user) &&
             (action != "approve_funds" || row.text("kind") != "payment") &&
-            (action != "review_borrowing" || row.text("status") in setOf("pending", "approved", "released"))
+            (action != "review_borrowing" || row.text("status") in setOf("pending", "approved", "released")) &&
+            (action != "save_application" || row.text("status") in setOf("draft","incomplete","returned_for_correction")) &&
+            (action !in setOf("review_application","review_renewal","update_membership") || row.text("user_id")!=user) &&
+            (action !in setOf("save_event","publish_event","archive_event","open_attendance","register_event") || row.text("archived")!="true") &&
+            (action !in setOf("register_event","open_attendance","archive_event") || row.text("published")=="true") &&
+            (action != "publish_event" || row.text("published")!="true") &&
+            (action !in setOf("save_personal_training","submit_training") || row.text("validation") in setOf("personal","returned_for_correction")) &&
+            (action != "validate_training" || row.text("validation")=="pending") &&
+            (action != "request_training_correction" || row.text("validation")=="validated") &&
+            (action != "record_external_results" || row.text("method") in setOf("paper","external")) &&
+            (action != "set_election_status" || row.text("status") in setOf("draft","announced","voting","confirmed","requires_revote")) &&
+            (action != "save_delegate" || row.text("status") in setOf("pending","incomplete")) &&
+            (action != "review_delegate" || row.text("status") in setOf("pending","incomplete","eligible")) &&
+            (action !in setOf("assign_delegate","substitute_delegate") || row.text("status") in setOf("eligible","checked_in")) &&
+            (action != "record_result" || row.text("status")=="checked_in") &&
+            (action != "verify_result" || row.text("verified_by").isBlank()) &&
+            (action != "update_shared_event" || row.text("status")!="archived") &&
+            (action != "retire_role" || row.text("retired_at").isBlank())
     }
 
 /** Adapts the group's cards, filter chips and review queues to the authenticated workspace. */

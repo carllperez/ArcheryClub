@@ -108,6 +108,7 @@
         "publish_event",
         "archive_event",
         "publish_announcement",
+        "update_announcement",
         "open_attendance",
         "record_attendance",
         "review_attendance_correction"
@@ -728,6 +729,41 @@
       "seed": {},
       "states": [],
       "help": ""
+    },
+    "update_announcement": {
+      "action": "update_announcement",
+      "label": "Edit announcement",
+      "fields": [
+        {
+          "name": "event_id",
+          "label": "Event id",
+          "type": "record",
+          "options": [],
+          "source": "events",
+          "optional": true
+        },
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "message",
+          "label": "Message",
+          "type": "long",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "activities",
+      "table": "announcements",
+      "seed": {},
+      "states": [],
+      "help": "Changes are saved with an audit history and reopen the member notification."
     },
     "open_attendance": {
       "action": "open_attendance",

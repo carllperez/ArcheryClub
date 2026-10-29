@@ -2,6 +2,7 @@
 Business rules and permissions are always enforced by PostgreSQL, never this catalogue.
 """
 import json
+import sys
 from pathlib import Path
 names=['Member Profile and Status','Applicant Submission and Screening Status','Activity Information and Registration','Personal Participation and Training Records','Member Operations and Equipment Borrowing','Member Dashboard and Personal Monitoring','Membership and Applicant Processing','Announcement, Event, Registration, and Attendance Management','Election Management','Equipment Inventory and Allocation Support','Training Performance Monitoring and Feedback','Financial Record Verification and Tracking','Reports, Dashboard Analytics, and Goal Monitoring','Cross-Layer System Administration and Role-Based Access Control','Shared Interclub Event Coordination']
 modules=[{'number':i+1,'name':n,'tables':[],'actions':[]} for i,n in enumerate(names)]
@@ -29,6 +30,7 @@ form('save_event','Create or update activity','title;description:long;venue;star
 form('publish_event','Publish activity','','activities','events')
 form('archive_event','Archive activity','','activities','events')
 form('publish_announcement','Publish announcement','event_id?:record:events;title;message:long','activities')
+form('update_announcement','Edit announcement','event_id?:record:events;title;message:long','activities','announcements',help='Changes are saved with an audit history and reopen the member notification.')
 form('open_attendance','Open QR attendance period','opens_at:timestamp;closes_at:timestamp','activities','events',{'event_id':'id'})
 form('record_attendance','Record manual attendance','event_id:record:events;user_id:record:member_directory;status:choice:present|absent|excused;remark:long','activities','attendance',help='Manual fallback and corrections require an explanation.')
 form('request_attendance_correction','Request attendance correction','request:long','member','attendance',{'record_id':'id'})
@@ -89,7 +91,7 @@ module(4,'attendance training_records corrections','save_personal_training submi
 module(5,'equipment borrowings financial_records','request_borrowing save_financial_request submit_financial_request')
 module(6,'notifications documents','')
 module(7,'applications memberships renewals','review_application review_renewal update_membership')
-module(8,'events announcements registrations attendance_windows attendance corrections','save_event publish_event archive_event publish_announcement open_attendance record_attendance review_attendance_correction')
+module(8,'events announcements registrations attendance_windows attendance corrections','save_event publish_event archive_event publish_announcement update_announcement open_attendance record_attendance review_attendance_correction')
 module(9,'elections candidates eligible_voters academic_terms member_terms leadership_records','create_election update_election save_term record_residency file_candidacy nominate_candidate confirm_candidate confirm_voter set_election_status record_external_results confirm_results record_leadership')
 module(10,'equipment borrowings equipment_history','save_equipment review_borrowing')
 module(11,'training_records corrections','save_training validate_training review_training_correction')
@@ -98,5 +100,10 @@ module(13,'goals','save_goal')
 module(14,'profiles roles role_assignments settings audit_log','configure_club define_role assign_role retire_role set_account_status invite_account')
 module(15,'interclub_events partner_clubs event_access delegates shared_participants interclub_assignments interclub_concerns interclub_results interclub_archives','save_partner share_interclub_event invite_partner revoke_event_access save_delegate review_delegate substitute_delegate assign_delegate raise_concern resolve_concern record_result verify_result update_shared_event archive_interclub')
 forms['review_training_correction']['correction_fields']=forms['save_training']['fields']
-Path('app/src/main/assets/modules.json').write_text(json.dumps({'modules':modules,'forms':forms},indent=2)+'\n')
-Path('portal/modules.json').write_text(json.dumps({'modules':modules,'forms':forms},indent=2)+'\n')
+root=Path(__file__).resolve().parents[1]
+content=json.dumps({'modules':modules,'forms':forms},indent=2)+'\n'
+for relative in ['app/src/main/assets/modules.json','portal/modules.json']:
+ path=root/relative
+ if '--check' in sys.argv:
+  if not path.exists() or path.read_text()!=content:raise SystemExit(f'{relative} is out of date. Run tools/generate_catalog.py.')
+ else:path.write_text(content)

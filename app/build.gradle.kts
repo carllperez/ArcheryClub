@@ -20,21 +20,20 @@ android {
         applicationId = "ph.capstone.archeryclub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", backendString("SUPABASE_URL"))
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", backendString("SUPABASE_PUBLISHABLE_KEY"))
         buildConfigField("boolean", "LOCAL_BACKEND", localBackend.toString())
+        buildConfigField("boolean", "EMAIL_ENABLED", backend.getProperty("ENABLE_EMAIL", "false").toBoolean().toString())
     }
     buildTypes {
         debug {
             applicationIdSuffix = if(localBackend) ".local" else ".dev"
             versionNameSuffix = if(localBackend) "-local-test" else "-dev"
-            buildConfigField("boolean", "LOCAL_PREVIEW", "true")
         }
         release {
-            buildConfigField("boolean", "LOCAL_PREVIEW", "false")
             optimization { enable = true }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -45,6 +44,17 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
 }
+
+val validateReleaseBackend = tasks.register("validateReleaseBackend") {
+    doLast {
+        check(!localBackend) { "Release builds cannot use an emulator-local backend." }
+        val url = backend.getProperty("SUPABASE_URL", "")
+        val key = backend.getProperty("SUPABASE_PUBLISHABLE_KEY", "")
+        check(Regex("https://[a-z0-9]{20}\\.supabase\\.co/?").matches(url)) { "Configure the approved Supabase project URL before building a release." }
+        check(key.startsWith("sb_publishable_") && !key.contains("REPLACE") && key.length > 30) { "Configure a publishable client key; privileged keys must never be bundled." }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(validateReleaseBackend) }
 
 dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.2.2"))

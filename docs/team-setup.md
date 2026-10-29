@@ -15,15 +15,17 @@ testing is optional and uses a separate database and `-PlocalBackend=true` build
 
 The October 10 integration preserves commits 123414d, a75f50a and a97bfb0, including their
 announcements UI, member screens, models, repository and regression tests. The active
-entry point remains the proposal-wide connected application. The earlier `backend/`
-and preview `ui/` implementation remains available for reuse, but is not the launched UI.
+entry point remains the proposal-wide connected application.
+
+The unused preview/backend code and separate fictional officer prototype were removed on
+28 October after their compatible features had been integrated into `connected/`. Git history
+retains the original contributions.
 
 The parallel SQL package was moved to `supabase/reference/member_backend_202610020001.sql`.
 It creates a different public-schema data model with its own signup behavior. It must
 not be applied alongside the deployed `app_private` schema or treated as migration 13.
-The first twelve files in `supabase/migrations/` are the current hosted deployment history.
-Migration `202610100013_workflow_completion.sql` is a tested, pending update; its draft-election
-editing and workflow safeguards are not live until the project owner deploys it. Configuration
+All fifteen migrations in `supabase/migrations/` are deployed, including workflow completion,
+announcement editing and non-retryable version conflicts. Configuration
 comes from `backend.properties`, not the historical `local.properties` backend example.
 The accidental self-referencing Git link `ArcheryClub-git` is excluded from the merged tree;
 the actual source and its Git history are retained.
@@ -34,3 +36,15 @@ See `requirements-matrix.md` and `hosted-deployment.md` for evidence and open ac
 criteria. A successful build or a module screen is not proof of a complete workflow.
 All fifteen proposal modules remain in scope and In progress. Coordinate shared test-data
 changes with the group; use separate fixtures for destructive or irreversible workflow tests.
+
+## Shared-account and release checks
+
+A Git clone does not include ignored `backend.properties`. Use the existing hosted project
+URL and its publishable key, then rebuild; do not choose the emulator-local build. The five
+demo identities exist online, not only on the owner's Mac. Obtain their exact passwords
+privately; do not guess or reset shared passwords. Sign-out now targets the current session.
+
+Email remains disabled and portal hosting is deferred. Test officer/President role assignments
+currently end on 1 November 2026 at 00:00 Asia/Manila. Approved successors or a new term must
+be assigned through M14 by the owner; do not remove expiry enforcement to keep a demo working.
+Use the current requirements matrix rather than older dated checkpoint documents for status.

@@ -51,22 +51,6 @@ fun InfoCard(title: String, text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun PreviewNotice() {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
-        Text("LOCAL PREVIEW · Sample accounts only. Changes stay on this device; no club receives them.",
-            Modifier.fillMaxWidth().padding(14.dp), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-fun StatusBadge(text: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.small) {
-        Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
 fun TargetMark() {
     val primary = MaterialTheme.colorScheme.primary
     val accent = MaterialTheme.colorScheme.secondary
@@ -88,9 +72,4 @@ fun DiscardDialog(onDismiss: () -> Unit, onDiscard: () -> Unit) {
         text = { Text("Go back to save your changes before leaving this screen.") },
         confirmButton = { TextButton(onClick = onDiscard) { Text("Discard changes") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Keep editing") } })
-}
-
-@Composable
-fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
 }

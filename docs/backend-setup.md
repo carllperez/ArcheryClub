@@ -5,7 +5,7 @@ with Supabase instead of the proposal's React/Prisma stack. The browser companio
 `portal/` supplies applicant and partner access from phones, tablets and computers.
 
 This is development work. Passing local tests does not establish hosted readiness or
-stakeholder acceptance. Consult `requirements-matrix.md` and `progress-checkpoint.md`.
+stakeholder acceptance. Consult the current section in `requirements-matrix.md`.
 
 ## Android
 
@@ -18,18 +18,17 @@ belongs in the app, browser, Git repository, or chat.
 
 Run `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`.
 The installable APK is `app/build/outputs/apk/debug/app-debug.apk`. Both build variants
-now open the connected system. The earlier sample repository remains in the source as
-reference and for its old tests, but it is not the app entry point.
+open the connected system. Unused sample/prototype implementations have been removed.
 
 ## Hosted development database
 
-**Current project deployed 9 October 2026:** all twelve versioned migrations and both Edge
+**Current as of 28 October 2026:** all fifteen versioned migrations and both Edge
 Functions are installed in `cidxuzrzgexkejssoglk`. The five owner-authorized demo accounts
 passed hosted login/refresh/permissions/storage checks. Do not run the fresh-project SQL bundle
 or initial bootstrap again on this project. Future schema changes use new migrations.
 The procedures below also describe setup of another fresh development environment.
 
-Run `node tools/check_hosted_backend.mjs` for non-mutating public endpoint checks and
+Run `node tools/check_hosted_backend.mjs --email-pending` for non-mutating public endpoint checks and
 `supabase db query --linked --file supabase/verify-development.sql` for owner-only structural
 evidence. `tools/setup_hosted_demo.mjs` is restricted to this exact project and the five approved
 October demo identities. It requires private credential input and a signed-in CLI; it refuses
@@ -57,6 +56,17 @@ the workspace query uses row-level security. Ordinary clients have no direct tab
 write access. The `club-documents` bucket is private with a 20 MB file limit.
 
 ## Authentication and first administrator
+
+**Current owner instruction:** do not enable email yet. Keep Android `ENABLE_EMAIL=false`
+and portal `emailEnabled:false`. Existing demo accounts are online and already provisioned.
+Do not repeat the first-administrator bootstrap. Public signup is closed on the hosted development backend. Invitations are also blocked
+server-side unless `ARCHERY_EMAIL_ENABLED=true`; leave this false until email is approved.
+Email confirmation itself is not currently enforced; existing test accounts are provisioned
+fixtures, not verified email ownership.
+The following email/initial-bootstrap procedure is for a future approved setup, not a command
+to change the current project. Review SMTP, public signup and redirect settings together
+before opening access to real users.
+
 
 Enable email signup and email confirmation. Configure an approved SMTP sender before
 group testing; the default development email service may restrict delivery.
