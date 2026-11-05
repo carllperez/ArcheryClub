@@ -52,6 +52,8 @@ fun ConnectedApp(vm:SystemViewModel){
     val catalog=remember{Json.parseToJsonElement(context.assets.open("modules.json").bufferedReader().use{it.readText()}).jsonObject}
     val modules=catalog.records("modules");val forms=catalog.getValue("forms").jsonObject
     var module by rememberSaveable{mutableIntStateOf(0)}
+    var landingPage by rememberSaveable{mutableStateOf("home")}
+    var returnToLanding by rememberSaveable{mutableStateOf(false)}
     var selected by rememberSaveable(stateSaver=Saver<Pair<String,JsonObject>?,String>(
         save={it?.let{pair->JsonArray(listOf(JsonPrimitive(pair.first),pair.second)).toString()}.orEmpty()},
         restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonPrimitive.content to a[1].jsonObject}}}
@@ -64,7 +66,7 @@ fun ConnectedApp(vm:SystemViewModel){
     LaunchedEffect(state.error,state.message,state.signedIn){
         if(state.signedIn)(state.error?:state.message)?.let{snackbar.showSnackbar(it);vm.clearMessage()}
     }
-    LaunchedEffect(state.signedIn){if(!state.signedIn){selected=null;editing=null;module=0}}
+    LaunchedEffect(state.signedIn){if(!state.signedIn){selected=null;editing=null;module=0;landingPage="home";returnToLanding=false}}
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
     if(!state.signedIn){AuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
@@ -77,6 +79,7 @@ fun ConnectedApp(vm:SystemViewModel){
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}
+    LaunchedEffect(isMember){if(!isMember&&landingPage=="activities")landingPage="home"}
     val access=workspace.records("event_access").filter{it.text("user_id")==user&&it.text("revoked_at").isBlank()}
     fun allowed(permission:String)=when(permission){
         "account"->true;"member"->isMember;"funds"->"finance" in permissions||"president" in permissions
@@ -98,6 +101,7 @@ fun ConnectedApp(vm:SystemViewModel){
         val destination=notice.text("module").toIntOrNull()?:return
         if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
         val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
+        returnToLanding=module==0
         module=destination
         selected=tables.firstNotNullOfOrNull { table -> workspace.records(table).find {
             it.text("id")==notice.text("record_id") || (table=="interclub_events"&&it.text("event_id")==notice.text("record_id"))
@@ -115,46 +119,29 @@ fun ConnectedApp(vm:SystemViewModel){
                 ?:vm.error("This is not an available club attendance, event, or equipment code.")
         }
     }
-    BackHandler(module!=0||selected!=null||editing!=null){if(editing!=null)editing=null else if(selected!=null)selected=null else module=0}
+    fun leaveRecord(){selected=null;if(returnToLanding){module=0;returnToLanding=false}}
+    BackHandler(module!=0||selected!=null||editing!=null||landingPage!="home"){
+        if(editing!=null)editing=null else if(selected!=null)leaveRecord() else if(module!=0)module=0 else landingPage="home"
+    }
     editing?.let{(form,initial)->
         WorkflowForm(form,initial,workspace,state.busy,onBack={editing=null},onSubmit={payload->
-            vm.command(form.text("action"),payload){editing=null;selected=null}
+            vm.command(form.text("action"),payload){editing=null;leaveRecord()}
         },snackbar=snackbar)
         return
     }
-    if(module==0){ScreenShell("Your club",snackbar=snackbar){
-        state.refreshError?.let { InfoCard("Refresh needed",it) }
-        val settings=workspace.records("settings").firstOrNull()
-        Text(settings?.text("club_name")?:"Archery Club",style=MaterialTheme.typography.titleLarge)
-        Text("Signed in as ${workspace.records("profiles").find{it.text("id")==user}?.text("full_name")?.takeIf{it.isNotBlank()}?:"Club account"}",style=MaterialTheme.typography.bodyMedium)
-        if(BuildConfig.DEBUG)Text(if(BuildConfig.LOCAL_BACKEND)"Local test connection" else "Online development connection",style=MaterialTheme.typography.labelSmall)
-        if(settings?.text("rules_validated")!="true")InfoCard("Configuration awaiting club validation","Club-specific requirements and rules must be reviewed before operational use.")
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh")}
-            TextButton(onClick={vm.auth("signout","","")},enabled=!state.busy){Text("Sign out")}
-        }
-        if(state.recovery)PasswordChange(vm,state.busy)
-        val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()}
-        if(notices.isNotEmpty()){
-            Text("Notices to review (${notices.size})",style=MaterialTheme.typography.titleMedium)
-            notices.sortedByDescending{it.text("notified_at")}.take(5).forEach { notice ->
-                Text(notice.text("message"))
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                    TextButton(onClick={openNotice(notice)}){Text("Open related records")}
-                    TextButton(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},enabled=!state.busy){Text("Acknowledge")}
-                }
-            }
-            Text("Acknowledging a notice does not complete its application, request or review.")
-        }
-        if(isMember||allowed("equipment"))OutlinedButton(onClick={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))}){Text("Scan club code")}
-        modules.filter{visible(it.text("number").toInt())}.forEach{m->
-            Card(Modifier.fillMaxWidth().clickable{module=m.text("number").toInt()}){Column(Modifier.padding(18.dp)){
-                Text("M${m.text("number")}",style=MaterialTheme.typography.labelMedium)
-                Text(m.text("name"),style=MaterialTheme.typography.titleMedium)
-            }}
-        }
-        if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-    };return}
+    if(module==0){
+        ClubLanding(page=landingPage,onPage={landingPage=it},workspace=workspace,
+            modules=modules.filter{visible(it.text("number").toInt())},state=state,snackbar=snackbar,
+            onModule={module=it;selected=null;returnToLanding=false},
+            onRecord={target,table,row->if(visible(target)){module=target;selected=table to row;returnToLanding=true}},
+            onAnnouncement={if(allowed("activities"))start("publish_announcement")},
+            onNotice=::openNotice,
+            onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
+            onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
+            onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
+            recovery={PasswordChange(vm,state.busy)})
+        return
+    }
     if(!visible(module)){LaunchedEffect(module){module=0;selected=null;editing=null};return}
     val current=modules.first{it.text("number").toInt()==module}
     val actionIds=current["actions"]!!.jsonArray.map{it.jsonPrimitive.content}
@@ -163,7 +150,7 @@ fun ConnectedApp(vm:SystemViewModel){
     if(item!=null){
         val(table,original)=item
         val row=workspace.records(table).find{it.text("id")==original.text("id")&&it.text("user_id")==original.text("user_id")&&it.text("event_id")==original.text("event_id")}?:original
-        ScreenShell(recordTitle(row,workspace),onBack={selected=null},snackbar=snackbar){
+        ScreenShell(recordTitle(row,workspace),onBack=::leaveRecord,snackbar=snackbar){
             RecordDetails(row,workspace)
             if(module in integratedClubModules) {
                 workspace.records("financial_approvals").filter{table=="financial_records"&&it.text("record_id")==row.text("id")}.forEach{
@@ -249,10 +236,11 @@ fun ConnectedApp(vm:SystemViewModel){
 @Composable private fun AuthScreen(state:SystemState,vm:SystemViewModel,snackbar:SnackbarHostState){
     var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}
     ScreenShell("Welcome to Archery Club",snackbar=snackbar){
-        TargetMark();Text("Sign in to access your applications, membership, or assigned club responsibilities.")
+        Text("Your club. One place.",style=MaterialTheme.typography.titleLarge)
+        Text("Sign in to manage your membership and stay connected to your club.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
-        Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Sign in")}
+        Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Sign in")}
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         state.message?.let{Text(it)}
         if(BuildConfig.EMAIL_ENABLED){

@@ -98,11 +98,11 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
             "Verified records" to workspace.records("financial_records").count { it.text("status") == "verified" })
         else -> emptyList()
     }
-    metrics.forEach { (title, value) ->
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Text(title, style = MaterialTheme.typography.labelLarge)
-                Text(value.toString(), style = MaterialTheme.typography.headlineSmall)
+    if(metrics.isNotEmpty())Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+        metrics.forEach { (title, value) ->
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text(value.toString(), style = MaterialTheme.typography.headlineMedium)
+                Text(title, style = MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -114,7 +114,7 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
         12 -> "Open a record to inspect receipts and approval history. President approval and finance verification follow your assigned permissions. No money is transferred."
         else -> "Generate reports from authorized club records. Goal progress is calculated by the server from operational data."
     })
-    Text("Counts reflect records available to your account.", style = MaterialTheme.typography.bodySmall)
+    Text("Counts reflect records available to your account.", style = MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -154,7 +154,7 @@ fun ClubModuleRecords(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(recordTitle(row, workspace), style = MaterialTheme.typography.titleMedium)
                 listOf("status", "condition", "category", "handedness", "draw_weight", "starts_at", "ends_at", "amount", "position", "metric", "target")
-                    .filter { row.text(it).isNotBlank() }.forEach { key -> Text("${human(key)}: ${human(row.text(key))}") }
+                    .filter { row.text(it).isNotBlank() }.take(3).forEach { key -> Text("${human(key)}: ${human(row.text(key))}") }
                 if (table == "borrowings") workspace.records("equipment").find { it.text("id") == row.text("equipment_id") }
                     ?.let { Text("Equipment: ${it.text("label")}") }
                 Button(onClick = { onOpen(table, row) }, enabled = !busy) {

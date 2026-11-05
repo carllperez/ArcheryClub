@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -18,23 +19,30 @@ fun ScreenShell(
     title: String,
     onBack: (() -> Unit)? = null,
     snackbar: SnackbarHostState? = null,
+    bottomBar: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("ARCHERY CLUB", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) },
+            TopAppBar(title = { Text("ArcheryClub", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+                colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.surface),
+                actions=actions,
                 navigationIcon = { onBack?.let { TextButton(onClick = it) { Text("Back") } } })
         },
+        bottomBar = bottomBar,
         snackbarHost = { snackbar?.let { SnackbarHost(it) } },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            key(title) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().imePadding()
                     .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.headlineLarge)
                 content()
+            }
             }
         }
     }
@@ -42,7 +50,7 @@ fun ScreenShell(
 
 @Composable
 fun InfoCard(title: String, text: String, modifier: Modifier = Modifier) {
-    Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(text, style = MaterialTheme.typography.bodyMedium)
