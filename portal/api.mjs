@@ -1,6 +1,6 @@
 /** Session transport shared by every portal operation, including private files. */
 export class PortalApi {
- constructor(config,{fetcher=fetch,storage=sessionStorage,clock=()=>Date.now(),onSession=()=>{}}={}){
+ constructor(config,{fetcher=(...args)=>globalThis.fetch(...args),storage=sessionStorage,clock=()=>Date.now(),onSession=()=>{}}={}){
   this.config=config;this.fetcher=fetcher;this.storage=storage;this.clock=clock;this.onSession=onSession;
   try{this.session=JSON.parse(storage.getItem('archery-session')||'null');}catch{this.session=null;storage.removeItem('archery-session');}
   this.onSession(this.session);

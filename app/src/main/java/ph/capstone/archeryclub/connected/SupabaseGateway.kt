@@ -60,8 +60,10 @@ class SupabaseGateway {
         try { withTimeoutOrNull(8000) { client.auth.signOut(SignOutScope.LOCAL) } }
         finally { withContext(NonCancellable) { client.auth.clearSession() } }
     }
-    suspend fun initialize() { client.postgrest.rpc("initialize_account") }
-    suspend fun workspace(): JsonObject = Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
+    suspend fun initialize() { authenticatedRead({client.auth.refreshCurrentSession()}) { client.postgrest.rpc("initialize_account") } }
+    suspend fun workspace(): JsonObject = authenticatedRead({client.auth.refreshCurrentSession()}) {
+        Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
+    }
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })
     suspend fun rpc(name:String,data:JsonObject):JsonElement = Json.parseToJsonElement(client.postgrest.rpc(name,data).data)
     suspend fun signedUrl(path:String):String = client.storage.from("club-documents").createSignedUrl(path,5.minutes)

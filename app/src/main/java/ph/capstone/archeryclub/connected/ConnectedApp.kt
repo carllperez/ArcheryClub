@@ -68,9 +68,9 @@ fun ConnectedApp(vm:SystemViewModel){
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
     if(!state.signedIn){AuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
-    if(workspace==null){ScreenShell("Loading your club",snackbar=snackbar){
+    if(workspace==null){ScreenShell(if(state.busy)"Loading your club" else "Unable to load your club",snackbar=snackbar){
         if(state.busy) CircularProgressIndicator()
-        Text("Your account must be verified and enabled to access club records.")
+        Text(state.refreshError?:"Check your connection and retry. If access has changed, sign in again or contact your club administrator.")
         Button(onClick=vm::refresh,enabled=!state.busy){Text("Retry connection")}
         TextButton(onClick={vm.auth("signout","","")}){Text("Sign out")}
     };return}
@@ -123,6 +123,7 @@ fun ConnectedApp(vm:SystemViewModel){
         return
     }
     if(module==0){ScreenShell("Your club",snackbar=snackbar){
+        state.refreshError?.let { InfoCard("Refresh needed",it) }
         val settings=workspace.records("settings").firstOrNull()
         Text(settings?.text("club_name")?:"Archery Club",style=MaterialTheme.typography.titleLarge)
         Text("Signed in as ${workspace.records("profiles").find{it.text("id")==user}?.text("full_name")?.takeIf{it.isNotBlank()}?:"Club account"}",style=MaterialTheme.typography.bodyMedium)

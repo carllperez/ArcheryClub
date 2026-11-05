@@ -6,6 +6,15 @@ const response=(status,data)=>({status,ok:status>=200&&status<300,json:async()=>
 const config={url:'https://example.supabase.co',key:'sb_publishable_test'};
 function storage(value){let saved=value;return {getItem:()=>saved,setItem:(_,v)=>saved=v,removeItem:()=>saved=null};}
 const expired=JSON.stringify({access_token:'old',refresh_token:'refresh',expires_at:1});
+test('Default browser transport keeps the Window receiver required by native fetch',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async function(){assert.equal(this,globalThis,'Native browser fetch must not receive PortalApi as its receiver');calls++;return response(400,{error_code:'invalid_credentials'});};
+ try{
+  const api=new PortalApi(config,{storage:storage(null)});
+  await assert.rejects(()=>api.request('/auth/v1/token?grant_type=password',{}),/email or password is incorrect/);
+  assert.equal(calls,1);
+ }finally{globalThis.fetch=original;}
+});
 test('Portal refreshes before mutations and shares a single refresh across concurrent requests',async()=>{
  const calls=[];
  const api=new PortalApi(config,{storage:storage(expired),clock:()=>100000,fetcher:async(url,options)=>{

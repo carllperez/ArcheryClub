@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.BuildConfig
 
-data class SystemState(val signedIn:Boolean=false,val busy:Boolean=false,val workspace:JsonObject?=null,val message:String?=null,val error:String?=null,val recovery:Boolean=false)
+data class SystemState(val signedIn:Boolean=false,val busy:Boolean=false,val workspace:JsonObject?=null,val message:String?=null,val error:String?=null,val recovery:Boolean=false,val refreshError:String?=null)
 class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     private val mutable=MutableStateFlow(SystemState(busy=true))
     val state=mutable.asStateFlow()
@@ -54,8 +54,17 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     }
     fun refresh()=runAction {
         if(mutable.value.workspace==null)gateway.initialize()
-        try{mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace())}
-        catch(e:Exception){mutable.value=mutable.value.copy(workspace=null);throw e}
+        try{mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),refreshError=null)}
+        catch(e:CancellationException){throw e}
+        catch(e:Exception){
+            // A failed background read must not replace the last usable screen with an
+            // indefinite loading page. Authority failures still discard protected data.
+            val denied=e is RestException && e.statusCode in setOf(401,403)
+            mutable.value=mutable.value.copy(workspace=if(denied)null else mutable.value.workspace,
+                refreshError=if(denied)"Access could not be verified. Sign in again or contact your club administrator."
+                else "Could not refresh. Showing the last loaded records; reconnect and refresh before making changes.")
+            throw e
+        }
     }
     fun command(action:String,data:JsonObject,onDone:()->Unit={})=runAction {
         require(BuildConfig.EMAIL_ENABLED || action!="invite_account"){"Email invitations are not enabled yet."}
@@ -73,7 +82,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     }
     private suspend fun refreshAfterSave(message:String){
         mutable.value=mutable.value.copy(message=message)
-        try{mutable.value=mutable.value.copy(workspace=gateway.workspace())}
+        try{mutable.value=mutable.value.copy(workspace=gateway.workspace(),refreshError=null)}
         catch(e:CancellationException){throw e}
         catch(e:Exception){mutable.value=mutable.value.copy(error="$message Refresh to load the updated records; do not submit it again.")}
     }
@@ -86,13 +95,17 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
             catch(e:TimeoutCancellationException){mutable.value=mutable.value.copy(error="The connection timed out. Refresh and check whether your change was saved before submitting again.")}
             catch(e:CancellationException){throw e}
             catch(e:AuthRestException){mutable.value=mutable.value.copy(error=authErrorMessage(e.error))}
-            catch(e:PostgrestRestException){mutable.value=mutable.value.copy(error=workflowErrorMessage(e.code,e.error))}
+            catch(e:PostgrestRestException){
+                if(e.statusCode==401){gateway.client.auth.clearSession();mutable.value=SystemState(error="Your session expired. Please sign in again.")}
+                else mutable.value=mutable.value.copy(error=workflowErrorMessage(e.code,e.error))
+            }
             catch(e:RestException){mutable.value=mutable.value.copy(error=if(e.statusCode==401)"Your session expired. Sign in again." else "The request could not be completed. Refresh and try again.")}
             catch(e:Exception){
                 // Never expose request headers, access tokens or database internals in the UI/logs.
                 val raw=e.message.orEmpty()
                 val message=raw.substringBefore("\n").take(240)
-                mutable.value=mutable.value.copy(error=if(raw.contains("Bearer",true)||raw.contains("apikey",true)) "Request failed. Check your connection and try again." else message.ifBlank{"Request failed. Please try again."})
+                val safe=(e is IllegalArgumentException || e is IllegalStateException) && !raw.contains("Bearer",true) && !raw.contains("apikey",true) && !raw.contains("https://",true)
+                mutable.value=mutable.value.copy(error=if(safe)message.ifBlank{"Request failed. Please try again."}else "Connection interrupted. Reconnect and check saved records before trying again.")
             } finally {mutable.value=mutable.value.copy(busy=false)}
         }
     }

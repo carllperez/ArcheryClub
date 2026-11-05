@@ -32,6 +32,17 @@ test('M14 anonymous access and metadata cannot grant authority',async()=>{
  await denied(()=>command('applicant','assign_role',{user_id:ids.applicant,role_id:'administrator',position:'Admin',ends_at:'2030-01-01',reason:'spoof'}));
  await as('applicant',()=>denied(()=>db.exec("update app_private.profiles set enabled=true")));
 });
+test('M14 settings update targets the singleton and preserves configurable requirements',async()=>{
+ const original=(await db.query('select * from app_private.settings')).rows[0];
+ try{
+  await denied(()=>command('applicant','configure_club',original));
+  await command('admin','configure_club',{...original,application_requirements:['QA test form'],renewal_requirements:['QA renewal proof']});
+  const rows=(await db.query('select * from app_private.settings')).rows;
+  assert.equal(rows.length,1);assert.deepEqual(rows[0].application_requirements,['QA test form']);
+  const source=(await db.query("select pg_get_functiondef('app_private.admin_command(text,jsonb)'::regprocedure) as source")).rows[0].source;
+  assert.match(source,/update app_private.settings[\s\S]*?where id\s*=\s*true\s*;/i,'Hosted safe-update enforcement requires a WHERE predicate');
+ }finally{await command('admin','configure_club',original);}
+});
 test('M2→M7→M1 ownership, validation, correction, approval, persistent identity',async()=>{
  await denied(()=>command('applicant','submit_application',{full_name:'',confirmed:false}),/valid|confirm/);
  let a=await command('applicant','save_application',{full_name:'Alex Archer',phone:'09123456789',student_number:'TEST-1'});
