@@ -150,7 +150,7 @@ fun ClubLanding(
                 Text("Your available club services",color=MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(search,{search=it},label={Text("Find a module")},singleLine=true,modifier=Modifier.fillMaxWidth())
                 val matches=modules.filter{it.text("name").contains(search,true)||("M"+it.text("number")).contains(search,true)}
-                Column{matches.forEach{m->QuietRow(m.text("name"),"Module ${m.text("number")}"){onModule(m.text("number").toInt())}}}
+                Column{matches.forEach{m->QuietRow(m.text("name")){onModule(m.text("number").toInt())}}}
                 if(matches.isEmpty())Text("No matching modules. Try a different name or number.")
             }
             "notices"->{

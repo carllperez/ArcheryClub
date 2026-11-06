@@ -179,7 +179,7 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     var search by rememberSaveable(module){mutableStateOf("")}
     var table by rememberSaveable(module){mutableStateOf(current["tables"]!!.jsonArray.firstOrNull()?.jsonPrimitive?.content.orEmpty())}
-    ScreenShell("M$module: ${current.text("name")}",onBack={module=0},snackbar=snackbar){
+    ScreenShell(current.text("name"),onBack={module=0},snackbar=snackbar){
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
         if(module in integratedClubModules)ClubModuleOverview(module,workspace)
@@ -268,7 +268,7 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
         DropdownMenu(expanded,{expanded=false}){options.forEach{(id,name)->DropdownMenuItem(text={Text(name)},onClick={onChange(id);expanded=false})}}}
 }
 @Composable private fun RecordDetails(row:JsonObject,workspace:JsonObject){
-    row.entries.filter{(k,v)->k !in setOf("id","user_id","owner_id","event_id","encoded_by","reviewed_by","created_by","approved_by","token","path","snapshot","version")&&v!=JsonNull}.forEach{(key,value)->
+    row.entries.filter{(k,v)->k !in setOf("id","module","user_id","owner_id","event_id","encoded_by","reviewed_by","created_by","approved_by","token","path","snapshot","version")&&v!=JsonNull}.forEach{(key,value)->
         if(value is JsonPrimitive)Text("${human(key)}: ${human(value.content)}",style=MaterialTheme.typography.bodyMedium)
         else if(value is JsonArray&&value.all{it is JsonPrimitive})Text("${human(key)}: ${value.joinToString{it.jsonPrimitive.content}}")
     }
