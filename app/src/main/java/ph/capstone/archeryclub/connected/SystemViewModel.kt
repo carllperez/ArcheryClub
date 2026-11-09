@@ -47,7 +47,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
             "signin"->{gateway.signIn(email,password);gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace())}
             "signup"->{
                 require(password.length>=8){"Use at least 8 characters for your password."}
-                gateway.signUp(email,password)
+                gateway.signUp(email.trim().lowercase(),password)
                 // With email confirmation off, Supabase returns a session immediately: go straight to the application.
                 if(gateway.client.auth.currentSessionOrNull()!=null){gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),message="Account created. Start your application.")}
                 else mutable.value=mutable.value.copy(message="Check your email to verify your account, then sign in.")
@@ -132,6 +132,10 @@ internal fun authErrorMessage(code:String):String=when(code){
     "otp_expired"->"This verification code is invalid or expired. Request a new code."
     "over_email_send_rate_limit","over_request_rate_limit"->"Too many attempts. Please wait a moment and try again."
     "weak_password"->"Choose a stronger password with at least 8 characters."
+    "user_already_exists","email_exists"->"An account with this email already exists. Sign in instead."
+    "signup_disabled","email_provider_disabled"->"New accounts are turned off on the club server. Ask a club officer."
+    "email_address_invalid","validation_failed"->"Enter a valid email address."
+    "email_address_not_authorized"->"This email can't receive messages from the club server. Use another address or ask an officer."
     "user_banned"->"This account is disabled. Contact your club administrator."
     else->"Account access failed. Check your details and try again."
 }

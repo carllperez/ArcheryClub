@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -17,6 +18,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -99,7 +101,7 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     /** Modules that have a purpose-built workflow screen open it first; its "records" link reaches the generic view. */
     fun dedicated(n:Int):String?=when(n){
-        1->"profile";3->if(isMember)"activities" else null;5->if(isMember)"equipment_member" else null
+        1->"profile";2->"application";7->"applications";3->if(isMember)"activities" else null;5->if(isMember)"equipment_member" else null
         8->"officer_activities";10->"equipment";else->null
     }
     fun openModule(n:Int){val r=dedicated(n);if(r!=null){module=0;selected=null;routeStack=r}else{module=n;selected=null;returnToLanding=false}}
@@ -118,6 +120,9 @@ fun ConnectedApp(vm:SystemViewModel){
         if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){routeStack="activity:$record";return}
         if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){routeStack="borrowing:$record";return}
         workspace.records("name_corrections").find{it.text("id")==record}?.let{routeStack=if(it.text("user_id")==user)"profile" else "name_corrections";return}
+        workspace.records("applications").find{it.text("id")==record}?.let{
+            val target=if(it.text("user_id")==user)"application" else if(allowed("membership"))"application_review:$record" else null
+            if(target!=null){routeStack=target;return}}
         if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
         val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
         returnToLanding=module==0
@@ -151,7 +156,9 @@ fun ConnectedApp(vm:SystemViewModel){
     if(routeStack.isNotEmpty()){
         WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,
             onBack=::pop,onPush=::push,onGo=::go,onStart=::start,
-            onCommand={action,data,done->vm.command(action,data,done)})
+            onCommand={action,data,done->vm.command(action,data,done)},
+            onUpload={uri,m,record,requirement->vm.upload(context,uri,m,record,requirement)},
+            onOpenDocument={path->vm.openDocument(path){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}})
         return
     }
     if(module==0){
@@ -191,7 +198,6 @@ fun ConnectedApp(vm:SystemViewModel){
             if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
             if(table=="attendance_windows")QrImage("archeryclub://attendance?token=${row.text("token")}")
             if(table=="equipment"&&allowed("equipment"))QrImage(row.text("id"))
-            if(table=="events")QrImage("archeryclub://event?id=${row.text("id")}")
             if(table=="elections")ElectionPanel(row,workspace,vm,isMember)
             if(table in setOf("applications","renewals","candidates","training_records","financial_records","delegates","interclub_events")){
                 val docModule=mapOf("applications" to 2,"renewals" to 1,"candidates" to 9,"training_records" to 11,"financial_records" to 12,"delegates" to 15,"interclub_events" to 15).getValue(table)
@@ -260,26 +266,43 @@ fun ConnectedApp(vm:SystemViewModel){
 }
 
 @Composable private fun AuthScreen(state:SystemState,vm:SystemViewModel,snackbar:SnackbarHostState){
-    var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}
-    ScreenShell("Welcome to Archery Club",snackbar=snackbar){
-        Text("Your club. One place.",style=MaterialTheme.typography.titleLarge)
-        Text("Sign in to manage your membership and stay connected to your club.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
-        Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Sign in")}
+    val canSignUp=BuildConfig.EMAIL_ENABLED||BuildConfig.SIGNUP_ENABLED
+    var creating by rememberSaveable{mutableStateOf(false)}
+    var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")};var confirm by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}
+    var attempted by remember(creating){mutableStateOf(false)}
+    val errors=if(creating)signUpErrors(email,password,confirm) else emptyMap()
+    fun err(key:String)=if(attempted)errors[key] else null
+    ScreenShell(if(creating)"Create your account" else "Welcome to Archery Club",onBack=if(creating){{creating=false}}else null,snackbar=snackbar){
+        if(creating){
+            Text("Step 1 of 2 · then fill in your membership application",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }else{
+            Text("Your club. One place.",style=MaterialTheme.typography.titleLarge)
+            Text("Sign in to manage your membership and stay connected to your club.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,isError=err("email")!=null,
+            supportingText={err("email")?.let{Text(it)}?:if(creating)Text("Use your DLSU email so officers can recognise you.") else Unit},
+            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth())
+        OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,isError=err("password")!=null,
+            supportingText={err("password")?.let{Text(it)}?:if(creating)Text("At least 8 characters, with letters and a number.") else Unit},
+            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
+        if(creating)OutlinedTextField(confirm,{confirm=it},label={Text("Confirm password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,
+            isError=err("confirm")!=null,supportingText={err("confirm")?.let{Text(it)}},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
+        if(creating){
+            Button(onClick={attempted=true;if(errors.isEmpty())vm.auth("signup",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Create account")}
+            Text("Creating an account doesn't make you a member. Club officers review every application.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick={creating=false},enabled=!state.busy){Text("I already have an account")}
+        }else{
+            Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy&&email.isNotBlank()&&password.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Sign in")}
+            if(canSignUp)OutlinedButton(onClick={creating=true;vm.clearMessage()},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("New applicant? Create an account")}
+        }
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         state.message?.let{Text(it)}
-        if(!BuildConfig.EMAIL_ENABLED&&BuildConfig.SIGNUP_ENABLED){
-            OutlinedButton(onClick={vm.auth("signup",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("New applicant? Create an account")}
-            Text("Use your DLSU email and a password of at least 8 characters. Club officers review every application.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if(BuildConfig.EMAIL_ENABLED){
-        OutlinedButton(onClick={vm.auth("signup",email,password)},enabled=!state.busy){Text("Create account")}
+        if(BuildConfig.EMAIL_ENABLED&&!creating){
         TextButton(onClick={vm.auth("recover",email,"")},enabled=!state.busy){Text("Forgot password")}
         OutlinedTextField(code,{code=it},label={Text("Email verification or recovery code")},singleLine=true,modifier=Modifier.fillMaxWidth())
         TextButton(onClick={vm.auth("verify",email,"",code)},enabled=!state.busy){Text("Verify email code")}
         TextButton(onClick={vm.auth("verify_invite",email,"",code)},enabled=!state.busy){Text("Accept officer invitation code")}
-        }else if(!BuildConfig.SIGNUP_ENABLED)Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
+        }else if(!canSignUp)Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }

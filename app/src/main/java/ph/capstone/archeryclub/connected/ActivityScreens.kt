@@ -99,7 +99,7 @@ fun ActivityDetailScreen(
         }
         when (v.status) {
             ActivityStatus.REGISTERED -> NoticeCard("You're registered", "Your slot is confirmed. At the venue, scan the attendance code shown by the officer or ask them to mark you present. You can cancel until the activity starts.", Tone.POSITIVE)
-            ActivityStatus.WAITLISTED -> NoticeCard("You're on the waitlist${v.waitlistPosition?.let { " · #$it" } ?: ""}", "If a registered member cancels before registration closes, the system registers you automatically and notifies you.", Tone.WARNING)
+            ActivityStatus.WAITLISTED -> NoticeCard("You're on the waitlist${v.waitlistPosition?.let { " · #$it" } ?: ""}", "If a registered member cancels before the activity starts, the system registers you automatically and notifies you.", Tone.WARNING)
             ActivityStatus.ATTENDED -> NoticeCard("Attendance recorded", "You were marked present. This counts toward your participation record.", Tone.POSITIVE)
             ActivityStatus.MISSED -> NoticeCard("Marked absent", "If this is wrong, open the attendance record under Participation history and request a correction.", Tone.DANGER)
             else -> Unit
@@ -281,7 +281,7 @@ fun RosterScreen(
         }
         if (waitlist.isNotEmpty()) {
             SectionHeader("Waitlist (${waitlist.size})")
-            Text("Promoted automatically, in this order, when a registered member cancels before the deadline.",
+            Text("Promoted automatically, in this order, when a registered member cancels before the activity starts.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             waitlist.forEachIndexed { i, w ->
                 WorkCard("${i + 1}. ${names[w.text("user_id")].orEmpty().ifBlank { "Club member" }}", listOf("Joined ${fmtDateTime(w.instant("created_at"))}"))

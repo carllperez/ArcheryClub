@@ -10,8 +10,8 @@ the honest wording is "implemented and backend-tested; device walkthrough pendin
    → *Assign time-limited officer role* for `testOfficer` (activities, equipment, membership) and the
    President account, ending after your defense date. Without this, every officer step fails.
 2. **Apply migration 017** to the hosted project:
-   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push` (applies 017, 018 and 019).
-   Then run `node --test backend-tests/workflow.test.mjs` locally (48 tests, all passing on this branch).
+   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push` (applies 017–020).
+   Then run `npm test` in `backend-tests` locally (50 workflow tests, all passing on this branch).
 3. **Build** in Android Studio (`app` → Run). Copy your `backend.properties` into this folder first.
 4. **Seed demo data** through the app (not SQL) so the audit trail is real:
    - Officer: create 3 activities — one open (capacity 2), one closing within 24 h, one whose
@@ -66,9 +66,20 @@ and only while registration is open.
 6. Officer: **Record return** → choose condition **Needs maintenance** → item disappears from borrowable stock and shows *Maintenance*.
 7. Officer: item → *Condition log* and *Borrowing history* show the full trail.
 
-### Story 4 — Applicant → member (existing workflow, keep it short)
-Applicant submits application with documents → officer reviews (return for correction once) → applicant resubmits →
-officer approves → same account signs in as an **Active member** and immediately sees open activities.
+### Story 4 — Registration: new account → application → member → first activity
+1. **Sign-up.** On the sign-in screen tap *New applicant? Create an account*. Show that a bad email, a short or
+   letters-only password and a mismatched confirmation are each explained under the field before anything is sent.
+2. **Application** (*Membership application* screen, three numbered steps with a progress list):
+   save details → each required document has its own row (*Missing → Waiting for verification → Verified*) →
+   tick the confirmation → *Submit*. The button stays disabled and lists exactly what is missing.
+3. **Officer** (dashboard tile *Applications to review* → queue, oldest first). Open the applicant, open the file,
+   *Return for correction* with a reason ("ID photo is blurry"). The reason is required.
+4. **Applicant** sees *Changes requested* with that reason at the top, taps *Replace* on the ID, submits again.
+   The old file stays on record but is marked replaced, so it never blocks approval.
+5. **Officer** — *Approve* is disabled with "Verify 1 uploaded document first" until the new file is verified;
+   then approve with a membership category. With a fee set, the applicant sees *Pay membership fee* instead.
+6. Same account is now an **Active member**: register for a capacity-1 activity, then show a second member
+   joining the waitlist and being promoted when the first cancels.
 
 ### Story 5 — Profile that the system actually uses
 Member: **My profile** (completeness bar) → **Edit** → mobile, emergency contact (both required together), program,
@@ -103,7 +114,11 @@ and *Needs your action* queues (requests, hand-overs, overdue returns, correctio
 | Approved members cannot rename themselves; one pending correction at a time; officers cannot approve their own | migration 018 |
 | Membership fee before Active (when a fee is set): approval → *Pending payment* → verified payment activates | migration 019 |
 | Every uploaded application document verified individually before approval; applicants cannot verify their own | migration 019 |
-| Rejected applicants can start a new application | migration 019 |
+| Rejected applicants can start a new application; earlier document verifications are cleared | migrations 019, 020 |
+| Replacing a document supersedes the old file; only current files must be verified | migration 020 |
+| Sign-up: valid email, ≥8 characters with letters and a number, confirmed password; sign-up never grants a role | app + Supabase Auth + `initialize_account` |
+| Applicants edit details/documents only while Draft or Changes requested; Submitted is locked | `membership_command` + storage RLS |
+| Return for correction, incomplete and reject each require a reason the applicant sees | `membership_command` |
 | Waitlist promotion continues until the activity starts; walk-ins recorded by officers around the activity time | migration 019 |
 | Archiving an upcoming activity notifies registrants/waitlist and cancels linked equipment requests | migration 019 |
 | Overdue equipment blocks new requests; double bookings refused at request time; members confirm receipt; damaged returns alert finance | migration 019 |

@@ -1,0 +1,291 @@
+package ph.capstone.archeryclub.connected
+
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.*
+import ph.capstone.archeryclub.ui.DiscardDialog
+import ph.capstone.archeryclub.ui.ScreenShell
+
+/* Membership registration, end to end:
+ *   applicant: details → documents → confirm and submit → follow screening → pay fee → Active
+ *   officer:   queue (oldest first) → open documents → verify each → decide with a reason
+ * Every transition is a server command; these screens only show the next step and why a button is disabled. */
+
+private val UPLOAD_TYPES = arrayOf("application/pdf", "image/jpeg", "image/png")
+
+@Composable
+private fun StepHeader(number: Int, title: String, done: Boolean) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                Text(if (done) "✓" else "$number", style = MaterialTheme.typography.labelLarge,
+                    color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+            }
+        }
+        Text(title, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun Milestones(items: List<Milestone>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items.forEach { m ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (m.done) "●" else if (m.current) "◉" else "○",
+                    color = if (m.done || m.current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                Text(m.title, style = if (m.current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                    color = if (m.done || m.current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequirementRow(req: RequirementView, canUpload: Boolean, busy: Boolean, onOpen: (String) -> Unit, onUpload: () -> Unit,
+                           canVerify: Boolean = false, onVerify: (JsonObject) -> Unit = {}) {
+    WorkCard(req.name, listOf(req.latest?.text("name")?.let { "Latest file: $it" } ?: "No file uploaded yet",
+        if (req.documents.size > 1) "${req.documents.size} current files" else ""),
+        status = { StatusPill(req.state.label, req.state.tone) },
+        footer = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                req.latest?.let { d -> TextButton(onClick = { onOpen(d.text("path")) }, enabled = !busy) { Text("Open") } }
+                if (canUpload) TextButton(onClick = onUpload, enabled = !busy) { Text(if (req.documents.isEmpty()) "Upload" else "Replace") }
+                if (canVerify) req.documents.filter { it.text("verified_by").isBlank() }.forEach { d ->
+                    TextButton(onClick = { onVerify(d) }, enabled = !busy) { Text(if (req.documents.size > 1) "Verify ${d.text("name").take(18)}" else "Mark verified") }
+                }
+            }
+        })
+}
+
+// ------------------------------------------------------------------ applicant
+
+@Composable
+fun ApplicationScreen(
+    workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
+    onCommand: (String, JsonObject, () -> Unit) -> Unit,
+    onUpload: (Uri, Int, String, String) -> Unit, onOpenDocument: (String) -> Unit, onPayFee: () -> Unit,
+) {
+    val user = workspace.text("user_id")
+    val view = applicationView(workspace)
+    val app = view.application
+    val membership = workspace.records("memberships").find { it.text("user_id") == user }
+    val profile = workspace.records("profiles").find { it.text("id") == user }
+    val initial = remember(app?.text("version")) {
+        APPLICATION_FIELDS.split(",").associateWith { k -> app?.text(k).orEmpty().ifBlank { if (k in setOf("full_name", "phone")) profile?.text(k).orEmpty() else "" } }
+    }
+    val values = rememberSaveable(app?.text("version"), saver = mapSaver(save = { it.toMap() }, restore = { s -> mutableStateMapOf<String, String>().apply { s.forEach { (k, v) -> put(k, v as String) } } })) {
+        mutableStateMapOf<String, String>().apply { putAll(initial) }
+    }
+    var confirmed by rememberSaveable(app?.text("version")) { mutableStateOf(false) }
+    var attempted by remember { mutableStateOf(false) }
+    var submitDialog by remember { mutableStateOf(false) }
+    var discard by remember { mutableStateOf(false) }
+    var target by remember { mutableStateOf("") }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null && target.isNotBlank()) onUpload(uri, 2, view.id, target) }
+    val editable = view.stage.editable && membership == null
+    val errors = applicationErrors(values)
+    val changed = values.toMap() != initial
+    val blockers = submitBlockers(view, values, confirmed)
+    val leave = { if (editable && changed) discard = true else onBack() }
+    BackHandler(onBack = leave)
+    if (discard) DiscardDialog(onDismiss = { discard = false }, onDiscard = { discard = false; onBack() })
+
+    fun payload(extra: JsonObjectBuilder.() -> Unit) = buildJsonObject {
+        values.forEach { (k, v) -> put(k, v.trim()) }
+        app?.text("version")?.takeIf { it.isNotBlank() }?.toLongOrNull()?.let { put("version", it) }
+        extra()
+    }
+    @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
+        OutlinedTextField(values[key].orEmpty(), { values[key] = it }, label = { Text(label) }, enabled = editable && !busy,
+            isError = attempted && key in errors,
+            supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
+
+    ScreenShell("Membership application", leave, snackbar) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusPill(if (membership != null) membership.text("status") else view.stage.label,
+                if (membership?.text("status") == "Active") Tone.POSITIVE else if (membership != null) Tone.WARNING else view.stage.tone)
+            if (view.requirements.isNotEmpty()) StatusPill("${view.uploadedCount}/${view.requirements.size} documents", Tone.NEUTRAL)
+        }
+        Milestones(applicationMilestones(view, membership?.text("status").orEmpty()))
+
+        // What the applicant must do now, stated once at the top.
+        when {
+            membership?.text("status") == "Pending payment" -> {
+                val fee = workspace.records("fee_assessments").find { it.text("user_id") == user && it.text("purpose") == "Membership fee" && it.text("payment_id").isBlank() }
+                NoticeCard("Approved — one step left", "Pay the membership fee${fee?.let { " of ₱" + it.text("amount") + " by " + it.text("due_on") }.orEmpty()}. Your membership becomes Active once the Treasurer verifies the payment.", Tone.POSITIVE)
+                PrimaryAction("Pay membership fee", !busy, onClick = onPayFee)
+            }
+            membership != null -> NoticeCard("You're a member", "Your application was approved. Your profile, activities and equipment are now open to you.", Tone.POSITIVE)
+            view.stage == ApplicationStage.SUBMITTED -> NoticeCard("Submitted", "The membership officer has your application. Details and documents are locked while it's reviewed; you'll get a notice when there's a decision.", Tone.INFO)
+            view.stage == ApplicationStage.UNDER_REVIEW -> NoticeCard("Being reviewed", "The membership officer is checking your documents. You'll get a notice when there's a decision.", Tone.INFO)
+            view.stage == ApplicationStage.NEEDS_CHANGES -> NoticeCard("Changes requested", view.remark.ifBlank { "Update your details or documents, then submit again." }, Tone.WARNING)
+            view.stage == ApplicationStage.REJECTED -> {
+                NoticeCard("Not approved", view.remark.ifBlank { "The membership officer did not approve this application." }, Tone.DANGER)
+                PrimaryAction("Start a new application", !busy) { onCommand("restart_application", buildJsonObject {}) {} }
+            }
+            else -> Unit
+        }
+
+        if (membership == null && view.stage != ApplicationStage.REJECTED) {
+            StepHeader(1, "Your details", view.id.isNotBlank() && errors.isEmpty() && !changed)
+            field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
+            field("phone", "Mobile number", KeyboardType.Phone)
+            field("student_number", "Student number", KeyboardType.Number)
+            field("experience", "Archery experience (optional)", lines = 3, hint = "e.g. none yet, PE class, two years recurve")
+            if (editable) SecondaryAction(if (view.id.isBlank()) "Save and continue" else "Save details", !busy && (changed || view.id.isBlank())) {
+                attempted = true
+                if (errors.isEmpty()) onCommand("save_application", payload { put("confirmed", false) }) {}
+            }
+
+            val requirements = view.requirements
+            StepHeader(2, "Documents", view.id.isNotBlank() && view.missing.isEmpty())
+            when {
+                requirements.isEmpty() -> Text("The club hasn't listed any required documents.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                view.id.isBlank() -> Text("Save your details first; your documents attach to your saved application.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> {
+                    Text("PDF, JPG or PNG, up to 20 MB each. Replacing a file keeps the old one on record; the officer verifies the newest.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    requirements.forEach { req ->
+                        RequirementRow(req, editable, busy, onOpenDocument, onUpload = { target = req.name; picker.launch(UPLOAD_TYPES) })
+                    }
+                }
+            }
+
+            if (editable) {
+                StepHeader(3, "Review and submit", false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(confirmed, { confirmed = it }, enabled = !busy)
+                    Text("I confirm my details are correct and the documents are mine.", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (blockers.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Before you can submit:", style = MaterialTheme.typography.labelLarge)
+                    blockers.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                PrimaryAction(if (view.stage == ApplicationStage.NEEDS_CHANGES) "Submit again" else "Submit application", !busy && blockers.isEmpty()) {
+                    attempted = true; submitDialog = true
+                }
+            }
+        }
+    }
+    if (submitDialog) ConfirmDialog("Submit your application?",
+        "Your details and documents lock while the membership officer reviews them. You'll get a notice when there's a decision.",
+        "Submit", onConfirm = { submitDialog = false; onCommand("submit_application", payload { put("confirmed", true) }) {} },
+        onDismiss = { submitDialog = false })
+}
+
+// ------------------------------------------------------------------ officer
+
+@Composable
+fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit, onRecords: () -> Unit) =
+    ScreenShell("Applications", onBack, snackbar) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        val queue = applicationsToReview(workspace)
+        val ready = queue.count { it.missing.isEmpty() && it.unverified == 0 }
+        TileRow {
+            StatTile("${queue.size}", "Waiting", Modifier.weight(1f).fillMaxHeight(), if (queue.isEmpty()) Tone.NEUTRAL else Tone.WARNING)
+            StatTile("${queue.sumOf { it.unverified }}", "Files to verify", Modifier.weight(1f).fillMaxHeight(), Tone.WARNING)
+            StatTile("$ready", "Ready to decide", Modifier.weight(1f).fillMaxHeight(), Tone.POSITIVE)
+        }
+        if (queue.isEmpty()) EmptyState("No applications waiting", "New submissions appear here, oldest first.")
+        queue.forEach { v ->
+            val a = v.application!!
+            WorkCard(a.text("full_name").ifBlank { "Applicant" },
+                listOf("Submitted ${fmtDateTime(a.instant("submitted_at"))}", a.text("student_number").let { if (it.isBlank()) "" else "Student no. $it" }),
+                status = {
+                    StatusPill(v.stage.label, v.stage.tone)
+                    if (v.unverified > 0) StatusPill("${v.unverified} to verify", Tone.WARNING)
+                    else if (v.missing.isEmpty()) StatusPill("Ready", Tone.POSITIVE)
+                    if (v.missing.isNotEmpty()) StatusPill("${v.missing.size} missing", Tone.DANGER)
+                },
+                onClick = { onOpen(v.id) })
+        }
+        TextButton(onClick = onRecords) { Text("Renewals, memberships and all records") }
+    }
+
+@Composable
+fun ApplicationReviewScreen(
+    workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
+    onCommand: (String, JsonObject, () -> Unit) -> Unit, onOpenDocument: (String) -> Unit,
+) {
+    val me = workspace.text("user_id")
+    val app = workspace.records("applications").find { it.text("id") == id }
+    if (app == null) { ScreenShell("Application", onBack, snackbar) { EmptyState("Application not found", "It may have been decided already. Go back and refresh.") }; return }
+    val view = applicationView(workspace, app)
+    val own = app.text("user_id") == me
+    val blockers = approvalBlockers(view, me)
+    val categories = (workspace.records("settings").firstOrNull()?.get("membership_categories") as? JsonArray).orEmpty()
+        .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.ifEmpty { listOf("Regular member") }
+    var decision by remember { mutableStateOf<String?>(null) }
+    var remark by remember(decision) { mutableStateOf("") }
+    var category by remember { mutableStateOf(categories.first()) }
+
+    fun decide(status: String, extra: JsonObjectBuilder.() -> Unit = {}) = onCommand("review_application", buildJsonObject {
+        put("id", id); app.text("version").toLongOrNull()?.let { put("version", it) }; put("status", status); put("remark", remark.trim()); extra()
+    }) { decision = null }
+
+    ScreenShell(app.text("full_name").ifBlank { "Application" }, onBack, snackbar) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusPill(view.stage.label, view.stage.tone); if (own) StatusPill("Your own application", Tone.DANGER) }
+        SectionHeader("Applicant")
+        KeyValue("Full name", app.text("full_name"))
+        KeyValue("Mobile", app.text("phone"))
+        KeyValue("Student no.", app.text("student_number"))
+        KeyValue("Experience", app.text("experience"))
+        KeyValue("Submitted", fmtDateTime(app.instant("submitted_at")))
+        if (view.remark.isNotBlank()) KeyValue("Last remark", view.remark)
+
+        SectionHeader("Documents")
+        if (view.requirements.isEmpty() && view.otherDocuments.isEmpty()) Text("No documents are required by the club settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        view.requirements.forEach { req ->
+            RequirementRow(req, canUpload = false, busy = busy, onOpen = onOpenDocument, onUpload = {}, canVerify = !own && view.stage.decidable,
+                onVerify = { d -> onCommand("verify_document", buildJsonObject { put("id", d.text("id")) }) {} })
+        }
+        view.otherDocuments.forEach { d ->
+            WorkCard(d.text("name"), listOf("Labelled \"${d.text("requirement")}\""),
+                status = { if (d.text("verified_by").isBlank()) StatusPill("Waiting for verification", Tone.WARNING) else StatusPill("Verified", Tone.POSITIVE) },
+                footer = { Row {
+                    TextButton(onClick = { onOpenDocument(d.text("path")) }) { Text("Open") }
+                    if (!own && d.text("verified_by").isBlank()) TextButton(onClick = { onCommand("verify_document", buildJsonObject { put("id", d.text("id")) }) {} }, enabled = !busy) { Text("Mark verified") }
+                } })
+        }
+
+        if (!own && view.stage.decidable) {
+            SectionHeader("Decision")
+            if (blockers.isNotEmpty()) blockers.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            PrimaryAction("Approve", !busy && blockers.isEmpty()) { decision = "approved" }
+            SecondaryAction("Return for correction", !busy) { decision = "returned_for_correction" }
+            if (view.missing.isNotEmpty()) SecondaryAction("Mark incomplete", !busy) { decision = "incomplete" }
+            if (view.stage == ApplicationStage.SUBMITTED) TextButton(onClick = { decide("under_review") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Mark as under review") }
+            TextButton(onClick = { decision = "rejected" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Reject", color = MaterialTheme.colorScheme.error) }
+        }
+    }
+
+    val d = decision
+    if (d == "approved") ConfirmDialog("Approve ${app.text("full_name")}?",
+            "Their verified name becomes ${app.text("full_name")}. If the club charges a membership fee, they become Active once the Treasurer verifies payment.",
+            "Approve", onConfirm = { decide("approved") { put("category", category); put("requirements_verified", true) } }, onDismiss = { decision = null },
+            extra = {
+                Text("Membership category", style = MaterialTheme.typography.labelLarge)
+                ChoiceChips(categories.map { it to it }, category) { category = it }
+                OutlinedTextField(remark, { remark = it }, label = { Text("Note to applicant (optional)") }, modifier = Modifier.fillMaxWidth())
+            })
+    else if (d != null) ConfirmDialog(when (d) { "rejected" -> "Reject this application?"; "incomplete" -> "Mark as incomplete?"; else -> "Return for correction?" },
+            when (d) { "rejected" -> "The applicant sees your reason and may start a new application."
+                else -> "The application unlocks so the applicant can fix it and submit again. Tell them exactly what to change." },
+            when (d) { "rejected" -> "Reject"; "incomplete" -> "Mark incomplete"; else -> "Return" },
+            onConfirm = { decide(d) }, onDismiss = { decision = null }, destructive = d == "rejected", confirmEnabled = remark.isNotBlank() && !busy,
+            extra = { OutlinedTextField(remark, { remark = it }, label = { Text("Reason (required)") }, minLines = 2, modifier = Modifier.fillMaxWidth()) })
+}

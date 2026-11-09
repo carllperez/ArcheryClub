@@ -11,6 +11,8 @@ fun WorkflowRoute(
     route: String, workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, isMember: Boolean, allowed: (String) -> Boolean,
     onBack: () -> Unit, onPush: (String) -> Unit, onGo: (String) -> Unit, onStart: (String, JsonObject) -> Unit,
     onCommand: (String, JsonObject, () -> Unit) -> Unit,
+    onUpload: (android.net.Uri, Int, String, String) -> Unit = { _, _, _, _ -> },
+    onOpenDocument: (String) -> Unit = {},
 ) {
     val key = route.substringBefore(':'); val id = route.substringAfter(':', "")
     val officerActivities = allowed("activities")
@@ -45,6 +47,11 @@ fun WorkflowRoute(
             onRenewal = { onGo("module:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
         "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack, onSave = { payload -> onCommand("save_profile", payload, onBack) }, onCommand = onCommand)
         "name_corrections" -> NameCorrectionsScreen(workspace, busy, snackbar, onBack, onCommand)
+        "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, onCommand, onUpload, onOpenDocument, onPayFee = { onGo("module:12") })
+        "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }) { onGo("module:7") }
+            else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
+        "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
+            else ScreenShell("Application", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         else -> ScreenShell("Not found", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }
     }
 }

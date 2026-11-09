@@ -552,3 +552,65 @@ test('M13 attendance rate excludes excused absences everywhere',async()=>{
  const stats=(await rpc('officer','club_workspace',[],'')).event_stats.find(s=>s.event_id===ev.id);
  assert.equal(Number(stats.excused),1);
 });
+test('Registration story: sign-up → application → correction with a replaced file → approval → activity registration',async()=>{
+ const before=(await db.query('select application_requirements from app_private.settings')).rows[0].application_requirements;
+ await db.query("update app_private.settings set application_requirements=array['School ID']");
+ try{
+  // sign-up: an unconfirmed address cannot enter; a confirmed one gets a bare profile and no authority
+  const nid='00000000-0000-4000-8000-0000000000bb';ids.newcomer=nid;
+  await db.query("insert into auth.users values($1,'newcomer@example.test',null)",[nid]);
+  await denied(()=>as('newcomer',()=>db.exec('select public.initialize_account()')),/Verify your email/);
+  await db.query('update auth.users set email_confirmed_at=now() where id=$1',[nid]);
+  await as('newcomer',()=>db.exec('select public.initialize_account()'));
+  await denied(()=>command('newcomer','register_event',{event_id:eventId}),/membership/);
+  // application: details, then the required file, then submit
+  let a=await command('newcomer','save_application',{full_name:'New Comer',phone:'09171234567',student_number:'12345678',confirmed:false});
+  await denied(()=>command('newcomer','submit_application',{version:a.version,full_name:'New Comer',confirmed:true}),/Missing requirement: School ID/);
+  await upload('newcomer',2,a.id,'School ID');
+  await denied(()=>command('newcomer','submit_application',{version:a.version,full_name:'New Comer'}),/Confirm/);
+  a=await command('newcomer','submit_application',{version:a.version,full_name:'New Comer',phone:'09171234567',student_number:'12345678',confirmed:true});
+  assert.equal(a.status,'pending');
+  await denied(()=>upload('newcomer',2,a.id,'School ID'),/row-level security|locked/);
+  await denied(()=>command('newcomer','save_application',{version:a.version,full_name:'Changed'}),/locked/);
+  // officer returns it; the applicant replaces the blurry file and submits again
+  await command('officer','review_application',{id:a.id,version:a.version,status:'returned_for_correction',remark:'School ID photo is blurry'});
+  a=await row('applications',a.id);
+  assert.equal(a.status,'returned_for_correction');
+  await upload('newcomer',2,a.id,'School ID');
+  const docs=(await db.query('select id,superseded_by from app_private.documents where module=2 and record_id=$1 order by created_at,id',[a.id])).rows;
+  assert.equal(docs.length,2);
+  assert.equal(docs.filter(d=>d.superseded_by===null).length,1,'only the newest file is current');
+  a=await command('newcomer','submit_application',{version:Number(a.version),full_name:'New Comer',phone:'09171234567',student_number:'12345678',confirmed:true});
+  // approval waits for the current file only, never for the replaced one
+  await denied(()=>command('officer','review_application',{id:a.id,version:a.version,status:'approved',category:'Regular member',requirements_verified:true}),/Verify every uploaded document/);
+  const current=docs.find(d=>d.superseded_by===null);
+  await command('officer','verify_document',{id:current.id});
+  await command('officer','review_application',{id:a.id,version:a.version,status:'approved',category:'Regular member',requirements_verified:true});
+  const m=(await db.query('select status from app_private.memberships where user_id=$1',[nid])).rows[0];
+  assert.equal(m.status,'Active','no fee configured, so approval activates');
+  assert.equal((await db.query('select full_name from app_private.profiles where id=$1',[nid])).rows[0].full_name,'New Comer');
+  // activity registration: first slot, then the waitlist
+  const ev=await command('officer','save_event',{title:'First practice',description:'One slot',venue:'Range',starts_at:future(40),ends_at:future(42),registration_opens:future(-1),registration_closes:future(30),capacity:1});
+  await command('officer','publish_event',{id:ev.id,version:1});
+  const first=await command('newcomer','register_event',{event_id:ev.id});
+  const again=await command('newcomer','register_event',{event_id:ev.id});
+  assert.deepEqual(again,first,'registering twice (e.g. a retried tap) keeps the one slot');
+  assert.equal((await db.query('select count(*)::int n from app_private.registrations where event_id=$1',[ev.id])).rows[0].n,1);
+  assert.equal((await command('applicant','register_event',{event_id:ev.id})).status,'waitlisted');
+  await command('newcomer','cancel_registration',{event_id:ev.id});
+  assert.equal((await db.query('select user_id from app_private.registrations where event_id=$1',[ev.id])).rows[0]?.user_id,ids.applicant,'the waitlisted member takes the slot');
+ }finally{await db.query('update app_private.settings set application_requirements=$1',[before]);}
+});
+test('Restarting after a rejection clears earlier document verifications',async()=>{
+ const id='00000000-0000-4000-8000-0000000000cc';ids.retry=id;
+ await db.query("insert into auth.users values($1,'retry@example.test',now())",[id]);
+ await as('retry',()=>db.exec('select public.initialize_account()'));
+ let a=await command('retry','save_application',{full_name:'Re Try'});
+ await upload('retry',2,a.id,'School ID');
+ a=await command('retry','submit_application',{version:a.version,full_name:'Re Try',confirmed:true});
+ const d=(await db.query('select id from app_private.documents where record_id=$1',[a.id])).rows[0];
+ await command('officer','verify_document',{id:d.id});
+ await command('officer','review_application',{id:a.id,version:a.version,status:'rejected',remark:'Not enrolled this term'});
+ await command('retry','restart_application',{});
+ assert.equal((await db.query('select verified_by from app_private.documents where id=$1',[d.id])).rows[0].verified_by,null);
+});

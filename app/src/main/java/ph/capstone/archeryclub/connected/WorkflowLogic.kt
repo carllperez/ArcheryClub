@@ -205,9 +205,9 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
     }
     if ("membership" in permissions) {
         val pendingApps = workspace.records("applications").filter { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }.map { it.text("id") }.toSet()
-        add(QueueItem("Documents to verify", workspace.records("documents").count { it.text("module") == "2" && it.text("record_id") in pendingApps && it.text("verified_by").isBlank() }, "module:7", Tone.WARNING))
+        add(QueueItem("Documents to verify", workspace.records("documents").count { it.text("module") == "2" && it.text("record_id") in pendingApps && it.text("verified_by").isBlank() && it.text("superseded_by").isBlank() }, "applications", Tone.WARNING))
         add(QueueItem("Name corrections", workspace.records("name_corrections").count { it.text("user_id") != user && it.text("status") == "pending" }, "name_corrections", Tone.WARNING))
-        add(QueueItem("Applications to review", workspace.records("applications").count { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }, "module:7", Tone.WARNING))
+        add(QueueItem("Applications to review", workspace.records("applications").count { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }, "applications", Tone.WARNING))
         add(QueueItem("Renewals to review", workspace.records("renewals").count { it.text("user_id") != user && it.text("status") == "pending" }, "module:7", Tone.WARNING))
     }
     if ("equipment" in permissions) {
