@@ -701,7 +701,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -736,7 +736,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -800,7 +800,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -808,7 +808,7 @@
         },
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -955,7 +955,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -963,7 +963,7 @@
         },
         {
           "name": "term_id",
-          "label": "Term id",
+          "label": "Term",
           "type": "record",
           "options": [],
           "source": "academic_terms",
@@ -1286,7 +1286,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -1355,7 +1355,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -1469,7 +1469,7 @@
       "fields": [
         {
           "name": "election_id",
-          "label": "Election id",
+          "label": "Election",
           "type": "record",
           "options": [],
           "source": "elections",
@@ -1477,7 +1477,7 @@
         },
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -1635,7 +1635,7 @@
       "fields": [
         {
           "name": "equipment_id",
-          "label": "Equipment id",
+          "label": "Equipment",
           "type": "record",
           "options": [],
           "source": "equipment",
@@ -1643,7 +1643,7 @@
         },
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -1768,7 +1768,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -1867,7 +1867,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -1875,7 +1875,7 @@
         },
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -2071,7 +2071,7 @@
       "correction_fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -2079,7 +2079,7 @@
         },
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -2308,7 +2308,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "member_directory",
@@ -2351,7 +2351,7 @@
       "fields": [
         {
           "name": "payment_id",
-          "label": "Payment id",
+          "label": "Payment",
           "type": "record",
           "options": [],
           "source": "financial_records",
@@ -2522,7 +2522,7 @@
       "fields": [
         {
           "name": "user_id",
-          "label": "User id",
+          "label": "Member",
           "type": "record",
           "options": [],
           "source": "profiles",
@@ -2530,7 +2530,7 @@
         },
         {
           "name": "role_id",
-          "label": "Role id",
+          "label": "Role",
           "type": "record",
           "options": [],
           "source": "roles",
@@ -2693,7 +2693,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "events",
@@ -2752,7 +2752,7 @@
         },
         {
           "name": "partner_id",
-          "label": "Partner id",
+          "label": "Partner",
           "type": "record",
           "options": [],
           "source": "partner_clubs",
@@ -2796,7 +2796,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "interclub_events",
@@ -2804,7 +2804,7 @@
         },
         {
           "name": "partner_id",
-          "label": "Partner id",
+          "label": "Partner",
           "type": "record",
           "options": [],
           "source": "partner_clubs",
@@ -2988,7 +2988,7 @@
       "fields": [
         {
           "name": "event_id",
-          "label": "Event id",
+          "label": "Activity",
           "type": "record",
           "options": [],
           "source": "interclub_events",

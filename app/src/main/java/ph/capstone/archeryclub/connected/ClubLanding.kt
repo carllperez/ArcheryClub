@@ -80,7 +80,7 @@ private fun eventWhen(row:JsonObject)=dateOf(row)?.format(DateTimeFormatter.ofPa
 @Composable
 fun ClubLanding(
     page:String,onPage:(String)->Unit,workspace:JsonObject,modules:List<JsonObject>,state:SystemState,
-    snackbar:SnackbarHostState,onModule:(Int)->Unit,onRecord:(Int,String,JsonObject)->Unit,
+    snackbar:SnackbarHostState,onModule:(Int)->Unit,onRoute:(String)->Unit,onRecord:(Int,String,JsonObject)->Unit,
     onAnnouncement:()->Unit,onNotice:(JsonObject)->Unit,onAcknowledge:(JsonObject)->Unit,
     onRefresh:()->Unit,onSignOut:()->Unit,onScan:()->Unit,recovery:@Composable ()->Unit,
 ) {
@@ -125,25 +125,11 @@ fun ClubLanding(
         state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
         when(page){
             "activities"->{
-                var registered by rememberSaveable{mutableStateOf(false)}
+                MemberActivitiesContent(workspace){onRoute("activity:$it")}
                 var calendar by rememberSaveable{mutableStateOf(false)}
-                PrimaryTabRow(selectedTabIndex=if(registered)1 else 0,containerColor=MaterialTheme.colorScheme.surface) {
-                    Tab(selected=!registered,onClick={registered=false},text={Text("Upcoming")})
-                    Tab(selected=registered,onClick={registered=true},text={Text("Registered")})
-                }
-                val events=landingEvents(workspace,registered)
-                Column {
-                    events.forEach{row->QuietRow(row.text("title"),listOf(dateOf(row)?.format(DateTimeFormatter.ofPattern("h:mm a")).orEmpty(),row.text("venue")).filter{it.isNotBlank()}.joinToString(" · "),leading={
-                        Column(Modifier.width(44.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                            Text(dateOf(row)?.format(DateTimeFormatter.ofPattern("dd"))?:"—",style=MaterialTheme.typography.headlineMedium)
-                            Text(dateOf(row)?.format(DateTimeFormatter.ofPattern("MMM"))?.uppercase().orEmpty(),style=MaterialTheme.typography.labelMedium)
-                        }
-                    }){onRecord(3,"events",row)}}
-                }
-                if(events.isEmpty())InfoCard(if(registered)"No upcoming registrations" else "No upcoming activities",if(registered)"Choose an upcoming activity to view its details and register." else "Published club activities will appear here.")
                 TextButton(onClick={calendar=!calendar}){Text(if(calendar)"Hide calendar" else "View calendar")}
-                if(calendar)RecordCalendar(events,workspace){onRecord(3,"events",it)}
-                QuietRow("All activity records","Announcements, registration history and attendance"){onModule(3)}
+                if(calendar)RecordCalendar(memberActivities(workspace).map{it.event},workspace){onRoute("activity:${it.text("id")}")}
+                QuietRow("Announcements and attendance records","Club notices, registration history and corrections"){onRoute("module:3")}
             }
             "modules"->{
                 var search by rememberSaveable{mutableStateOf("")}
@@ -170,7 +156,8 @@ fun ClubLanding(
                 Text(membership?.text("status")?.let{"$it membership"}?:"Club account",color=MaterialTheme.colorScheme.onSurfaceVariant)
                 if(state.recovery)recovery()
                 Column {
-                    if(hasModule(1))QuietRow("Profile and membership","Personal details, status and renewals"){onModule(1)}
+                    if(hasModule(1))QuietRow("My profile","Contact, emergency contact, archery details and membership"){onRoute("profile")}
+                    if(isMember)QuietRow("Equipment","Browse the catalog and track your borrowings"){onRoute("equipment_member")}
                     if(hasModule(2))QuietRow("My application","Submission and screening status"){onModule(2)}
                     QuietRow("Notices","${notices.size} to review"){onPage("notices")}
                     QuietRow("All modules","Browse your available services"){onPage("modules")}
@@ -185,18 +172,7 @@ fun ClubLanding(
                 Text(when{staff&&"administration" in permissions->"Administration";staff->"Officer";memberHome->"Active member";hasModule(15)->"Partner club";else->"Application and screening"},color=MaterialTheme.colorScheme.onSurfaceVariant)
                 if(state.recovery)recovery()
                 if(staff){
-                    Spacer(Modifier.height(4.dp));SectionLabel("Needs review")
-                    val queues=buildList {
-                        if("membership" in permissions){
-                            add(Triple("Applications",7,workspace.records("applications").count{it.text("user_id")!=user&&it.text("status") in setOf("pending","under_review")}))
-                            add(Triple("Membership renewals",7,workspace.records("renewals").count{it.text("user_id")!=user&&it.text("status")=="pending"}))
-                        }
-                        if("equipment" in permissions)add(Triple("Equipment requests",10,workspace.records("borrowings").count{it.text("status")=="pending"}))
-                        if("training" in permissions)add(Triple("Training records",11,workspace.records("training_records").count{it.text("validation")=="pending"}))
-                        if("finance" in permissions||"president" in permissions)add(Triple("Financial submissions",12,workspace.records("financial_records").count{it.text("user_id")!=user&&it.text("status")=="pending_verification"}))
-                    }
-                    if(queues.isEmpty())Text("Open your modules to manage club records.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Column{queues.sortedByDescending{it.third}.take(2).forEach{(label,n,count)->QuietRow(label,"$count awaiting review"){onModule(n)}}}
+                    OfficerDashboardContent(workspace,permissions,onRoute)
                     if("activities" in permissions)Button(onClick=onAnnouncement,enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Create announcement")}
                 }else if(memberHome){
                     Spacer(Modifier.height(8.dp));SectionLabel("Your next session")
@@ -207,11 +183,24 @@ fun ClubLanding(
                             Text(eventWhen(next),color=MaterialTheme.colorScheme.onSurfaceVariant)
                             if(next.text("venue").isNotBlank())Text(next.text("venue"),color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Button(onClick={onRecord(3,"events",next)},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("View session")}
+                        val nextView=activityView(next,workspace)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){StatusPill(nextView.status.label,nextView.status.tone());StatusPill(relative(nextView.start),Tone.NEUTRAL)}
+                        Button(onClick={onRoute("activity:${next.text("id")}")},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("View session")}
                     }else{
                         Text("Your next session starts here.",style=MaterialTheme.typography.titleLarge)
                         Text("Explore upcoming activities and register when you're ready.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick={onPage("activities")},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Browse activities")}
+                    }
+                    Spacer(Modifier.height(4.dp));SectionLabel("Quick actions")
+                    val open=memberActivities(workspace).count{!it.status.isMine}
+                    TileRow {
+                        StatTile("$open","Open activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
+                        val borrowed=workspace.records("borrowings").count{it.text("user_id")==user&&it.text("status") in setOf("pending","approved","released")}
+                        StatTile("$borrowed","Equipment requests",Modifier.weight(1f).fillMaxHeight()){onRoute("equipment_member")}
+                    }
+                    Column {
+                        QuietRow("Borrow equipment","Bows, arrows and accessories from the club"){onRoute("equipment_member")}
+                        QuietRow("My profile","${profileCompleteness(profile)}% complete"){onRoute("profile")}
                     }
                     val tasks=memberTasks(workspace)
                     if(tasks.isNotEmpty())QuietRow("Your tasks","${tasks.size} requests and tasks to follow up"){onModule(6)}

@@ -119,7 +119,7 @@ test('M3/M8 published registration, capacity, QR, manual correction and ownershi
  const first=await command('applicant','register_event',{event_id:e.id});
  assert.equal((await command('applicant','register_event',{event_id:e.id})).id,first.id);
  await db.query("insert into app_private.memberships(user_id,category,status,approved_by) values($1,'Regular member','Active',$2)",[ids.successor,ids.officer]);
- await denied(()=>command('successor','register_event',{event_id:e.id}),/full/);
+ assert.equal((await command('successor','register_event',{event_id:e.id})).status,'waitlisted');
  const w=await command('officer','open_attendance',{event_id:e.id,opens_at:future(-1),closes_at:future(1)});
  const token=(await row('attendance_windows',w.id)).token;
  await denied(()=>command('successor','check_in',{token}),/Register/);
@@ -347,4 +347,71 @@ test('M6/M12 review notices track resubmissions and fee completion independently
  await denied(()=>command('applicant','link_fee_payment',{id:fee.id,payment_id:f.id}));
  await command('officer','link_fee_payment',{id:fee.id,payment_id:f.id});
  assert.notEqual((await rpc('applicant','club_workspace',[],'')).notifications.find(n=>n.record_id===fee.id).completed_at,null);
+});
+test('M1 full profile editing validates contact, emergency contact and archery details',async()=>{
+ await command('applicant','save_profile',{full_name:'Alex Archer',phone:'0917 123 4567',emergency_contact_name:'Pat Archer',emergency_contact_phone:'09181234567',
+  program:'BS Information Technology',year_level:'3rd year',dominant_hand:'right',bow_type:'recurve',draw_weight:'26',arrow_length:'28',experience_level:'intermediate',bio:'Prefers 18 m indoor practice.'});
+ const p=await row('profiles',ids.applicant);
+ assert.equal(p.bow_type,'recurve');assert.equal(Number(p.draw_weight),26);assert.equal(p.emergency_contact_name,'Pat Archer');
+ await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'call me'}),/valid mobile/);
+ await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',emergency_contact_name:'Pat'}),/both/);
+ await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',bow_type:'crossbow'}));
+ await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',draw_weight:'120'}));
+ await denied(()=>command('applicant','save_profile',{full_name:''}),/valid full_name/);
+ assert.equal((await row('profiles',ids.applicant)).bow_type,'recurve','rejected saves leave the profile unchanged');
+});
+test('M3/M8 waitlist, cancellation, automatic promotion and closed registration',async()=>{
+ const e=await command('officer','save_event',{title:'Waitlist practice',description:'Capacity one',venue:'Range',starts_at:future(30),ends_at:future(32),registration_opens:future(-2),registration_closes:future(20),capacity:1});
+ await command('officer','publish_event',{id:e.id,version:1});
+ assert.equal((await command('applicant','register_event',{event_id:e.id})).status,'registered');
+ const w=await command('successor','register_event',{event_id:e.id});
+ assert.equal(w.status,'waitlisted');
+ assert.equal((await command('successor','register_event',{event_id:e.id})).id,w.id,'joining twice is idempotent');
+ const stats=(await rpc('successor','club_workspace',[],'')).event_stats.find(s=>s.event_id===e.id);
+ assert.equal(Number(stats.registered),1);assert.equal(Number(stats.waitlisted),1);assert.equal(Number(stats.waitlist_position),1);
+ const officerView=await rpc('officer','club_workspace',[],'');
+ assert.equal(officerView.waitlist.filter(x=>x.event_id===e.id).length,1);
+ const memberView=await rpc('applicant','club_workspace',[],'');
+ assert.equal(memberView.waitlist.length,0,'members cannot see who else is waitlisted');
+ await denied(()=>command('other','register_event',{event_id:e.id}),/membership/);
+ await command('applicant','cancel_registration',{event_id:e.id});
+ const seats=(await db.query('select user_id from app_private.registrations where event_id=$1',[e.id])).rows;
+ assert.deepEqual(seats.map(r=>r.user_id),[ids.successor],'earliest waitlisted member is promoted');
+ assert.equal((await db.query("select count(*)::int n from app_private.notifications where user_id=$1 and record_id=$2 and kind='promoted'",[ids.successor,e.id])).rows[0].n,1);
+ assert.equal((await command('applicant','register_event',{event_id:e.id})).status,'waitlisted','a cancelled member can rejoin at the back of the line');
+ await command('applicant','cancel_registration',{event_id:e.id});
+ await denied(()=>command('applicant','cancel_registration',{event_id:e.id}),/not registered/);
+ const closed=await command('officer','save_event',{title:'Closed practice',description:'Deadline passed',venue:'Range',starts_at:future(10),ends_at:future(12),registration_opens:future(-5),registration_closes:future(-1),capacity:5});
+ await command('officer','publish_event',{id:closed.id,version:1});
+ await denied(()=>command('applicant','register_event',{event_id:closed.id}),/closed/);
+});
+test('M3 cancellation is refused once attendance is recorded',async()=>{
+ const e=await command('officer','save_event',{title:'Attended practice',description:'Attendance first',venue:'Range',starts_at:future(30),ends_at:future(32),registration_opens:future(-2),registration_closes:future(20),capacity:3});
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('applicant','register_event',{event_id:e.id});
+ await command('officer','record_attendance',{event_id:e.id,user_id:ids.applicant,status:'excused',remark:'Pre-approved excuse'});
+ await denied(()=>command('applicant','cancel_registration',{event_id:e.id}),/Attendance/);
+});
+test('M5/M10 member cancels an unreleased request; live equipment status follows the lifecycle',async()=>{
+ const eq=await command('officer','save_equipment',{label:'Recurve 02',category:'Bow',specifications:'Training riser',handedness:'right',draw_weight:22,bow_setup:'recurve',condition:'serviceable'});
+ const state=async()=>(await rpc('applicant','club_workspace',[],'')).equipment_status.find(s=>s.equipment_id===eq.id).state;
+ assert.equal(await state(),'available');
+ const req={equipment_id:eq.id,starts_at:future(1),ends_at:future(5),handedness:'right',maximum_draw_weight:28,bow_setup:'recurve',purpose:'Practice'};
+ const a=await command('applicant','request_borrowing',req);
+ await denied(()=>command('successor','cancel_borrowing',{id:a.id,version:1}),/not found/);
+ await command('applicant','cancel_borrowing',{id:a.id,version:1});
+ assert.equal((await row('borrowings',a.id)).status,'cancelled');
+ await denied(()=>command('officer','review_borrowing',{id:a.id,version:2,status:'approved',compatibility_confirmed:true,remark:'Late'}),/transition/);
+ const b=await command('applicant','request_borrowing',req);
+ await command('officer','review_borrowing',{id:b.id,version:1,status:'approved',compatibility_confirmed:true,remark:'Fit checked'});
+ assert.equal(await state(),'reserved');
+ await command('officer','review_borrowing',{id:b.id,version:2,status:'released',compatibility_confirmed:true,remark:'Handed over'});
+ assert.equal(await state(),'in_use');
+ await denied(()=>command('applicant','cancel_borrowing',{id:b.id,version:3}),/released/);
+ await command('officer','review_borrowing',{id:b.id,version:3,status:'returned',condition:'serviceable',remark:'Returned complete'});
+ assert.equal(await state(),'available');
+});
+test('M5 borrowing periods longer than 14 days are refused',async()=>{
+ const eq=(await db.query("select id from app_private.equipment where label='Recurve 02'")).rows[0];
+ await denied(()=>command('applicant','request_borrowing',{equipment_id:eq.id,starts_at:future(2),ends_at:future(2+24*15),handedness:'right',bow_setup:'recurve',purpose:'Semester'}),/14 days/);
 });

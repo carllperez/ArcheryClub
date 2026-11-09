@@ -98,6 +98,9 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                         });Text(human(permission))}
                     }
                 }
+                "timestamp" -> DateTimeField(label,instantOf(value),{values[name]=it.toString()})
+                "date" -> DateTimeField(label,runCatching{LocalDate.parse(value.take(10)).atStartOfDay(ZoneId.systemDefault()).toInstant()}.getOrNull(),
+                    {values[name]=it.atZone(ZoneId.systemDefault()).toLocalDate().toString()},dateOnly=true)
                 else -> OutlinedTextField(value,{values[name]=it},label={Text(label)},
                     supportingText={when(field.text("type")){"timestamp"->Text("YYYY-MM-DDTHH:MM · ${ZoneId.systemDefault()}");"date"->Text("YYYY-MM-DD");"lines"->Text("One entry per line");else->Unit}},
                     minLines=if(field.text("type") in setOf("long","lines"))3 else 1,modifier=Modifier.fillMaxWidth())

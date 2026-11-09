@@ -54,6 +54,10 @@ fun ConnectedApp(vm:SystemViewModel){
     var module by rememberSaveable{mutableIntStateOf(0)}
     var landingPage by rememberSaveable{mutableStateOf("home")}
     var returnToLanding by rememberSaveable{mutableStateOf(false)}
+    // Purpose-built workflow screens are addressed by a small back stack of routes,
+    // e.g. "equipment|item:<id>|borrowing:<id>". Generic module screens remain available.
+    var routeStack by rememberSaveable{mutableStateOf("")}
+    val route=routeStack.substringAfterLast('|')
     var selected by rememberSaveable(stateSaver=Saver<Pair<String,JsonObject>?,String>(
         save={it?.let{pair->JsonArray(listOf(JsonPrimitive(pair.first),pair.second)).toString()}.orEmpty()},
         restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonPrimitive.content to a[1].jsonObject}}}
@@ -66,7 +70,7 @@ fun ConnectedApp(vm:SystemViewModel){
     LaunchedEffect(state.error,state.message,state.signedIn){
         if(state.signedIn)(state.error?:state.message)?.let{snackbar.showSnackbar(it);vm.clearMessage()}
     }
-    LaunchedEffect(state.signedIn){if(!state.signedIn){selected=null;editing=null;module=0;landingPage="home";returnToLanding=false}}
+    LaunchedEffect(state.signedIn){if(!state.signedIn){selected=null;editing=null;module=0;landingPage="home";returnToLanding=false;routeStack=""}}
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
     if(!state.signedIn){AuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
@@ -88,6 +92,17 @@ fun ConnectedApp(vm:SystemViewModel){
         else->permission in permissions
     }
     fun visible(n:Int)=when(n){1->workspace.records("memberships").any{it.text("user_id")==user};3,4,5,6->isMember;2->true;7->allowed("membership");8->allowed("activities");9->isMember||allowed("elections");10->allowed("equipment");11->allowed("training");12->true;13->allowed("reports");14->allowed("administration");15->allowed("partner");else->false}
+    fun push(r:String){routeStack=if(routeStack.isEmpty())r else "$routeStack|$r"}
+    fun pop(){routeStack=routeStack.substringBeforeLast('|',"")}
+    fun go(r:String){
+        if(r.startsWith("module:")){routeStack="";module=r.removePrefix("module:").toInt();selected=null;returnToLanding=false} else push(r)
+    }
+    /** Modules that have a purpose-built workflow screen open it first; its "records" link reaches the generic view. */
+    fun dedicated(n:Int):String?=when(n){
+        1->"profile";3->if(isMember)"activities" else null;5->if(isMember)"equipment_member" else null
+        8->"officer_activities";10->"equipment";else->null
+    }
+    fun openModule(n:Int){val r=dedicated(n);if(r!=null){module=0;selected=null;routeStack=r}else{module=n;selected=null;returnToLanding=false}}
     fun start(action:String,row:JsonObject=buildJsonObject{}){
         val form=forms[action]?.jsonObject?:return
         val initial=buildJsonObject{
@@ -99,6 +114,9 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     fun openNotice(notice:JsonObject) {
         val destination=notice.text("module").toIntOrNull()?:return
+        val record=notice.text("record_id")
+        if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){routeStack="activity:$record";return}
+        if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){routeStack="borrowing:$record";return}
         if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
         val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
         returnToLanding=module==0
@@ -113,15 +131,15 @@ fun ConnectedApp(vm:SystemViewModel){
             val token=uri.getQueryParameter("token")
             if(token!=null)vm.command("check_in",buildJsonObject{put("token",token)})
             else if(uri.host=="event"){
-                workspace.records("events").find{it.text("id")==uri.getQueryParameter("id")}?.let{module=3;selected="events" to it}
+                workspace.records("events").find{it.text("id")==uri.getQueryParameter("id")}?.let{routeStack="activity:${it.text("id")}"}
                     ?:vm.error("This event is not available to your account. Refresh and try again.")
-            } else workspace.records("equipment").find{it.text("id")==value}?.let{module=if(allowed("equipment"))10 else 5;selected="equipment" to it}
+            } else workspace.records("equipment").find{it.text("id")==value}?.let{routeStack="item:${it.text("id")}"}
                 ?:vm.error("This is not an available club attendance, event, or equipment code.")
         }
     }
     fun leaveRecord(){selected=null;if(returnToLanding){module=0;returnToLanding=false}}
-    BackHandler(module!=0||selected!=null||editing!=null||landingPage!="home"){
-        if(editing!=null)editing=null else if(selected!=null)leaveRecord() else if(module!=0)module=0 else landingPage="home"
+    BackHandler(module!=0||selected!=null||editing!=null||landingPage!="home"||routeStack.isNotEmpty()){
+        if(editing!=null)editing=null else if(routeStack.isNotEmpty())pop() else if(selected!=null)leaveRecord() else if(module!=0)module=0 else landingPage="home"
     }
     editing?.let{(form,initial)->
         WorkflowForm(form,initial,workspace,state.busy,onBack={editing=null},onSubmit={payload->
@@ -129,10 +147,16 @@ fun ConnectedApp(vm:SystemViewModel){
         },snackbar=snackbar)
         return
     }
+    if(routeStack.isNotEmpty()){
+        WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,
+            onBack=::pop,onPush=::push,onGo=::go,onStart=::start,
+            onCommand={action,data,done->vm.command(action,data,done)})
+        return
+    }
     if(module==0){
         ClubLanding(page=landingPage,onPage={landingPage=it},workspace=workspace,
             modules=modules.filter{visible(it.text("number").toInt())},state=state,snackbar=snackbar,
-            onModule={module=it;selected=null;returnToLanding=false},
+            onModule={openModule(it)},onRoute={go(it)},
             onRecord={target,table,row->if(visible(target)){module=target;selected=table to row;returnToLanding=true}},
             onAnnouncement={if(allowed("activities"))start("publish_announcement")},
             onNotice=::openNotice,

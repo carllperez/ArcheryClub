@@ -1,0 +1,169 @@
+package ph.capstone.archeryclub.connected
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.*
+import ph.capstone.archeryclub.ui.DiscardDialog
+import ph.capstone.archeryclub.ui.ScreenShell
+import java.time.Instant
+
+// ------------------------------------------------------------------ profile
+
+private const val PROFILE_FIELDS = "full_name,phone,emergency_contact_name,emergency_contact_phone,program,year_level,dominant_hand,bow_type,draw_weight,arrow_length,experience_level,bio"
+
+@Composable
+fun ProfileScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onEdit: () -> Unit,
+                  onRenewal: () -> Unit, onActivities: () -> Unit, onEquipment: () -> Unit) {
+    val user = workspace.text("user_id")
+    val p = workspace.records("profiles").find { it.text("id") == user }
+    val m = workspace.records("memberships").find { it.text("user_id") == user }
+    val summary = participationSummary(workspace)
+    val completeness = profileCompleteness(p)
+    ScreenShell("My profile", onBack, snackbar) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                    Text(p?.text("full_name").orEmpty().split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }.uppercase(),
+                        style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(p?.text("full_name").orEmpty().ifBlank { "Club member" }, style = MaterialTheme.typography.titleLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusPill(m?.text("status")?.let { "$it member" } ?: "No membership", if (m?.text("status") == "Active") Tone.POSITIVE else Tone.WARNING)
+                    m?.text("category")?.takeIf { it.isNotBlank() }?.let { StatusPill(it, Tone.NEUTRAL) }
+                }
+            }
+        }
+        if (completeness < 100) {
+            WorkCard("Profile $completeness% complete", listOf("Add your archery details so equipment requests can be checked for fit automatically."),
+                footer = { LinearProgressIndicator(progress = { completeness / 100f }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = onEdit) { Text("Complete profile") } })
+        }
+        TileRow {
+            StatTile("${summary.attended}", "Attended", Modifier.weight(1f).fillMaxHeight(), onClick = onActivities)
+            StatTile(summary.rate?.let { "$it%" } ?: "—", "Attendance", Modifier.weight(1f).fillMaxHeight(), onClick = onActivities)
+            StatTile("${workspace.records("borrowings").count { it.text("user_id") == user && it.text("status") in setOf("released", "returned") }}", "Borrowings", Modifier.weight(1f).fillMaxHeight(), onClick = onEquipment)
+        }
+        SectionHeader("Contact", "Edit", onEdit)
+        Column {
+            KeyValue("Mobile", p?.text("phone").orEmpty().ifBlank { "Not set" })
+            KeyValue("Emergency contact", listOf(p?.text("emergency_contact_name").orEmpty(), p?.text("emergency_contact_phone").orEmpty()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Not set" })
+            KeyValue("Program", listOf(p?.text("program").orEmpty(), p?.text("year_level").orEmpty()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Not set" })
+        }
+        SectionHeader("Archery", "Edit", onEdit)
+        Column {
+            KeyValue("Shooting hand", p?.text("dominant_hand").orEmpty().ifBlank { "Not set" }.let(::human))
+            KeyValue("Bow type", p?.text("bow_type").orEmpty().ifBlank { "Not set" }.let(::human))
+            KeyValue("Draw weight", p?.text("draw_weight").orEmpty().ifBlank { null }?.let { "$it lb" } ?: "Not set")
+            KeyValue("Arrow length", p?.text("arrow_length").orEmpty().ifBlank { null }?.let { "$it in" } ?: "Not set")
+            KeyValue("Level", p?.text("experience_level").orEmpty().ifBlank { "Not set" }.let(::human))
+            KeyValue("About", p?.text("bio").orEmpty())
+        }
+        if (m != null) {
+            SectionHeader("Membership")
+            Column {
+                KeyValue("Category", m.text("category")); KeyValue("Status", m.text("status"))
+                KeyValue("Student number", m.text("student_number"))
+                KeyValue("Member since", fmtDay(m.instant("approved_at")))
+            }
+            SecondaryAction("Renewal and membership records", !busy, onRenewal)
+        }
+    }
+}
+
+@Composable
+fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onSave: (JsonObject) -> Unit) {
+    val user = workspace.text("user_id")
+    val p = workspace.records("profiles").find { it.text("id") == user }
+    val initial = remember(p) { PROFILE_FIELDS.split(",").associateWith { p?.text(it).orEmpty() } }
+    val values = rememberSaveable(saver = mapSaver(save = { it.toMap() }, restore = { saved -> mutableStateMapOf<String, String>().apply { saved.forEach { (k, v) -> put(k, v as String) } } })) {
+        mutableStateMapOf<String, String>().apply { putAll(initial) }
+    }
+    var attempted by remember { mutableStateOf(false) }
+    var discard by remember { mutableStateOf(false) }
+    val errors = profileErrors(values)
+    val changed = values.toMap() != initial
+    val leave = { if (changed) discard = true else onBack() }
+    BackHandler(onBack = leave)
+    if (discard) DiscardDialog(onDismiss = { discard = false }, onDiscard = { discard = false; onBack() })
+    @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
+        OutlinedTextField(values[key].orEmpty(), { values[key] = it }, label = { Text(label) }, isError = attempted && key in errors,
+            supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
+    ScreenShell("Edit profile", leave, snackbar) {
+        SectionHeader("Personal")
+        field("full_name", "Full name")
+        field("phone", "Mobile number", KeyboardType.Phone)
+        field("program", "Program / course", hint = "e.g. BS Information Technology")
+        Text("Year level", style = MaterialTheme.typography.labelLarge)
+        ChoiceChips(listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Alumni").map { it to it }, values["year_level"].orEmpty()) { values["year_level"] = it }
+        SectionHeader("Emergency contact")
+        field("emergency_contact_name", "Contact name")
+        field("emergency_contact_phone", "Contact number", KeyboardType.Phone)
+        SectionHeader("Archery details")
+        Text("Used to check bow fit when you borrow equipment.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text("Shooting hand", style = MaterialTheme.typography.labelLarge)
+        ChoiceChips(listOf("right" to "Right", "left" to "Left"), values["dominant_hand"].orEmpty()) { values["dominant_hand"] = it }
+        Text("Bow type", style = MaterialTheme.typography.labelLarge)
+        ChoiceChips(listOf("recurve", "compound", "barebow", "traditional", "longbow").map { it to human(it) }, values["bow_type"].orEmpty()) { values["bow_type"] = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.weight(1f)) { field("draw_weight", "Max draw weight (lb)", KeyboardType.Decimal) }
+            Box(Modifier.weight(1f)) { field("arrow_length", "Arrow length (in)", KeyboardType.Decimal) }
+        }
+        Text("Experience", style = MaterialTheme.typography.labelLarge)
+        ChoiceChips(listOf("beginner", "intermediate", "advanced", "competitive").map { it to human(it) }, values["experience_level"].orEmpty()) { values["experience_level"] = it }
+        field("bio", "About you (optional)", lines = 3, hint = "${values["bio"].orEmpty().length}/500")
+        PrimaryAction(if (busy) "Saving…" else "Save changes", !busy && changed) {
+            attempted = true
+            if (errors.isEmpty()) onSave(buildJsonObject { values.forEach { (k, v) -> put(k, v.trim()) } })
+        }
+        if (attempted && errors.isNotEmpty()) Text("Fix the highlighted fields.", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+// ------------------------------------------------------------------ officer dashboard
+
+@Composable
+fun OfficerDashboardContent(workspace: JsonObject, permissions: Set<String>, onRoute: (String) -> Unit) {
+    val now = Instant.now()
+    val queues = officerQueues(workspace, permissions, now)
+    val open = queues.filter { it.count > 0 }
+    val members = workspace.records("member_directory").count { it.text("status") == "Active" }
+    val events = workspace.records("events").filter { it.text("published") == "true" && it.text("archived") != "true" }.map { activityView(it, workspace, now) }
+    val upcoming = events.filter { it.end?.isAfter(now) == true }.sortedBy { it.start }
+    val weekEnd = now.plusSeconds(7 * 86400L)
+    val past30 = events.filter { it.end?.isBefore(now) == true && it.end.isAfter(now.minusSeconds(30 * 86400L)) }
+    val attendanceRate = past30.sumOf { it.registered }.takeIf { it > 0 }?.let { past30.sumOf { e -> e.present } * 100 / it }
+    SectionHeader("Today")
+    TileRow {
+        StatTile("$members", "Active members", Modifier.weight(1f).fillMaxHeight()) { if ("membership" in permissions) onRoute("module:7") }
+        StatTile("${upcoming.count { it.start?.isBefore(weekEnd) == true }}", "Activities this week", Modifier.weight(1f).fillMaxHeight()) { if ("activities" in permissions) onRoute("officer_activities") }
+    }
+    TileRow {
+        StatTile(attendanceRate?.let { "$it%" } ?: "—", "Attendance, last 30 days", Modifier.weight(1f).fillMaxHeight()) { if ("reports" in permissions) onRoute("module:13") }
+        if ("equipment" in permissions) {
+            val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
+            StatTile("${items.count { equipmentState(it, workspace) == EquipmentState.AVAILABLE }}/${items.size}", "Equipment available", Modifier.weight(1f).fillMaxHeight()) { onRoute("equipment") }
+        } else StatTile("${upcoming.sumOf { it.registered }}", "Upcoming registrations", Modifier.weight(1f).fillMaxHeight())
+    }
+    SectionHeader("Needs your action")
+    if (open.isEmpty()) EmptyState("You're all caught up", "Requests from members appear here as soon as they're submitted.")
+    open.sortedByDescending { if (it.tone == Tone.DANGER) 1000 + it.count else it.count }.forEach { q ->
+        WorkCard(q.label, emptyList(), status = { StatusPill("${q.count} waiting", q.tone) }, onClick = { onRoute(q.route) })
+    }
+    if ("activities" in permissions) {
+        SectionHeader("Next activities", "See all") { onRoute("officer_activities") }
+        if (upcoming.isEmpty()) EmptyState("No published activities", "Create one and publish it so members can register.", "Create activity") { onRoute("officer_activities") }
+        upcoming.take(3).forEach { ActivityCard(it, { onRoute("activity:${it.id}") }, officer = true) }
+    }
+}

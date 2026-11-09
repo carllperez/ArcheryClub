@@ -14,6 +14,8 @@ def form(action,label,fields,permission='account',table=None,seed=None,states=No
   bits=item.split(':',2); name=bits[0]; typ=bits[1] if len(bits)>1 else 'text'; extra=bits[2] if len(bits)>2 else ''
   parsed.append({'name':name,'label':name.replace('_',' ').capitalize(),'type':typ,'options':extra.split('|') if typ=='choice' else [],'source':extra if typ=='record' else '', 'optional':name.endswith('?')})
   if name.endswith('?'):parsed[-1]['name']=name[:-1];parsed[-1]['label']=parsed[-1]['label'].replace('?','')
+  if typ=='record' and parsed[-1]['name'].endswith('_id'):
+   parsed[-1]['label']={'event':'Activity','user':'Member'}.get(parsed[-1]['name'][:-3],parsed[-1]['name'][:-3].replace('_',' ').capitalize())
  forms[action]={'action':action,'label':label,'fields':parsed,'permission':permission,'table':table,'seed':seed or {},'states':states or [],'help':help}
 def module(n,tables,actions):modules[n-1].update(tables=tables.split(),actions=actions.split())
 form('save_profile','Edit my profile','full_name;phone?',table='profiles')
