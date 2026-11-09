@@ -117,6 +117,7 @@ fun ConnectedApp(vm:SystemViewModel){
         val record=notice.text("record_id")
         if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){routeStack="activity:$record";return}
         if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){routeStack="borrowing:$record";return}
+        workspace.records("name_corrections").find{it.text("id")==record}?.let{routeStack=if(it.text("user_id")==user)"profile" else "name_corrections";return}
         if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
         val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
         returnToLanding=module==0

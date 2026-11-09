@@ -191,6 +191,7 @@ data class QueueItem(val label: String, val count: Int, val route: String, val t
 fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant = Instant.now()): List<QueueItem> = buildList {
     val user = workspace.text("user_id")
     if ("membership" in permissions) {
+        add(QueueItem("Name corrections", workspace.records("name_corrections").count { it.text("user_id") != user && it.text("status") == "pending" }, "name_corrections", Tone.WARNING))
         add(QueueItem("Applications to review", workspace.records("applications").count { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }, "module:7", Tone.WARNING))
         add(QueueItem("Renewals to review", workspace.records("renewals").count { it.text("user_id") != user && it.text("status") == "pending" }, "module:7", Tone.WARNING))
     }
@@ -209,3 +210,9 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
         add(QueueItem("Financial submissions", workspace.records("financial_records").count { it.text("user_id") != user && it.text("status") == "pending_verification" }, "module:12", Tone.WARNING))
 }
 
+
+/** Once a membership exists the name is the verified identity: it changes only through an officer-approved correction. */
+fun nameLocked(workspace: JsonObject) = workspace.records("memberships").any { it.text("user_id") == workspace.text("user_id") }
+
+fun pendingNameCorrection(workspace: JsonObject) =
+    workspace.records("name_corrections").find { it.text("user_id") == workspace.text("user_id") && it.text("status") == "pending" }

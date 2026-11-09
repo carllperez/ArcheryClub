@@ -89,4 +89,20 @@ class WorkflowLogicTest {
         val q = officerQueues(w, setOf("equipment"), now).associate { it.label to it.count }
         assertEquals(1, q["Borrowing requests"]); assertEquals(1, q["Overdue returns"]); assertEquals(0, q["Ready to hand over"])
     }
+
+    @Test fun nameLocksOnceAMembershipExistsAndCorrectionsReachTheQueue() {
+        val applicant = buildJsonObject { put("user_id", "me"); put("memberships", JsonArray(emptyList())) }
+        assertFalse(nameLocked(applicant))
+        val member = buildJsonObject {
+            put("user_id", "me"); put("memberships", JsonArray(listOf(buildJsonObject { put("user_id", "me") })))
+            put("name_corrections", JsonArray(listOf(
+                buildJsonObject { put("user_id", "me"); put("status", "pending"); put("requested_name", "Alexandra") },
+                buildJsonObject { put("user_id", "other"); put("status", "pending") },
+                buildJsonObject { put("user_id", "other"); put("status", "approved") })))
+        }
+        assertTrue(nameLocked(member))
+        assertEquals("Alexandra", pendingNameCorrection(member)?.text("requested_name"))
+        val q = officerQueues(member, setOf("membership"), now).associate { it.label to it.count }
+        assertEquals(1, q["Name corrections"])
+    }
 }

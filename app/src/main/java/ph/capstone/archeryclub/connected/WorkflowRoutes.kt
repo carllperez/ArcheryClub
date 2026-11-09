@@ -43,7 +43,8 @@ fun WorkflowRoute(
             onResubmit = { onStart("request_borrowing", it) }, onItem = { onPush("item:$it") })
         "profile" -> ProfileScreen(workspace, busy, snackbar, onBack, onEdit = { onPush("profile_edit") },
             onRenewal = { onGo("module:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
-        "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack) { payload -> onCommand("save_profile", payload, onBack) }
+        "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack, onSave = { payload -> onCommand("save_profile", payload, onBack) }, onCommand = onCommand)
+        "name_corrections" -> NameCorrectionsScreen(workspace, busy, snackbar, onBack, onCommand)
         else -> ScreenShell("Not found", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }
     }
 }

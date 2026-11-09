@@ -415,3 +415,26 @@ test('M5 borrowing periods longer than 14 days are refused',async()=>{
  const eq=(await db.query("select id from app_private.equipment where label='Recurve 02'")).rows[0];
  await denied(()=>command('applicant','request_borrowing',{equipment_id:eq.id,starts_at:future(2),ends_at:future(2+24*15),handedness:'right',bow_setup:'recurve',purpose:'Semester'}),/14 days/);
 });
+test('M1 verified names: members request corrections that another membership officer decides',async()=>{
+ await grant('officer','membership_officer');
+ const current=(await row('profiles',ids.applicant)).full_name;
+ await denied(()=>command('applicant','save_profile',{full_name:'Renamed Archer',phone:''}),/verified/);
+ await command('applicant','save_profile',{full_name:current,phone:'0917 123 4567'});
+ await denied(()=>command('applicant','request_name_correction',{requested_name:current,reason:'Same'}),/same/);
+ await denied(()=>command('applicant','request_name_correction',{requested_name:'Alexandra Archer'}),/valid reason/);
+ const r=await command('applicant','request_name_correction',{requested_name:'Alexandra Archer',reason:'Misspelled first name on application'});
+ await denied(()=>command('applicant','request_name_correction',{requested_name:'Other',reason:'Again'}),/pending/);
+ await denied(()=>command('applicant','review_name_correction',{id:r.id,status:'approved',decision:'Self'}),/Permission/);
+ assert.equal((await rpc('other','club_workspace',[],'')).name_corrections.length,0,'others cannot read the request');
+ await denied(()=>command('officer','review_name_correction',{id:r.id,status:'approved'}),/valid decision/);
+ await command('officer','review_name_correction',{id:r.id,status:'approved',decision:'Checked against student ID'});
+ assert.equal((await row('profiles',ids.applicant)).full_name,'Alexandra Archer');
+ assert.equal((await row('name_corrections',r.id)).status,'approved');
+ await denied(()=>command('officer','review_name_correction',{id:r.id,status:'rejected',decision:'Late'}),/not found/);
+ assert.equal((await db.query("select count(*)::int n from app_private.audit_log where record_id=$1 and action='review_name_correction'",[r.id])).rows[0].n,1);
+});
+test('M1 applicants without a membership still edit their own name',async()=>{
+ await command('other','save_profile',{full_name:'Fresh Applicant'});
+ assert.equal((await row('profiles',ids.other)).full_name,'Fresh Applicant');
+ await denied(()=>command('other','request_name_correction',{requested_name:'X',reason:'Y'}),/Applicants/);
+});

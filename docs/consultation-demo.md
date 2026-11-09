@@ -10,8 +10,8 @@ the honest wording is "implemented and backend-tested; device walkthrough pendin
    → *Assign time-limited officer role* for `testOfficer` (activities, equipment, membership) and the
    President account, ending after your defense date. Without this, every officer step fails.
 2. **Apply migration 017** to the hosted project:
-   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push`.
-   Then run `node --test backend-tests/workflow.test.mjs` locally (40 tests, all passing on this branch).
+   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push` (applies 017 and 018).
+   Then run `node --test backend-tests/workflow.test.mjs` locally (42 tests, all passing on this branch).
 3. **Build** in Android Studio (`app` → Run). Copy your `backend.properties` into this folder first.
 4. **Seed demo data** through the app (not SQL) so the audit trail is real:
    - Officer: create 3 activities — one open (capacity 2), one closing within 24 h, one whose
@@ -68,6 +68,9 @@ officer approves → same account signs in as an **Active member** and immediate
 Member: **My profile** (completeness bar) → **Edit** → mobile, emergency contact (both required together), program,
 year level, hand, bow type, draw weight, arrow length. Show validation (bad number, missing pair).
 Then repeat Story 3 step 2 to show the borrowing check now uses the saved draw weight.
+Then show the **verified name**: the Full name is locked with a *Verified* label. Tap **Request name correction**
+(new name + reason). Officer: dashboard *Name corrections · 1 waiting* → compare current → requested → **Approve**
+with a note. Member refreshes: the new name appears everywhere (roster, borrowings), and the change is in the audit log.
 
 ### Story 6 — Officer dashboard from real transactions
 Officer home: active members, activities this week, attendance rate (last 30 days), equipment available/total,
@@ -91,6 +94,7 @@ and *Needs your action* queues (requests, hand-overs, overdue returns, correctio
 | Members cancel only before hand-over; borrow period ≤ 14 days | migration 017 |
 | Return records condition; non-serviceable items leave the catalog | `equipment_command` + `equipment_status()` |
 | Phone formats, emergency contact pair, draw weight 5–80 lb, arrow 20–34 in | `save_member_profile` |
+| Approved members cannot rename themselves; one pending correction at a time; officers cannot approve their own | migration 018 |
 | Officer actions require a time-limited role with the right permission | `require_permission` + RLS |
 | Members never see other members' registrations or waitlist entries; counts come from `event_stats()` | RLS + read model |
 
@@ -120,7 +124,7 @@ interclub partner UI polish, SMTP email, UAT/SUS with club officers.
 
 ## 4. Likely adviser questions — short answers
 
-- **Where is the 80%?** "All 15 modules have server-side workflows with tests (40 backend tests). The core member transactions
+- **Where is the 80%?** "All 15 modules have server-side workflows with tests (42 backend tests). The core member transactions
   are activities, equipment and membership, and they now have complete purpose-built screens on both the member and officer sides. The remaining work
   is mostly screens for training and finance, whose backend transactions already exist."
 - **What is transactional here?** "Registering, joining a waitlist, cancelling, marking attendance, requesting, approving, handing over and

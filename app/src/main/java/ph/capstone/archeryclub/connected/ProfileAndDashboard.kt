@@ -45,6 +45,9 @@ fun ProfileScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostSt
                 }
             }
         }
+        pendingNameCorrection(workspace)?.let {
+            NoticeCard("Name correction pending", "You asked to change your name to \"${it.text("requested_name")}\". A membership officer will review it.", Tone.WARNING)
+        }
         if (completeness < 100) {
             WorkCard("Profile $completeness% complete", listOf("Add your archery details so equipment requests can be checked for fit automatically."),
                 footer = { LinearProgressIndicator(progress = { completeness / 100f }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = onEdit) { Text("Complete profile") } })
@@ -82,7 +85,8 @@ fun ProfileScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostSt
 }
 
 @Composable
-fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onSave: (JsonObject) -> Unit) {
+fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onSave: (JsonObject) -> Unit,
+                      onCommand: (String, JsonObject, () -> Unit) -> Unit) {
     val user = workspace.text("user_id")
     val p = workspace.records("profiles").find { it.text("id") == user }
     val initial = remember(p) { PROFILE_FIELDS.split(",").associateWith { p?.text(it).orEmpty() } }
@@ -91,6 +95,9 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
     }
     var attempted by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
+    var correction by remember { mutableStateOf(false) }
+    val locked = nameLocked(workspace)
+    val pending = pendingNameCorrection(workspace)
     val errors = profileErrors(values)
     val changed = values.toMap() != initial
     val leave = { if (changed) discard = true else onBack() }
@@ -102,7 +109,11 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
     ScreenShell("Edit profile", leave, snackbar) {
         SectionHeader("Personal")
-        field("full_name", "Full name")
+        if (locked) {
+            WorkCard(values["full_name"].orEmpty(), listOf("Full name · verified when your membership was approved. It appears on rosters, borrowings and ballots, so changes go through the membership officer."),
+                status = { if (pending != null) StatusPill("Correction to \"${pending.text("requested_name")}\" pending", Tone.WARNING) else StatusPill("Verified", Tone.POSITIVE) },
+                footer = { if (pending == null) TextButton(onClick = { correction = true }, enabled = !busy) { Text("Request name correction") } })
+        } else field("full_name", "Full name")
         field("phone", "Mobile number", KeyboardType.Phone)
         field("program", "Program / course", hint = "e.g. BS Information Technology")
         Text("Year level", style = MaterialTheme.typography.labelLarge)
@@ -128,6 +139,74 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
             if (errors.isEmpty()) onSave(buildJsonObject { values.forEach { (k, v) -> put(k, v.trim()) } })
         }
         if (attempted && errors.isNotEmpty()) Text("Fix the highlighted fields.", color = MaterialTheme.colorScheme.error)
+    }
+    if (correction) NameCorrectionDialog(values["full_name"].orEmpty(), onDismiss = { correction = false }) { requested, reason ->
+        correction = false
+        onCommand("request_name_correction", buildJsonObject { put("requested_name", requested); put("reason", reason) }) {}
+    }
+}
+
+@Composable
+private fun NameCorrectionDialog(current: String, onDismiss: () -> Unit, onSubmit: (String, String) -> Unit) {
+    var requested by remember { mutableStateOf(current) }
+    var reason by remember { mutableStateOf("") }
+    ConfirmDialog("Request a name correction",
+        "A membership officer checks the request against your records. Your name changes only after it is approved.",
+        "Send request", onConfirm = { onSubmit(requested.trim(), reason.trim()) }, onDismiss = onDismiss,
+        confirmEnabled = requested.isNotBlank() && requested.trim() != current.trim() && reason.isNotBlank(),
+        extra = {
+            OutlinedTextField(requested, { requested = it }, label = { Text("Correct full name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(reason, { reason = it }, label = { Text("Reason") }, placeholder = { Text("e.g. Surname misspelled on application") },
+                minLines = 2, modifier = Modifier.fillMaxWidth())
+        })
+}
+
+/** Membership officer queue: compare current and requested names, then approve or reject with a reason. */
+@Composable
+fun NameCorrectionsScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
+                          onCommand: (String, JsonObject, () -> Unit) -> Unit) {
+    val user = workspace.text("user_id")
+    val all = workspace.records("name_corrections").sortedByDescending { it.text("created_at") }
+    val pending = all.filter { it.text("status") == "pending" }
+    var deciding by remember { mutableStateOf<Pair<JsonObject, String>?>(null) }
+    ScreenShell("Name corrections", onBack, snackbar) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text("Members cannot rename themselves after approval. Check each request against the member's records.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        SectionHeader("Pending (${pending.size})")
+        if (pending.isEmpty()) EmptyState("No pending requests", "Requests from members appear here and on your dashboard.")
+        pending.forEach { c ->
+            WorkCard("${c.text("current_name")} → ${c.text("requested_name")}", listOf("Reason: ${c.text("reason")}", "Requested ${fmtDateTime(c.instant("created_at"))}"),
+                status = { StatusPill("Pending", Tone.WARNING) },
+                footer = {
+                    if (c.text("user_id") == user) Text("You cannot review your own request.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { deciding = c to "approved" }, enabled = !busy) { Text("Approve") }
+                        OutlinedButton(onClick = { deciding = c to "rejected" }, enabled = !busy) { Text("Reject") }
+                    }
+                })
+        }
+        val decided = all.filter { it.text("status") != "pending" }.take(20)
+        if (decided.isNotEmpty()) {
+            SectionHeader("Decided")
+            decided.forEach { c ->
+                WorkCard("${c.text("current_name")} → ${c.text("requested_name")}", listOf(c.text("decision"), fmtDateTime(c.instant("reviewed_at"))),
+                    status = { StatusPill(human(c.text("status")), if (c.text("status") == "approved") Tone.POSITIVE else Tone.NEUTRAL) })
+            }
+        }
+    }
+    deciding?.let { (c, status) ->
+        var decision by remember(c, status) { mutableStateOf(if (status == "approved") "Checked against the member's records" else "") }
+        ConfirmDialog(if (status == "approved") "Approve name change?" else "Reject request?",
+            if (status == "approved") "The member's name becomes \"${c.text("requested_name")}\" everywhere: rosters, borrowings, ballots and reports."
+            else "The member keeps their current name and sees your reason.",
+            if (status == "approved") "Approve" else "Reject", destructive = status == "rejected",
+            confirmEnabled = decision.isNotBlank(), onDismiss = { deciding = null },
+            onConfirm = {
+                deciding = null
+                onCommand("review_name_correction", buildJsonObject { put("id", c.text("id")); put("status", status); put("decision", decision.trim()) }) {}
+            },
+            extra = { OutlinedTextField(decision, { decision = it }, label = { Text("Decision note") }, minLines = 2, modifier = Modifier.fillMaxWidth()) })
     }
 }
 
