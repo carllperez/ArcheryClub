@@ -226,7 +226,9 @@ test('M9 ballots are anonymous, duplicate/ineligible votes denied, external tall
  await db.query("insert into app_private.eligible_voters values($1,$2,$3,'Verified residency')",[e.id,ids.successor,ids.officer]);
  await db.query("update app_private.elections set voting_closes=now()-interval '1 hour' where id=$1",[e.id]);
  await command('officer','set_election_status',{id:e.id,version:1,status:'closed'});
- await command('officer','confirm_results',{id:e.id,version:2,confirmation:'Turnout checked'});
+ await denied(()=>command('officer','confirm_results',{id:e.id,version:2,confirmation:'Self-confirmed'}),/Another COMELEC/);
+ await grant('successor','election_officer');
+ await command('successor','confirm_results',{id:e.id,version:2,confirmation:'Turnout checked'});
  assert.equal((await row('elections',e.id)).status,'requires_revote');
  assert.equal((await rpc('applicant','election_summary',[e.id],'$1')).rate,50);
 });
@@ -276,7 +278,8 @@ test('M9 draft validation, nomination, residency, external results and archive u
  await denied(()=>command('officer','record_external_results',{id:e.id,version:5,turnout:2,results:[{id:c.id,votes:2}],verification:'Excess turnout'}),/Turnout/);
  await command('officer','record_external_results',{id:e.id,version:5,turnout:1,results:[{id:c.id,votes:1}],verification:'Paper count independently checked'});
  await denied(()=>rpc('applicant','election_summary',[e.id],'$1'),/restricted/);
- await command('officer','confirm_results',{id:e.id,version:6,confirmation:'Verified official result'});
+ await denied(()=>command('officer','confirm_results',{id:e.id,version:6,confirmation:'Self-confirmed'}),/Another COMELEC/);
+ await command('successor','confirm_results',{id:e.id,version:6,confirmation:'Verified official result'});
  assert.equal((await rpc('applicant','election_summary',[e.id],'$1')).rate,100);
  const rolesBefore=(await db.query('select count(*)::int n from app_private.role_assignments')).rows[0].n;
  await command('officer','record_leadership',{election_id:e.id,user_id:ids.successor,position:'President',kind:'transition',starts_on:'2030-01-01',ends_on:'2030-12-31',documentation:'Election result confirmed; access assignment remains separate'});
@@ -314,7 +317,9 @@ test('M15 two partner boundaries, scheduling, substitution, verified results and
  await command('officer','review_delegate',{event_id:e.id,id:replacement.id,version:1,status:'checked_in',remark:'Authorized check-in'});
  const result=await command('officer','record_result',{event_id:e.id,delegate_id:replacement.id,result:'Verified scoring file reference: fixture result'});
  assert.equal((await rpc('other','club_workspace',[],'')).interclub_results.filter(r=>r.event_id===e.id).length,0);
- await command('officer','verify_result',{event_id:e.id,id:result.id});
+ await denied(()=>command('officer','verify_result',{event_id:e.id,id:result.id}),/Another officer/);
+ await grant('successor','interclub_officer');
+ await command('successor','verify_result',{event_id:e.id,id:result.id});
  assert.equal((await rpc('other','club_workspace',[],'')).interclub_results.filter(r=>r.event_id===e.id).length,1);
  await command('officer','update_shared_event',{...update,version:2,status:'completed'});
  await denied(()=>command('officer','update_shared_event',{...update,version:3,status:'preparation'}),/transition/);
@@ -437,4 +442,113 @@ test('M1 applicants without a membership still edit their own name',async()=>{
  await command('other','save_profile',{full_name:'Fresh Applicant'});
  assert.equal((await row('profiles',ids.other)).full_name,'Fresh Applicant');
  await denied(()=>command('other','request_name_correction',{requested_name:'X',reason:'Y'}),/Applicants/);
+});
+test('M7/M12 membership fee gates activation; documents are verified one by one; rejected applicants may reapply',async()=>{
+ await grant('officer','membership_officer');await grant('officer','treasurer');
+ await denied(()=>command('applicant','set_membership_fee',{amount:500}),/Permission/);
+ await command('admin','set_membership_fee',{amount:500});
+ let a=await command('other','save_application',{full_name:'Fresh Applicant',phone:'09170000000',student_number:'TEST-9'});
+ await upload('other',2,a.id);
+ a=await command('other','submit_application',{version:a.version,full_name:'Fresh Applicant',student_number:'TEST-9',confirmed:true});
+ await denied(()=>command('officer','review_application',{id:a.id,version:a.version,status:'approved',category:'Regular member',requirements_verified:true}),/Verify every uploaded document/);
+ const doc=(await db.query('select id from app_private.documents where module=2 and record_id=$1',[a.id])).rows[0];
+ await denied(()=>command('other','verify_document',{id:doc.id}),/Permission/);
+ await command('officer','verify_document',{id:doc.id});
+ await command('officer','review_application',{id:a.id,version:a.version,status:'approved',category:'Regular member',requirements_verified:true});
+ assert.equal((await db.query('select status from app_private.memberships where user_id=$1',[ids.other])).rows[0].status,'Pending payment');
+ await denied(()=>command('other','register_event',{event_id:eventId}),/membership/);
+ const fee=(await db.query("select * from app_private.fee_assessments where user_id=$1 and purpose='Membership fee'",[ids.other])).rows[0];
+ assert.equal(Number(fee.amount),500);
+ const pay=await command('other','save_financial_request',{kind:'payment',purpose:'Membership fee',amount:'500',reference:'GCASH-1'});
+ await upload('other',12,pay.id);
+ await command('other','submit_financial_request',{id:pay.id,version:1});
+ await command('officer','verify_financial_request',{id:pay.id,version:2,status:'verified',remark:'Receipt matches'});
+ await command('officer','link_fee_payment',{id:fee.id,payment_id:pay.id});
+ assert.equal((await db.query('select status from app_private.memberships where user_id=$1',[ids.other])).rows[0].status,'Active');
+ await command('admin','set_membership_fee',{amount:0});
+ // reapply after rejection (fresh fixture user)
+ const rid='00000000-0000-4000-8000-0000000000aa';ids.reapplicant=rid;
+ await db.query("insert into auth.users values($1,'reapply@example.test',now())",[rid]);
+ await as('reapplicant',()=>db.exec('select public.initialize_account()'));
+ let r=await command('reapplicant','save_application',{full_name:'Second Try',student_number:'TEST-10'});
+ r=await command('reapplicant','submit_application',{version:r.version,full_name:'Second Try',student_number:'TEST-10',confirmed:true});
+ await command('officer','review_application',{id:r.id,version:r.version,status:'rejected',remark:'Incomplete eligibility'});
+ await denied(()=>command('reapplicant','save_application',{full_name:'Locked'}),/locked/);
+ await command('reapplicant','restart_application',{});
+ assert.equal((await row('applications',r.id)).status,'draft');
+ await command('reapplicant','save_application',{version:(await row('applications',r.id)).version,full_name:'Second Try',student_number:'TEST-10'});
+});
+test('M12 bulk fee assessment reaches every active member once',async()=>{
+ const due=new Date(Date.now()+20*86400000).toISOString().slice(0,10);
+ await denied(()=>command('applicant','assess_fee_bulk',{purpose:'Tournament fund',amount:200,due_on:due}),/Permission/);
+ const first=await command('officer','assess_fee_bulk',{purpose:'Tournament fund',amount:200,due_on:due});
+ const active=(await db.query("select count(*)::int n from app_private.memberships where status='Active'")).rows[0].n;
+ assert.equal(first.assessed,active);
+ assert.equal((await command('officer','assess_fee_bulk',{purpose:'Tournament fund',amount:200,due_on:due})).assessed,0,'running it twice adds nothing');
+ await denied(()=>command('officer','assess_fee_bulk',{purpose:'Old',amount:200,due_on:'2000-01-01'}),/due date/);
+});
+test('M12 self-approval and same-person approvals are refused',async()=>{
+ const f=await command('officer','save_financial_request',{kind:'expense',purpose:'Range tape',amount:'50'}).catch(()=>null);
+ if(f){await upload('officer',12,f.id);await command('officer','submit_financial_request',{id:f.id,version:1});
+  await denied(()=>command('officer','approve_funds',{id:f.id,office:'finance',remark:'Mine'}),/own/);
+  await denied(()=>command('officer','verify_financial_request',{id:f.id,version:2,status:'verified',remark:'Mine'}),/Another finance officer/);}
+ const g=await command('applicant','save_financial_request',{kind:'reimbursement',purpose:'Arrow rest',amount:'80'});
+ await upload('applicant',12,g.id);await command('applicant','submit_financial_request',{id:g.id,version:1});
+ await grant('officer','president');
+ await command('officer','approve_funds',{id:g.id,office:'president',remark:'OK'});
+ await denied(()=>command('officer','approve_funds',{id:g.id,office:'finance',remark:'Also me'}),/separate people/);
+});
+test('M3/M8 waitlist promotes until the start; walk-ins; cancelling an activity notifies and releases equipment',async()=>{
+ // register while open, then move the deadline into the past to test promotion after it
+ const ev=await command('officer','save_event',{title:'Late cancel practice',description:'Capacity one',venue:'Range',starts_at:future(30),ends_at:future(32),registration_opens:future(-3),registration_closes:future(10),capacity:1});
+ await command('officer','publish_event',{id:ev.id,version:1});
+ await command('applicant','register_event',{event_id:ev.id});
+ assert.equal((await command('successor','register_event',{event_id:ev.id})).status,'waitlisted');
+ await db.query("update app_private.events set registration_closes=now()-interval '1 minute' where id=$1",[ev.id]);
+ await command('applicant','cancel_registration',{event_id:ev.id});
+ assert.equal((await db.query('select user_id from app_private.registrations where event_id=$1',[ev.id])).rows[0]?.user_id,ids.successor,'promotion continues after the deadline until the start');
+ // walk-in
+ const now=await command('officer','save_event',{title:'Open range now',description:'Walk-ins welcome',venue:'Range',starts_at:future(-1),ends_at:future(2),registration_opens:future(-5),registration_closes:future(-1),capacity:1});
+ await command('officer','publish_event',{id:now.id,version:1});
+ await denied(()=>command('officer','record_walk_in',{event_id:now.id,user_id:ids.reapplicant}),/active members/);
+ await command('officer','record_walk_in',{event_id:now.id,user_id:ids.applicant});
+ assert.equal((await db.query('select status,remark from app_private.attendance where event_id=$1 and user_id=$2',[now.id,ids.applicant])).rows[0].remark,'Walk-in');
+ await denied(()=>command('applicant','record_walk_in',{event_id:now.id,user_id:ids.applicant}),/Permission/);
+ // cancellation
+ const eq=(await db.query("select id from app_private.equipment where label='Recurve 02'")).rows[0];
+ const b=await command('successor','request_borrowing',{equipment_id:eq.id,event_id:ev.id,starts_at:future(29),ends_at:future(33),handedness:'right',bow_setup:'recurve',purpose:'For the practice'});
+ const cur=await row('events',ev.id);
+ await command('officer','archive_event',{id:ev.id,version:Number(cur.version)});
+ assert.equal((await row('borrowings',b.id)).status,'cancelled');
+ assert.equal((await db.query("select count(*)::int n from app_private.notifications where record_id=$1 and kind='event_cancelled'",[ev.id])).rows[0].n,1);
+});
+test('M5/M10 overdue blocks new requests, double booking refused at request, receipt confirmed, damage alerts finance',async()=>{
+ const eq=await command('officer','save_equipment',{label:'Recurve 03',category:'Bow',specifications:'Club bow',handedness:'right',draw_weight:20,bow_setup:'recurve',condition:'serviceable'});
+ const eq2=await command('officer','save_equipment',{label:'Recurve 04',category:'Bow',specifications:'Club bow',handedness:'right',draw_weight:20,bow_setup:'recurve',condition:'serviceable'});
+ const req={equipment_id:eq.id,starts_at:future(1),ends_at:future(3),handedness:'right',bow_setup:'recurve',purpose:'Practice'};
+ const a=await command('applicant','request_borrowing',req);
+ await command('officer','review_borrowing',{id:a.id,version:1,status:'approved',compatibility_confirmed:true,remark:'OK'});
+ await denied(()=>command('successor','request_borrowing',req),/already booked/);
+ await command('officer','review_borrowing',{id:a.id,version:2,status:'released',compatibility_confirmed:true,remark:'Handed over'});
+ await denied(()=>command('successor','confirm_receipt',{id:a.id}),/handed over to you/);
+ await command('applicant','confirm_receipt',{id:a.id});
+ assert.ok((await row('borrowings',a.id)).received_at);
+ await db.query("update app_private.borrowings set starts_at=now()-interval '5 hours', ends_at=now()-interval '1 hour' where id=$1",[a.id]);
+ await denied(()=>command('applicant','request_borrowing',{...req,equipment_id:eq2.id,starts_at:future(5),ends_at:future(7)}),/overdue/);
+ await command('officer','review_borrowing',{id:a.id,version:3,status:'returned',condition:'damaged',remark:'Limb cracked'});
+ assert.equal((await db.query("select count(*)::int n from app_private.notifications where record_id=$1 and message like 'Equipment returned damaged%'",[a.id])).rows[0].n>0,true);
+ await command('applicant','request_borrowing',{...req,equipment_id:eq2.id,starts_at:future(5),ends_at:future(7)});
+});
+test('M13 attendance rate excludes excused absences everywhere',async()=>{
+ const ev=await command('officer','save_event',{title:'Rate check',description:'Three members',venue:'Range',starts_at:future(20),ends_at:future(22),registration_opens:future(-2),registration_closes:future(10),capacity:5});
+ await command('officer','publish_event',{id:ev.id,version:1});
+ for(const p of ['applicant','successor','other'])await command(p,'register_event',{event_id:ev.id});
+ await command('officer','record_attendance',{event_id:ev.id,user_id:ids.applicant,status:'present',remark:'Here'});
+ await command('officer','record_attendance',{event_id:ev.id,user_id:ids.successor,status:'excused',remark:'Exam'});
+ await command('officer','record_attendance',{event_id:ev.id,user_id:ids.other,status:'absent',remark:'No show'});
+ const rep=await rpc('officer','club_report',['2000-01-01','2099-12-31'],'$1,$2');
+ const act=rep.activities.find(x=>x.id===ev.id);
+ assert.equal(Number(act.attendance_rate),50);assert.equal(Number(act.excused),1);
+ const stats=(await rpc('officer','club_workspace',[],'')).event_stats.find(s=>s.event_id===ev.id);
+ assert.equal(Number(stats.excused),1);
 });

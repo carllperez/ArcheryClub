@@ -164,7 +164,8 @@ fun ConnectedApp(vm:SystemViewModel){
             onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
             onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
             onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
-            recovery={PasswordChange(vm,state.busy)})
+            recovery={PasswordChange(vm,state.busy)},
+            onCommand={action,data->vm.command(action,data)})
         return
     }
     if(!visible(module)){LaunchedEffect(module){module=0;selected=null;editing=null};return}
@@ -215,7 +216,7 @@ fun ConnectedApp(vm:SystemViewModel){
         if(module==3||module==8)RecordCalendar(workspace.records("events"),workspace){selected="events" to it}
         if(module==10)RecordCalendar(workspace.records("borrowings").filter{it.text("status") in setOf("approved","released")},workspace){selected="borrowings" to it}
         if(module==4||module==11)TrainingHistory(workspace.records("training_records").filter{module==11||it.text("user_id")==user},vm)
-        val createActions=setOf("save_profile","request_renewal","save_application","check_in","save_event","publish_announcement","record_attendance","save_term","record_residency","create_election","record_leadership","save_equipment","request_borrowing","save_personal_training","save_training","save_financial_request","assess_fee","save_goal","configure_club","define_role","save_partner","share_interclub_event","save_delegate","raise_concern")
+        val createActions=setOf("assess_fee_bulk","set_membership_fee","save_profile","request_renewal","save_application","check_in","save_event","publish_announcement","record_attendance","save_term","record_residency","create_election","record_leadership","save_equipment","request_borrowing","save_personal_training","save_training","save_financial_request","assess_fee","save_goal","configure_club","define_role","save_partner","share_interclub_event","save_delegate","raise_concern")
         available.filter{it.text("action") in createActions && it.text("action")!="request_renewal" || it.text("action") in setOf("save_renewal","invite_account")}.forEach{form->
             val application=workspace.records("applications").find{it.text("user_id")==user}
             val renewal=workspace.records("renewals").find{it.text("user_id")==user&&it.text("status") in setOf("draft","returned_for_correction","pending")}
@@ -268,13 +269,17 @@ fun ConnectedApp(vm:SystemViewModel){
         Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Sign in")}
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         state.message?.let{Text(it)}
+        if(!BuildConfig.EMAIL_ENABLED&&BuildConfig.SIGNUP_ENABLED){
+            OutlinedButton(onClick={vm.auth("signup",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("New applicant? Create an account")}
+            Text("Use your DLSU email and a password of at least 8 characters. Club officers review every application.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if(BuildConfig.EMAIL_ENABLED){
         OutlinedButton(onClick={vm.auth("signup",email,password)},enabled=!state.busy){Text("Create account")}
         TextButton(onClick={vm.auth("recover",email,"")},enabled=!state.busy){Text("Forgot password")}
         OutlinedTextField(code,{code=it},label={Text("Email verification or recovery code")},singleLine=true,modifier=Modifier.fillMaxWidth())
         TextButton(onClick={vm.auth("verify",email,"",code)},enabled=!state.busy){Text("Verify email code")}
         TextButton(onClick={vm.auth("verify_invite",email,"",code)},enabled=!state.busy){Text("Accept officer invitation code")}
-        }else Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
+        }else if(!BuildConfig.SIGNUP_ENABLED)Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
@@ -305,7 +310,15 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
 @Composable private fun DocumentsPanel(record:String,module:Int,workspace:JsonObject,vm:SystemViewModel,busy:Boolean){
     val context=LocalContext.current;var requirement by rememberSaveable(record){mutableStateOf("Supporting document")}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let{vm.upload(context,it,module,record,requirement)}}
-    workspace.records("documents").filter{it.text("record_id")==record}.forEach{d->TextButton(onClick={vm.openDocument(d.text("path")){context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(it)))}}){Text("Open ${d.text("name")}")}}
+    val canVerify=module==2&&(workspace["permissions"] as? JsonArray).orEmpty().any{it.jsonPrimitive.content=="membership"}
+    workspace.records("documents").filter{it.text("record_id")==record}.forEach{d->
+        Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){
+            TextButton(onClick={vm.openDocument(d.text("path")){context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(it)))}}){Text("Open ${d.text("name")}")}
+            if(d.text("verified_by").isNotBlank())StatusPill("Verified",Tone.POSITIVE)
+            else if(canVerify&&d.text("owner_id")!=workspace.text("user_id"))TextButton(onClick={vm.command("verify_document",buildJsonObject{put("id",d.text("id"))})},enabled=!busy){Text("Mark verified")}
+            else StatusPill("Not yet verified",Tone.WARNING)
+        }
+    }
     val names=if(module in setOf(1,2))(workspace.records("settings").firstOrNull()?.get(if(module==1)"renewal_requirements" else "application_requirements") as? JsonArray).orEmpty().map{it.jsonPrimitive.content} else emptyList()
     names.forEach{name->Text("$name: ${if(workspace.records("documents").any{it.text("record_id")==record&&it.text("requirement")==name})"Uploaded" else "Required"}")}
     val canAttach=canAttachDocument(module,record,workspace)

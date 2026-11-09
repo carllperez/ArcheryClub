@@ -152,7 +152,10 @@ fun EquipmentItemScreen(
             KeyValue("Specifications", item.text("specifications"))
             if (isOfficer) KeyValue("Notes", item.text("notes"))
         }
-        if (isMember && state.borrowable) {
+        val blocked = hasOverdueItem(workspace)
+        if (isMember && state.borrowable && blocked) {
+            NoticeCard("Return your overdue item first", "You have equipment past its return time. New requests open again once the officer records the return.", Tone.DANGER)
+        } else if (isMember && state.borrowable) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SectionHeader("Request this item")
             DateTimeField("Pick-up", start, { picked ->
@@ -235,6 +238,7 @@ fun BorrowingScreen(
             KeyValue("Purpose", b.text("purpose")); KeyValue("Hand", human(b.text("handedness")))
             b.text("event_id").takeIf { it.isNotBlank() }?.let { id -> KeyValue("Activity", workspace.records("events").find { it.text("id") == id }?.text("title").orEmpty()) }
             KeyValue("Released", fmtDateTime(b.instant("released_at")).takeIf { b.text("released_at").isNotBlank() }.orEmpty())
+            KeyValue("Receipt", if (b.text("received_at").isNotBlank()) "Confirmed by member ${fmtDateTime(b.instant("received_at"))}" else if (status == "released") "Not yet confirmed by member" else "")
             KeyValue("Returned", fmtDateTime(b.instant("returned_at")).takeIf { b.text("returned_at").isNotBlank() }.orEmpty())
             KeyValue("Officer remark", b.text("remark"))
         }
@@ -242,6 +246,9 @@ fun BorrowingScreen(
         if (b.text("user_id") == user) {
             if (status == "returned_for_correction") PrimaryAction("Edit and resubmit", !busy) { onResubmit(b) }
             if (status in setOf("pending", "approved", "returned_for_correction")) SecondaryAction("Cancel request", !busy) { cancel = true }
+            if (status == "released" && b.text("received_at").isBlank()) PrimaryAction("Confirm I received it", !busy) {
+                onCommand("confirm_receipt", buildJsonObject { put("id", borrowingId) }) {}
+            }
             if (status == "released") NoticeCard(if (overdue) "Please return this item" else "Enjoy your session",
                 "Return it to the equipment officer by ${fmtDateTime(b.instant("ends_at"))}. The officer records the return and its condition.", if (overdue) Tone.DANGER else Tone.POSITIVE)
         }

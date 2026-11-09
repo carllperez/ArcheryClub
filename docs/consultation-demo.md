@@ -10,8 +10,8 @@ the honest wording is "implemented and backend-tested; device walkthrough pendin
    → *Assign time-limited officer role* for `testOfficer` (activities, equipment, membership) and the
    President account, ending after your defense date. Without this, every officer step fails.
 2. **Apply migration 017** to the hosted project:
-   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push` (applies 017 and 018).
-   Then run `node --test backend-tests/workflow.test.mjs` locally (42 tests, all passing on this branch).
+   `supabase migration list` (confirm 001–016 are applied; 016 is from 5 Nov) → `supabase db push` (applies 017, 018 and 019).
+   Then run `node --test backend-tests/workflow.test.mjs` locally (48 tests, all passing on this branch).
 3. **Build** in Android Studio (`app` → Run). Copy your `backend.properties` into this folder first.
 4. **Seed demo data** through the app (not SQL) so the audit trail is real:
    - Officer: create 3 activities — one open (capacity 2), one closing within 24 h, one whose
@@ -20,6 +20,12 @@ the honest wording is "implemented and backend-tested; device walkthrough pendin
      and one marked *maintenance*.
    - Member: fill in the profile (right hand, recurve, 26 lb max draw weight).
    - Use a second member account for the waitlist story.
+
+5. **Applicant sign-up** (needed for Story 4 on the hosted project): in Supabase → Authentication → Sign In / Providers,
+   turn **Allow new users to sign up** ON and **Confirm email** OFF, then add `ENABLE_SIGNUP=true` to `backend.properties`
+   and rebuild. Sign-up never grants a role; officers still screen every application.
+6. **Optional: membership fee.** As Treasurer: Fees module → *Set membership fee* (e.g. 500). New approvals then stay
+   *Pending payment* until the fee payment is verified and linked.
 
 ## 1. The demo stories (show these, in this order)
 
@@ -95,6 +101,16 @@ and *Needs your action* queues (requests, hand-overs, overdue returns, correctio
 | Return records condition; non-serviceable items leave the catalog | `equipment_command` + `equipment_status()` |
 | Phone formats, emergency contact pair, draw weight 5–80 lb, arrow 20–34 in | `save_member_profile` |
 | Approved members cannot rename themselves; one pending correction at a time; officers cannot approve their own | migration 018 |
+| Membership fee before Active (when a fee is set): approval → *Pending payment* → verified payment activates | migration 019 |
+| Every uploaded application document verified individually before approval; applicants cannot verify their own | migration 019 |
+| Rejected applicants can start a new application | migration 019 |
+| Waitlist promotion continues until the activity starts; walk-ins recorded by officers around the activity time | migration 019 |
+| Archiving an upcoming activity notifies registrants/waitlist and cancels linked equipment requests | migration 019 |
+| Overdue equipment blocks new requests; double bookings refused at request time; members confirm receipt; damaged returns alert finance | migration 019 |
+| Election results confirmed by a different COMELEC member than the one who closed voting or entered paper tallies | migration 019 |
+| Interclub results verified by a different officer than the one who recorded them | migration 019 |
+| One attendance rate everywhere: present ÷ (registered − excused) | migration 019 + app |
+| Bulk fee assessment for all active members (no duplicates) | migration 019 |
 | Officer actions require a time-limited role with the right permission | `require_permission` + RLS |
 | Members never see other members' registrations or waitlist entries; counts come from `event_stats()` | RLS + read model |
 
@@ -124,7 +140,7 @@ interclub partner UI polish, SMTP email, UAT/SUS with club officers.
 
 ## 4. Likely adviser questions — short answers
 
-- **Where is the 80%?** "All 15 modules have server-side workflows with tests (42 backend tests). The core member transactions
+- **Where is the 80%?** "All 15 modules have server-side workflows with tests (48 backend tests). The core member transactions
   are activities, equipment and membership, and they now have complete purpose-built screens on both the member and officer sides. The remaining work
   is mostly screens for training and finance, whose backend transactions already exist."
 - **What is transactional here?** "Registering, joining a waitlist, cancelling, marking attendance, requesting, approving, handing over and

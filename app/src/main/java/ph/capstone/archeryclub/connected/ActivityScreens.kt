@@ -218,6 +218,7 @@ fun RosterScreen(
     val waitlist = workspace.records("waitlist").filter { it.text("event_id") == eventId }.sortedBy { it.text("created_at") }
     var search by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("all") }
+    var walkIn by remember { mutableStateOf(false) }
     val present = attendance.values.count { it.text("status") == "present" }
     val absent = attendance.values.count { it.text("status") == "absent" }
     val unmarked = registrations.count { it.text("user_id") !in attendance.keys }
@@ -234,14 +235,16 @@ fun RosterScreen(
             StatTile("$unmarked", "Not yet marked", Modifier.weight(1f).fillMaxHeight(), if (unmarked > 0) Tone.WARNING else Tone.NEUTRAL) { filter = "unmarked" }
         }
         if (registrations.isNotEmpty() && attendance.isNotEmpty()) {
-            val rate = present * 100 / registrations.size
-            Text("Attendance rate $rate% · $absent absent", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val excusedCount = attendance.values.count { it.text("status") == "excused" }
+            val rate = attendanceRate(present, registrations.size, excusedCount)
+            Text("Attendance rate ${rate?.let { "$it%" } ?: "—"} · $absent absent · $excusedCount excused (not counted)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (window != null) {
             WorkCard("Self check-in is open", listOf("Members scan this code to mark themselves present. Closes ${fmtTime(window.instant("closes_at"))}."),
                 footer = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CheckInQr("archeryclub://attendance?token=${window.text("token")}") } })
         } else if (event.text("published") == "true") SecondaryAction("Open self check-in (QR)", !busy) { onOpenCheckIn(event) }
 
+        if (walkInWindowOpen(event)) SecondaryAction("Add a walk-in (not registered)", !busy) { walkIn = true }
         SectionHeader("Registered members")
         OutlinedTextField(search, { search = it }, label = { Text("Search by name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         ChoiceChips(listOf("all" to "All", "unmarked" to "Not marked", "present" to "Present", "absent" to "Absent", "excused" to "Excused"), filter) { filter = it }
@@ -257,7 +260,11 @@ fun RosterScreen(
             val status = record?.text("status").orEmpty()
             WorkCard(names[uid].orEmpty().ifBlank { "Club member" },
                 listOf("Registered ${fmtDateTime(r.instant("created_at"))}", record?.let { "Marked ${it.text("method")} · ${it.text("remark")}" }.orEmpty()),
-                status = { StatusPill(if (status.isBlank()) "Not marked" else human(status), when (status) { "present" -> Tone.POSITIVE; "absent" -> Tone.DANGER; "excused" -> Tone.WARNING; else -> Tone.NEUTRAL }) },
+                status = {
+                    StatusPill(if (status.isBlank()) "Not marked" else human(status), when (status) { "present" -> Tone.POSITIVE; "absent" -> Tone.DANGER; "excused" -> Tone.WARNING; else -> Tone.NEUTRAL })
+                    val noShows = recentNoShows(workspace, uid)
+                    if (noShows >= 2) StatusPill("$noShows no-shows in 60 days", Tone.DANGER)
+                },
                 footer = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("present" to "Present", "absent" to "Absent", "excused" to "Excused").forEach { (value, label) ->
@@ -280,6 +287,18 @@ fun RosterScreen(
                 WorkCard("${i + 1}. ${names[w.text("user_id")].orEmpty().ifBlank { "Club member" }}", listOf("Joined ${fmtDateTime(w.instant("created_at"))}"))
             }
         }
+    }
+    if (walkIn) {
+        val registeredIds = registrations.map { it.text("user_id") }.toSet()
+        val candidates = workspace.records("member_directory").filter { it.text("status") == "Active" && it.text("user_id") !in registeredIds }
+        var picked by remember { mutableStateOf("") }
+        ConfirmDialog("Record a walk-in", "Adds an active member who came without registering and marks them present. Capacity does not block walk-ins.",
+            "Mark present", confirmEnabled = picked.isNotBlank(), onDismiss = { walkIn = false },
+            onConfirm = { walkIn = false; onCommand("record_walk_in", buildJsonObject { put("event_id", eventId); put("user_id", picked) }) {} },
+            extra = {
+                if (candidates.isEmpty()) Text("Every active member is already on the list.")
+                else SelectField("Member", picked, candidates.map { it.text("user_id") to it.text("full_name") }) { picked = it }
+            })
     }
 }
 

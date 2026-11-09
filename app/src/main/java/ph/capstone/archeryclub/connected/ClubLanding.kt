@@ -83,6 +83,7 @@ fun ClubLanding(
     snackbar:SnackbarHostState,onModule:(Int)->Unit,onRoute:(String)->Unit,onRecord:(Int,String,JsonObject)->Unit,
     onAnnouncement:()->Unit,onNotice:(JsonObject)->Unit,onAcknowledge:(JsonObject)->Unit,
     onRefresh:()->Unit,onSignOut:()->Unit,onScan:()->Unit,recovery:@Composable ()->Unit,
+    onCommand:(String,JsonObject)->Unit={_,_->},
 ) {
     val user=workspace.text("user_id")
     val profile=workspace.records("profiles").find{it.text("id")==user}
@@ -209,13 +210,23 @@ fun ClubLanding(
                 }else if(membership!=null){
                     SectionLabel("Membership status")
                     Text(membership.text("status"),style=MaterialTheme.typography.headlineMedium)
+                    if(membership.text("status")=="Pending payment"){
+                        val fee=workspace.records("fee_assessments").find{it.text("user_id")==user&&it.text("purpose")=="Membership fee"&&it.text("payment_id").isBlank()}
+                        Text("Your application is approved. Pay the membership fee${fee?.let{" of ₱"+it.text("amount")+" by "+it.text("due_on")}.orEmpty()} and the Treasurer's verification activates your membership.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick={onModule(12)},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Pay membership fee")}
+                    }else{
                     Text("Review your membership details and renewal status.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick={onModule(1)},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("View membership")}
+                    }
                 }else{
                     val application=workspace.records("applications").find{it.text("user_id")==user}
                     SectionLabel("Application status")
                     Text(application?.text("status")?.let(::human)?:"Ready when you are",style=MaterialTheme.typography.headlineMedium)
                     Text("View the club requirements, upload your documents and follow your screening status.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(application?.text("status")=="rejected"){
+                        if(application!!.text("remark").isNotBlank())Text("Reason: ${application.text("remark")}",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick={onCommand("restart_application",buildJsonObject{})},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Start a new application")}
+                    }else
                     Button(onClick={onModule(2)},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text(if(application==null)"Start application" else "View application")}
                 }
                 Spacer(Modifier.height(12.dp))

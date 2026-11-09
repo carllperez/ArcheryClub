@@ -180,7 +180,9 @@
         "approve_funds",
         "verify_financial_request",
         "assess_fee",
-        "link_fee_payment"
+        "link_fee_payment",
+        "assess_fee_bulk",
+        "set_membership_fee"
       ]
     },
     {
@@ -2344,6 +2346,60 @@
       "seed": {},
       "states": [],
       "help": ""
+    },
+    "assess_fee_bulk": {
+      "action": "assess_fee_bulk",
+      "label": "Assess a fee for all active members",
+      "fields": [
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "text",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "amount",
+          "label": "Amount",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        },
+        {
+          "name": "due_on",
+          "label": "Due on",
+          "type": "date",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "finance",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": "Every active member receives the fee once; running it again for the same purpose and due date adds nothing."
+    },
+    "set_membership_fee": {
+      "action": "set_membership_fee",
+      "label": "Set membership fee",
+      "fields": [
+        {
+          "name": "amount",
+          "label": "Amount",
+          "type": "number",
+          "options": [],
+          "source": "",
+          "optional": false
+        }
+      ],
+      "permission": "finance",
+      "table": null,
+      "seed": {},
+      "states": [],
+      "help": "When above zero, newly approved applicants stay Pending payment until their membership fee is verified. Set 0 to turn the requirement off."
     },
     "link_fee_payment": {
       "action": "link_fee_payment",

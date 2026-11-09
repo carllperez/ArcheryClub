@@ -30,6 +30,7 @@ data class ActivityView(
     val registered: Int,
     val waitlisted: Int,
     val present: Int,
+    val excused: Int,
     val capacity: Int,
     val waitlistPosition: Int?,
     val start: Instant?,
@@ -57,6 +58,8 @@ fun activityView(event: JsonObject, workspace: JsonObject, now: Instant = Instan
         ?: workspace.records("waitlist").count { it.text("event_id") == id }
     val present = stats?.text("present")?.toIntOrNull()
         ?: workspace.records("attendance").count { it.text("event_id") == id && it.text("status") == "present" }
+    val excused = stats?.text("excused")?.toIntOrNull()
+        ?: workspace.records("attendance").count { it.text("event_id") == id && it.text("status") == "excused" }
     val capacity = event.text("capacity").toIntOrNull() ?: 0
     val start = event.instant("starts_at"); val end = event.instant("ends_at") ?: start
     val opens = event.instant("registration_opens"); val closes = event.instant("registration_closes")
@@ -77,7 +80,7 @@ fun activityView(event: JsonObject, workspace: JsonObject, now: Instant = Instan
         closes != null && Duration.between(now, closes) <= Duration.ofHours(24) -> ActivityStatus.CLOSING_SOON
         else -> ActivityStatus.OPEN
     }
-    return ActivityView(event, status, registered, waitlisted, present, capacity,
+    return ActivityView(event, status, registered, waitlisted, present, excused, capacity,
         stats?.text("waitlist_position")?.toIntOrNull(), start, end, closes, opens)
 }
 
@@ -97,10 +100,14 @@ fun participationHistory(workspace: JsonObject, now: Instant = Instant.now()) =
         .filter { it.status in setOf(ActivityStatus.ATTENDED, ActivityStatus.EXCUSED, ActivityStatus.MISSED) }
         .sortedByDescending { it.start }
 
+/** The one attendance-rate definition used everywhere (member, dashboard, server report): present / (registered − excused). */
+fun attendanceRate(present: Int, registered: Int, excused: Int): Int? =
+    (registered - excused).takeIf { it > 0 }?.let { present * 100 / it }
+
 data class ParticipationSummary(val attended: Int, val excused: Int, val missed: Int) {
     val total get() = attended + excused + missed
     /** Excused absences do not count against the member. */
-    val rate get() = if (attended + missed == 0) null else attended * 100 / (attended + missed)
+    val rate get() = attendanceRate(attended, attended + excused + missed, excused)
 }
 fun participationSummary(workspace: JsonObject, now: Instant = Instant.now()) = participationHistory(workspace, now).let { h ->
     ParticipationSummary(h.count { it.status == ActivityStatus.ATTENDED }, h.count { it.status == ActivityStatus.EXCUSED }, h.count { it.status == ActivityStatus.MISSED })
@@ -190,7 +197,15 @@ data class QueueItem(val label: String, val count: Int, val route: String, val t
 /** Live counts from the same records the workflows change; each tile opens its queue. */
 fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant = Instant.now()): List<QueueItem> = buildList {
     val user = workspace.text("user_id")
+    if ("administration" in permissions) {
+        val soon = now.plusSeconds(14 * 86400L)
+        val live = workspace.records("role_assignments").filter { it.text("retired_at").isBlank() }
+        add(QueueItem("Roles expiring within 14 days", live.count { a -> a.instant("ends_at")?.let { it.isAfter(now) && it.isBefore(soon) } == true }, "module:14", Tone.WARNING))
+        add(QueueItem("Expired roles to renew", live.count { a -> a.instant("ends_at")?.let { it.isBefore(now) && it.isAfter(now.minusSeconds(60 * 86400L)) } == true }, "module:14", Tone.DANGER))
+    }
     if ("membership" in permissions) {
+        val pendingApps = workspace.records("applications").filter { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }.map { it.text("id") }.toSet()
+        add(QueueItem("Documents to verify", workspace.records("documents").count { it.text("module") == "2" && it.text("record_id") in pendingApps && it.text("verified_by").isBlank() }, "module:7", Tone.WARNING))
         add(QueueItem("Name corrections", workspace.records("name_corrections").count { it.text("user_id") != user && it.text("status") == "pending" }, "name_corrections", Tone.WARNING))
         add(QueueItem("Applications to review", workspace.records("applications").count { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }, "module:7", Tone.WARNING))
         add(QueueItem("Renewals to review", workspace.records("renewals").count { it.text("user_id") != user && it.text("status") == "pending" }, "module:7", Tone.WARNING))
@@ -216,3 +231,24 @@ fun nameLocked(workspace: JsonObject) = workspace.records("memberships").any { i
 
 fun pendingNameCorrection(workspace: JsonObject) =
     workspace.records("name_corrections").find { it.text("user_id") == workspace.text("user_id") && it.text("status") == "pending" }
+
+/** Members with repeated unexcused absences are flagged to officers (informational, not a penalty). */
+fun recentNoShows(workspace: JsonObject, userId: String, now: Instant = Instant.now(), days: Long = 60): Int {
+    val since = now.minusSeconds(days * 86400)
+    val events = workspace.records("events").associateBy { it.text("id") }
+    return workspace.records("attendance").count { a ->
+        a.text("user_id") == userId && a.text("status") == "absent" &&
+            events[a.text("event_id")]?.instant("starts_at")?.let { it.isAfter(since) && it.isBefore(now) } == true
+    }
+}
+
+/** A member with an overdue item cannot request more equipment (server enforces the same rule). */
+fun hasOverdueItem(workspace: JsonObject, now: Instant = Instant.now()) =
+    workspace.records("borrowings").any { it.text("user_id") == workspace.text("user_id") && isOverdue(it, now) }
+
+/** Walk-ins can be recorded from 2 hours before the start until a day after the end. */
+fun walkInWindowOpen(event: JsonObject, now: Instant = Instant.now()): Boolean {
+    val start = event.instant("starts_at") ?: return false
+    val end = event.instant("ends_at") ?: start
+    return !now.isBefore(start.minusSeconds(7200)) && !now.isAfter(end.plusSeconds(86400))
+}

@@ -222,14 +222,14 @@ fun OfficerDashboardContent(workspace: JsonObject, permissions: Set<String>, onR
     val upcoming = events.filter { it.end?.isAfter(now) == true }.sortedBy { it.start }
     val weekEnd = now.plusSeconds(7 * 86400L)
     val past30 = events.filter { it.end?.isBefore(now) == true && it.end.isAfter(now.minusSeconds(30 * 86400L)) }
-    val attendanceRate = past30.sumOf { it.registered }.takeIf { it > 0 }?.let { past30.sumOf { e -> e.present } * 100 / it }
+    val rate30 = attendanceRate(past30.sumOf { it.present }, past30.sumOf { it.registered }, past30.sumOf { it.excused })
     SectionHeader("Today")
     TileRow {
         StatTile("$members", "Active members", Modifier.weight(1f).fillMaxHeight()) { if ("membership" in permissions) onRoute("module:7") }
         StatTile("${upcoming.count { it.start?.isBefore(weekEnd) == true }}", "Activities this week", Modifier.weight(1f).fillMaxHeight()) { if ("activities" in permissions) onRoute("officer_activities") }
     }
     TileRow {
-        StatTile(attendanceRate?.let { "$it%" } ?: "—", "Attendance, last 30 days", Modifier.weight(1f).fillMaxHeight()) { if ("reports" in permissions) onRoute("module:13") }
+        StatTile(rate30?.let { "$it%" } ?: "—", "Attendance, last 30 days", Modifier.weight(1f).fillMaxHeight()) { if ("reports" in permissions) onRoute("module:13") }
         if ("equipment" in permissions) {
             val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
             StatTile("${items.count { equipmentState(it, workspace) == EquipmentState.AVAILABLE }}/${items.size}", "Equipment available", Modifier.weight(1f).fillMaxHeight()) { onRoute("equipment") }

@@ -41,10 +41,17 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     fun clearMessage(){mutable.value=mutable.value.copy(message=null,error=null)}
     fun error(message:String){mutable.value=mutable.value.copy(error=message)}
     fun auth(action:String,email:String,password:String,code:String="")=runAction {
-        require(BuildConfig.EMAIL_ENABLED || action !in setOf("signup","recover","verify","verify_invite")){"Email services are not enabled yet. Use an existing account."}
+        require(BuildConfig.EMAIL_ENABLED || action !in setOf("recover","verify","verify_invite")){"Email services are not enabled yet. Use an existing account."}
+        require(BuildConfig.EMAIL_ENABLED || BuildConfig.SIGNUP_ENABLED || action!="signup"){"Account sign-up is not enabled yet. Ask a club officer."}
         when(action){
             "signin"->{gateway.signIn(email,password);gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace())}
-            "signup"->{require(password.length>=8){"Use at least 8 characters for your password."};gateway.signUp(email,password);mutable.value=mutable.value.copy(message="Check your email to verify your account, then sign in.")}
+            "signup"->{
+                require(password.length>=8){"Use at least 8 characters for your password."}
+                gateway.signUp(email,password)
+                // With email confirmation off, Supabase returns a session immediately: go straight to the application.
+                if(gateway.client.auth.currentSessionOrNull()!=null){gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),message="Account created. Start your application.")}
+                else mutable.value=mutable.value.copy(message="Check your email to verify your account, then sign in.")
+            }
             "recover"->{gateway.recover(email);mutable.value=mutable.value.copy(message="If the account exists, a recovery email has been sent.",recovery=true)}
             "verify"->{gateway.verify(email,code,mutable.value.recovery);gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),message="Email verified.")}
             "verify_invite"->{gateway.verifyInvitation(email,code);gateway.initialize();mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),recovery=true,message="Invitation verified. Choose your password.")}

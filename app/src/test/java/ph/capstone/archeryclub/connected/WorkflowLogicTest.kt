@@ -105,4 +105,39 @@ class WorkflowLogicTest {
         val q = officerQueues(member, setOf("membership"), now).associate { it.label to it.count }
         assertEquals(1, q["Name corrections"])
     }
+
+    @Test fun oneAttendanceRateDefinitionExcludesExcused() {
+        assertEquals(50, attendanceRate(present = 1, registered = 3, excused = 1))
+        assertNull(attendanceRate(0, 2, 2))
+        val events = listOf(event("p", startH = -50), event("x", startH = -40), event("m", startH = -30))
+        val w = ws(events, regs = events.map { it.text("id") to "me" },
+            attendance = listOf(Triple("p", "me", "present"), Triple("x", "me", "excused"), Triple("m", "me", "absent")))
+        assertEquals(attendanceRate(1, 3, 1), participationSummary(w, now).rate)
+    }
+
+    @Test fun noShowsOverdueAndWalkInWindow() {
+        val w = buildJsonObject {
+            put("user_id", "me")
+            put("events", JsonArray(listOf(event("a", startH = -100), event("b", startH = -50), event("old", startH = -24 * 90))))
+            put("attendance", JsonArray(listOf("a", "b", "old").map { e -> buildJsonObject { put("event_id", e); put("user_id", "m1"); put("status", "absent") } }))
+            put("borrowings", JsonArray(listOf(buildJsonObject { put("user_id", "me"); put("status", "released"); put("ends_at", at(-1)) })))
+        }
+        assertEquals(2, recentNoShows(w, "m1", now))
+        assertTrue(hasOverdueItem(w, now))
+        assertTrue(walkInWindowOpen(event("live", startH = 1), now))
+        assertFalse(walkInWindowOpen(event("later", startH = 10), now))
+        assertFalse(walkInWindowOpen(event("long-ago", startH = -50), now))
+    }
+
+    @Test fun adminsSeeExpiringAndExpiredRoles() {
+        val w = buildJsonObject {
+            put("user_id", "admin")
+            put("role_assignments", JsonArray(listOf(
+                buildJsonObject { put("ends_at", at(24 * 5)) },
+                buildJsonObject { put("ends_at", at(-24 * 8)) },
+                buildJsonObject { put("ends_at", at(24 * 200)) })))
+        }
+        val q = officerQueues(w, setOf("administration"), now).associate { it.label to it.count }
+        assertEquals(1, q["Roles expiring within 14 days"]); assertEquals(1, q["Expired roles to renew"])
+    }
 }

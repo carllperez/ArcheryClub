@@ -27,6 +27,9 @@ android {
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", backendString("SUPABASE_PUBLISHABLE_KEY"))
         buildConfigField("boolean", "LOCAL_BACKEND", localBackend.toString())
         buildConfigField("boolean", "EMAIL_ENABLED", backend.getProperty("ENABLE_EMAIL", "false").toBoolean().toString())
+        // Applicant self sign-up without email: requires Supabase Auth "Allow new users to sign up" ON
+        // and "Confirm email" OFF. Sign-up never grants roles; officers still screen every application.
+        buildConfigField("boolean", "SIGNUP_ENABLED", backend.getProperty("ENABLE_SIGNUP", "false").toBoolean().toString())
     }
     buildTypes {
         debug {
