@@ -176,3 +176,47 @@ private data class NoticeStyle(val label: String, val icon: String, val chip: Co
 
 @Composable
 private fun Modifier.verticalScrollable() = this.verticalScroll(androidx.compose.foundation.rememberScrollState())
+
+/** Home for someone who is not an Active member yet: where their application stands and the one next step. */
+@Composable
+fun ApplicantHome(
+    workspace: JsonObject, fullName: String, noticeCount: Int, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit,
+    onPage: (String) -> Unit, onModule: (Int) -> Unit, onCommand: (String, JsonObject) -> Unit, recovery: @Composable () -> Unit,
+) {
+    val user = workspace.text("user_id")
+    val membership = workspace.records("memberships").find { it.text("user_id") == user }
+    val view = applicationView(workspace)
+    val pendingPayment = membership?.text("status") == "Pending payment"
+    val first = firstName(fullName.takeUnless { it == "Club account" }.orEmpty())
+    HeroScaffold("${greetingFor(java.time.LocalTime.now().hour)}, $first", snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
+        eyebrow = { Pill(if (membership != null) membership.text("status").uppercase() else "APPLICANT", Club.mint, Club.forestDeep) },
+        heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) }) {
+        state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING) }
+        if (state.recovery) recovery()
+        RaisedCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (pendingPayment) "PAYMENT" else "YOUR APPLICATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val (title, body) = when {
+                    pendingPayment -> "Approved — one step left" to "Pay the membership fee. Your membership becomes Active once the Treasurer verifies the payment."
+                    membership != null -> membership.text("status") to "Review your membership details and renewal status."
+                    view.stage == ApplicationStage.NOT_STARTED -> "Ready when you are" to "Fill in your details, upload the club's required documents, then submit for screening."
+                    view.stage == ApplicationStage.NEEDS_CHANGES -> "Changes requested" to view.remark.ifBlank { "Update your details or documents, then submit again." }
+                    view.stage == ApplicationStage.REJECTED -> "Not approved" to view.remark.ifBlank { "You can start a new application." }
+                    else -> view.stage.label to "The membership officer is reviewing your application. You'll get a notice when there's a decision."
+                }
+                Text(title, style = MaterialTheme.typography.titleLarge)
+                Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                when {
+                    pendingPayment -> PrimaryAction("Pay membership fee", !state.busy) { onModule(12) }
+                    membership != null -> PrimaryAction("View membership") { onModule(1) }
+                    view.stage == ApplicationStage.REJECTED -> PrimaryAction("Start a new application", !state.busy) { onCommand("restart_application", buildJsonObject {}) }
+                    else -> PrimaryAction(if (view.stage == ApplicationStage.NOT_STARTED) "Start application" else "Open my application") { onModule(2) }
+                }
+            }
+        }
+        RowGroup {
+            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft, trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
+            GroupRow("modules", "All club services", divider = false, onClick = { onPage("modules") })
+        }
+    }
+}

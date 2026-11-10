@@ -329,3 +329,23 @@ fun StickyButton(text: String, enabled: Boolean = true, modifier: Modifier = Mod
         Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.width(8.dp)); ClubIcon("arrow", Modifier.size(18.dp), Color.White)
     }
+
+/** Segmented progress for multi-step processes, drawn on the green hero (lime = done, white ring = now). */
+@Composable
+fun ProgressSegments(steps: List<Milestone>, labels: List<String> = listOf("Details", "Submitted", "Screening", "Approved", "Active")) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            steps.forEach { m ->
+                val color by androidx.compose.animation.animateColorAsState(
+                    when { m.done -> Club.lime; m.current -> Color.White.copy(alpha = .55f); else -> Color.White.copy(alpha = .2f) }, label = "step")
+                Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(color))
+            }
+        }
+        Row {
+            steps.forEachIndexed { i, m ->
+                Text(labels.getOrElse(i) { m.title }, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = if (m.done || m.current) 1f else .7f), maxLines = 1)
+            }
+        }
+    }
+}

@@ -50,7 +50,7 @@ fun ProfileScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostSt
         }
         if (completeness < 100) {
             WorkCard("Profile $completeness% complete", listOf("Add your archery details so equipment requests can be checked for fit automatically."),
-                footer = { LinearProgressIndicator(progress = { completeness / 100f }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = onEdit) { Text("Complete profile") } })
+                footer = { SlotBar(completeness, 100); TextButton(onClick = onEdit) { Text("Complete profile") } })
         }
         TileRow {
             StatTile("${summary.attended}", "Attended", Modifier.weight(1f).fillMaxHeight(), onClick = onActivities)
@@ -58,27 +58,27 @@ fun ProfileScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostSt
             StatTile("${workspace.records("borrowings").count { it.text("user_id") == user && it.text("status") in setOf("released", "returned") }}", "Borrowings", Modifier.weight(1f).fillMaxHeight(), onClick = onEquipment)
         }
         SectionHeader("Contact", "Edit", onEdit)
-        Column {
+        RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Mobile", p?.text("phone").orEmpty().ifBlank { "Not set" })
             KeyValue("Emergency contact", listOf(p?.text("emergency_contact_name").orEmpty(), p?.text("emergency_contact_phone").orEmpty()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Not set" })
             KeyValue("Program", listOf(p?.text("program").orEmpty(), p?.text("year_level").orEmpty()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Not set" })
-        }
+        } }
         SectionHeader("Archery", "Edit", onEdit)
-        Column {
+        RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Shooting hand", p?.text("dominant_hand").orEmpty().ifBlank { "Not set" }.let(::human))
             KeyValue("Bow type", p?.text("bow_type").orEmpty().ifBlank { "Not set" }.let(::human))
             KeyValue("Draw weight", p?.text("draw_weight").orEmpty().ifBlank { null }?.let { "$it lb" } ?: "Not set")
             KeyValue("Arrow length", p?.text("arrow_length").orEmpty().ifBlank { null }?.let { "$it in" } ?: "Not set")
             KeyValue("Level", p?.text("experience_level").orEmpty().ifBlank { "Not set" }.let(::human))
             KeyValue("About", p?.text("bio").orEmpty())
-        }
+        } }
         if (m != null) {
             SectionHeader("Membership")
-            Column {
+            RaisedCard { Column(Modifier.padding(16.dp)) {
                 KeyValue("Category", m.text("category")); KeyValue("Status", m.text("status"))
                 KeyValue("Student number", m.text("student_number"))
                 KeyValue("Member since", fmtDay(m.instant("approved_at")))
-            }
+            } }
             SecondaryAction("Renewal and membership records", !busy, onRenewal)
         }
     }
@@ -107,8 +107,15 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
         OutlinedTextField(values[key].orEmpty(), { values[key] = it }, label = { Text(label) }, isError = attempted && key in errors,
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
-    ScreenShell("Edit profile", leave, snackbar) {
+    ScreenShell("Edit profile", leave, snackbar, actions = { CompletionPill(profileCompleteness(p)) }, stickyAction = {
+        if (attempted && errors.isNotEmpty()) Text("Fix the highlighted fields.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        PrimaryAction(if (busy) "Saving…" else if (changed) "Save changes" else "No changes yet", !busy && changed) {
+            attempted = true
+            if (errors.isEmpty()) onSave(buildJsonObject { values.forEach { (k, v) -> put(k, v.trim()) } })
+        }
+    }) {
         SectionHeader("Personal")
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (locked) {
             WorkCard(values["full_name"].orEmpty(), listOf("Full name · verified when your membership was approved. It appears on rosters, borrowings and ballots, so changes go through the membership officer."),
                 status = { if (pending != null) StatusPill("Correction to \"${pending.text("requested_name")}\" pending", Tone.WARNING) else StatusPill("Verified", Tone.POSITIVE) },
@@ -118,10 +125,14 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
         field("program", "Program / course", hint = "e.g. BS Information Technology")
         Text("Year level", style = MaterialTheme.typography.labelLarge)
         ChoiceChips(listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Alumni").map { it to it }, values["year_level"].orEmpty()) { values["year_level"] = it }
+        } }
         SectionHeader("Emergency contact")
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         field("emergency_contact_name", "Contact name")
         field("emergency_contact_phone", "Contact number", KeyboardType.Phone)
+        } }
         SectionHeader("Archery details")
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Used to check bow fit when you borrow equipment.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         Text("Shooting hand", style = MaterialTheme.typography.labelLarge)
         ChoiceChips(listOf("right" to "Right", "left" to "Left"), values["dominant_hand"].orEmpty()) { values["dominant_hand"] = it }
@@ -134,11 +145,7 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
         Text("Experience", style = MaterialTheme.typography.labelLarge)
         ChoiceChips(listOf("beginner", "intermediate", "advanced", "competitive").map { it to human(it) }, values["experience_level"].orEmpty()) { values["experience_level"] = it }
         field("bio", "About you (optional)", lines = 3, hint = "${values["bio"].orEmpty().length}/500")
-        PrimaryAction(if (busy) "Saving…" else "Save changes", !busy && changed) {
-            attempted = true
-            if (errors.isEmpty()) onSave(buildJsonObject { values.forEach { (k, v) -> put(k, v.trim()) } })
-        }
-        if (attempted && errors.isNotEmpty()) Text("Fix the highlighted fields.", color = MaterialTheme.colorScheme.error)
+        } }
     }
     if (correction) NameCorrectionDialog(values["full_name"].orEmpty(), onDismiss = { correction = false }) { requested, reason ->
         correction = false

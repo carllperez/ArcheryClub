@@ -28,13 +28,13 @@ private val UPLOAD_TYPES = arrayOf("application/pdf", "image/jpeg", "image/png")
 @Composable
 private fun StepHeader(number: Int, title: String, done: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = MaterialTheme.shapes.extraLarge, color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh) {
-            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-                Text(if (done) "✓" else "$number", style = MaterialTheme.typography.labelLarge,
-                    color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (done) ph.capstone.archeryclub.ui.Club.forest else ph.capstone.archeryclub.ui.Club.mint) {
+            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                if (done) ph.capstone.archeryclub.ui.ClubIcon("check", Modifier.size(16.dp), androidx.compose.ui.graphics.Color.White)
+                else Text("$number", style = MaterialTheme.typography.labelLarge, color = ph.capstone.archeryclub.ui.Club.forestDeep)
             }
         }
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
     }
 }
 
@@ -113,14 +113,26 @@ fun ApplicationScreen(
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
 
-    ScreenShell("Membership application", leave, snackbar) {
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusPill(if (membership != null) membership.text("status") else view.stage.label,
+    val canSubmit = editable && membership == null && view.stage != ApplicationStage.REJECTED
+    HeroScaffold("Membership application", leave, snackbar, overlap = 0.dp, busy = busy,
+        eyebrow = {
+            StatusPill((if (membership != null) membership.text("status") else view.stage.label).uppercase(),
                 if (membership?.text("status") == "Active") Tone.POSITIVE else if (membership != null) Tone.WARNING else view.stage.tone)
-            if (view.requirements.isNotEmpty()) StatusPill("${view.uploadedCount}/${view.requirements.size} documents", Tone.NEUTRAL)
-        }
-        Milestones(applicationMilestones(view, membership?.text("status").orEmpty()))
+            if (view.requirements.isNotEmpty()) StatusPill("${view.uploadedCount}/${view.requirements.size} DOCUMENTS", Tone.NEUTRAL)
+        },
+        heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) },
+        sticky = if (canSubmit) ({
+            Column(Modifier.weight(1f)) {
+                Text(if (blockers.isEmpty()) "Ready to submit" else "${blockers.size} thing${if (blockers.size == 1) "" else "s"} left",
+                    style = MaterialTheme.typography.titleSmall)
+                Text(blockers.firstOrNull() ?: "The officer is notified right away", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            StickyButton(if (view.stage == ApplicationStage.NEEDS_CHANGES) "Submit again" else "Submit", !busy && blockers.isEmpty()) {
+                attempted = true; submitDialog = true
+            }
+        }) else null) {
+        Spacer(Modifier.height(4.dp))
 
         // What the applicant must do now, stated once at the top.
         when {
@@ -141,6 +153,7 @@ fun ApplicationScreen(
         }
 
         if (membership == null && view.stage != ApplicationStage.REJECTED) {
+            RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepHeader(1, "Your details", view.id.isNotBlank() && errors.isEmpty() && !changed)
             field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
             field("phone", "Mobile number", KeyboardType.Phone)
@@ -150,8 +163,10 @@ fun ApplicationScreen(
                 attempted = true
                 if (errors.isEmpty()) onCommand("save_application", payload { put("confirmed", false) }) {}
             }
+            } }
 
             val requirements = view.requirements
+            RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepHeader(2, "Documents", view.id.isNotBlank() && view.missing.isEmpty())
             when {
                 requirements.isEmpty() -> Text("The club hasn't listed any required documents.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -163,8 +178,9 @@ fun ApplicationScreen(
                     }
                 }
             }
+            } }
 
-            if (editable) {
+            if (editable) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepHeader(3, "Review and submit", false)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(confirmed, { confirmed = it }, enabled = !busy)
@@ -172,12 +188,9 @@ fun ApplicationScreen(
                 }
                 if (blockers.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Before you can submit:", style = MaterialTheme.typography.labelLarge)
-                    blockers.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    blockers.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                PrimaryAction(if (view.stage == ApplicationStage.NEEDS_CHANGES) "Submit again" else "Submit application", !busy && blockers.isEmpty()) {
-                    attempted = true; submitDialog = true
-                }
-            }
+            } }
         }
     }
     if (submitDialog) ConfirmDialog("Submit your application?",

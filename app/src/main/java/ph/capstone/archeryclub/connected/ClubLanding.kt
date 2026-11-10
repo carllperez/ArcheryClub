@@ -119,6 +119,10 @@ fun ClubLanding(
     }
     if(memberHome&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
     if(memberHome&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
+    if(!staff&&!isMember&&!hasModule(15)&&page=="home"){
+        ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery)
+        return
+    }
     if(memberHome&&page=="account"){
         MemberProfilePage(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onScan,onRefresh,onSignOut,recovery)
         return

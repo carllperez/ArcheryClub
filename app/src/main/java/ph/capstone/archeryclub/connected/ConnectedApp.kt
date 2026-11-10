@@ -78,14 +78,9 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     LaunchedEffect(state.signedIn){if(!state.signedIn){selectedVar=null;editingVar=null;moduleVar=0;landingVar="home";returnToLanding=false;stackVar=""}}
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
-    if(!state.signedIn){AuthScreen(state,vm,snackbar);return}
+    if(!state.signedIn){ClubAuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
-    if(workspace==null){ScreenShell(if(state.busy)"Loading your club" else "Unable to load your club",snackbar=snackbar){
-        if(state.busy) CircularProgressIndicator()
-        Text(state.refreshError?:"Check your connection and retry. If access has changed, sign in again or contact your club administrator.")
-        Button(onClick=vm::refresh,enabled=!state.busy){Text("Retry connection")}
-        TextButton(onClick={vm.auth("signout","","")}){Text("Sign out")}
-    };return}
+    if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")});return}
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}
@@ -180,7 +175,7 @@ fun ConnectedApp(vm:SystemViewModel){
                 onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
                 onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
                 onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
-                recovery={PasswordChange(vm,state.busy)},
+                recovery={PasswordChangeCard(vm,state.busy)},
                 onCommand={action,data->vm.command(action,data)})
             return
         }
@@ -277,49 +272,6 @@ fun ConnectedApp(vm:SystemViewModel){
     AnimatedContent(targetState=nav,contentKey={it.key},label="screen",
         transitionSpec={navTransition(initialState.depth,targetState.depth)}){snapshot->Screen(snapshot)}
 }
-
-@Composable private fun AuthScreen(state:SystemState,vm:SystemViewModel,snackbar:SnackbarHostState){
-    val canSignUp=BuildConfig.EMAIL_ENABLED||BuildConfig.SIGNUP_ENABLED
-    var creating by rememberSaveable{mutableStateOf(false)}
-    var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")};var confirm by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}
-    var attempted by remember(creating){mutableStateOf(false)}
-    val errors=if(creating)signUpErrors(email,password,confirm) else emptyMap()
-    fun err(key:String)=if(attempted)errors[key] else null
-    ScreenShell(if(creating)"Create your account" else "Welcome to Archery Club",onBack=if(creating){{creating=false}}else null,snackbar=snackbar){
-        if(creating){
-            Text("Step 1 of 2 · then fill in your membership application",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        }else{
-            Text("Your club. One place.",style=MaterialTheme.typography.titleLarge)
-            Text("Sign in to manage your membership and stay connected to your club.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,isError=err("email")!=null,
-            supportingText={err("email")?.let{Text(it)}?:if(creating)Text("Use your DLSU email so officers can recognise you.") else Unit},
-            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,isError=err("password")!=null,
-            supportingText={err("password")?.let{Text(it)}?:if(creating)Text("At least 8 characters, with letters and a number.") else Unit},
-            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
-        if(creating)OutlinedTextField(confirm,{confirm=it},label={Text("Confirm password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,
-            isError=err("confirm")!=null,supportingText={err("confirm")?.let{Text(it)}},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
-        if(creating){
-            Button(onClick={attempted=true;if(errors.isEmpty())vm.auth("signup",email,password)},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Create account")}
-            Text("Creating an account doesn't make you a member. Club officers review every application.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick={creating=false},enabled=!state.busy){Text("I already have an account")}
-        }else{
-            Button(onClick={vm.auth("signin",email,password)},enabled=!state.busy&&email.isNotBlank()&&password.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Sign in")}
-            if(canSignUp)OutlinedButton(onClick={creating=true;vm.clearMessage()},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("New applicant? Create an account")}
-        }
-        state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-        state.message?.let{Text(it)}
-        if(BuildConfig.EMAIL_ENABLED&&!creating){
-        TextButton(onClick={vm.auth("recover",email,"")},enabled=!state.busy){Text("Forgot password")}
-        OutlinedTextField(code,{code=it},label={Text("Email verification or recovery code")},singleLine=true,modifier=Modifier.fillMaxWidth())
-        TextButton(onClick={vm.auth("verify",email,"",code)},enabled=!state.busy){Text("Verify email code")}
-        TextButton(onClick={vm.auth("verify_invite",email,"",code)},enabled=!state.busy){Text("Accept officer invitation code")}
-        }else if(!canSignUp)Text("Use an existing club account. Email signup, password recovery and invitations are not enabled yet.")
-        if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
-}
-@Composable private fun PasswordChange(vm:SystemViewModel,busy:Boolean){var password by remember{mutableStateOf("")};OutlinedTextField(password,{password=it},label={Text("New password")},visualTransformation=PasswordVisualTransformation());Button(onClick={vm.auth("password","",password)},enabled=!busy){Text("Save new password")}}
 
 fun human(value:String)=value.replace('_',' ').replaceFirstChar{it.uppercase()}
 fun recordTitle(row:JsonObject,workspace:JsonObject):String {
