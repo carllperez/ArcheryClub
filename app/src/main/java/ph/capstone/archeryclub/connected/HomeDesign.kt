@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -261,7 +262,7 @@ fun HeroScaffold(
                     }
                     eyebrow?.let { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, content = it) }
                     Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.semantics { androidx.compose.ui.semantics.heading() })
+                        modifier = Modifier.semantics { heading() })
                     heroExtra?.invoke(this)
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding(), color = Club.lime, trackColor = Color.Transparent)
