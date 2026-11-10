@@ -145,6 +145,15 @@ fun DateBlock(instant: Instant?, modifier: Modifier = Modifier, muted: Boolean =
     }
 }
 
+/** Round tinted icon used as the leading slot of list cards. */
+@Composable
+fun IconChip(icon: String, tone: Tone = Tone.POSITIVE, size: Int = 40) {
+    val c = toneColors(tone)
+    Box(Modifier.size(size.dp).clip(CircleShape).background(c.container), contentAlignment = Alignment.Center) {
+        ClubIcon(icon, Modifier.size((size / 2).dp), c.content)
+    }
+}
+
 /** A tappable list card with a leading slot, title, supporting lines and a trailing status. */
 @Composable
 fun WorkCard(title: String, lines: List<String>, modifier: Modifier = Modifier, leading: (@Composable () -> Unit)? = null,

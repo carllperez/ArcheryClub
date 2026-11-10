@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
+import ph.capstone.archeryclub.ui.InfoCard
 
 val integratedClubModules = setOf(5, 7, 9, 10, 12, 13)
 
@@ -98,15 +99,10 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
             "Verified records" to workspace.records("financial_records").count { it.text("status") == "verified" })
         else -> emptyList()
     }
-    if(metrics.isNotEmpty())Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-        metrics.forEach { (title, value) ->
-            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                Text(value.toString(), style = MaterialTheme.typography.headlineMedium)
-                Text(title, style = MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+    if(metrics.isNotEmpty())TileRow {
+        metrics.forEach { (title, value) -> StatTile(value.toString(), title, Modifier.weight(1f).fillMaxHeight()) }
     }
-    Text(when (module) {
+    InfoCard("How this works", when (module) {
         5 -> "Request equipment for your dates, then track review, release and return. Save reimbursements as drafts and attach receipts before submitting."
         7 -> "Open an application to inspect requirements before recording a screening decision. Approved applicants keep their existing account."
         9 -> "Open an election for candidacy, eligibility, a private ballot or verified results. President and Vice President are elected; other positions use appointment records."
@@ -120,9 +116,7 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
 @Composable
 private fun ClubChoices(label: String, options: List<String>, selected: String, onSelected: (String) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { value -> FilterChip(selected == value, { onSelected(value) }, label = { Text(human(value)) }) }
-    }
+    ChoiceChips(options.map { it to human(it) }, selected, onSelected)
 }
 
 @Composable
@@ -137,7 +131,9 @@ fun ClubModuleRecords(
     var hand by rememberSaveable(module, table) { mutableStateOf("All") }
     val rows = clubModuleRows(module, table, workspace)
     SelectField("Records", table, tables.map { it to human(it) }) { table = it }
-    OutlinedTextField(search, { search = it }, label = { Text("Search names and records") }, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(search, { search = it }, placeholder = { Text("Search names and records") }, singleLine = true,
+        shape = androidx.compose.foundation.shape.CircleShape, leadingIcon = { ph.capstone.archeryclub.ui.ClubIcon("search", Modifier.size(18.dp)) },
+        modifier = Modifier.fillMaxWidth())
     val stateKey = if (table == "equipment") "condition" else "status"
     val states = rows.map { it.text(stateKey) }.filter { it.isNotBlank() }.distinct().sorted()
     if (states.isNotEmpty()) ClubChoices(human(stateKey), listOf("All") + states, status) { status = it }
@@ -147,36 +143,29 @@ fun ClubModuleRecords(
             (table != "equipment" || hand == "All" || row.text("handedness") == hand) &&
             (row.toString() + recordTitle(row, workspace)).contains(search, ignoreCase = true)
     }
-    Text("${filtered.size} matching records", style = MaterialTheme.typography.labelLarge)
-    if (filtered.isEmpty()) Text("No matching records. Refresh or adjust the filters; no sample records are substituted.")
+    SectionHeader("${filtered.size} matching record${if (filtered.size == 1) "" else "s"}")
+    if (filtered.isEmpty()) EmptyState("No matching records", "Refresh or adjust the filters.")
     filtered.forEach { row ->
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(recordTitle(row, workspace), style = MaterialTheme.typography.titleMedium)
-                listOf("status", "condition", "category", "handedness", "draw_weight", "starts_at", "ends_at", "amount", "position", "metric", "target")
-                    .filter { row.text(it).isNotBlank() }.take(3).forEach { key -> Text("${human(key)}: ${human(row.text(key))}") }
-                if (table == "borrowings") workspace.records("equipment").find { it.text("id") == row.text("equipment_id") }
-                    ?.let { Text("Equipment: ${it.text("label")}") }
-                Button(onClick = { onOpen(table, row) }, enabled = !busy) {
-                    Text(when (table) {
-                        "applications", "renewals", "financial_records" -> "Open record and documents"
-                        "elections" -> "Open election and ballot"
-                        else -> "Open record"
-                    })
-                }
-                if (module == 5 && table == "equipment" && row.text("condition") == "serviceable" && available.any { it.text("action") == "request_borrowing" }) {
-                    OutlinedButton(onClick = { onAction("request_borrowing", buildJsonObject {
+        val facts = listOf("status", "condition", "category", "handedness", "draw_weight", "starts_at", "ends_at", "amount", "position", "metric", "target")
+            .filter { row.text(it).isNotBlank() }.take(3).map { key -> "${human(key)}: ${human(row.text(key))}" } +
+            listOfNotNull(if (table == "borrowings") workspace.records("equipment").find { it.text("id") == row.text("equipment_id") }?.let { "Equipment: ${it.text("label")}" } else null)
+        WorkCard(recordTitle(row, workspace), facts, leading = { IconChip(moduleIcon(module), Tone.POSITIVE) },
+            status = row.text(stateKey).takeIf { it.isNotBlank() }?.let { st -> @Composable { StatusPill(human(st), Tone.NEUTRAL) } },
+            footer = {
+                val requestable = module == 5 && table == "equipment" && row.text("condition") == "serviceable" && available.any { it.text("action") == "request_borrowing" }
+                val edits = if (table == "equipment" && module == 10) recordWorkflowActions(available, table, row, workspace.text("user_id")) else emptyList()
+                if (requestable || edits.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (requestable) OutlinedButton(onClick = { onAction("request_borrowing", buildJsonObject {
                         put("equipment_id", row.text("id"))
                         if (row.text("handedness") in setOf("left", "right", "not_applicable")) put("handedness", row.text("handedness"))
                         put("bow_setup", row.text("bow_setup"))
-                    }) }, enabled = !busy) { Text("Request this equipment") }
+                    }) }, enabled = !busy, shape = androidx.compose.foundation.shape.CircleShape) { Text("Request this equipment") }
+                    edits.forEach { form ->
+                        OutlinedButton(onClick = { onAction(form.text("action"), row) }, enabled = !busy, shape = androidx.compose.foundation.shape.CircleShape) { Text("Edit equipment") }
+                    }
                 }
-                // Decisions stay in the detail screen alongside documents and audit information.
-                if (table == "equipment" && module == 10) recordWorkflowActions(available, table, row, workspace.text("user_id")).forEach { form ->
-                    OutlinedButton(onClick = { onAction(form.text("action"), row) }, enabled = !busy) { Text("Edit equipment and condition") }
-                }
-            }
-        }
+            },
+            onClick = { onOpen(table, row) })
     }
 }
 

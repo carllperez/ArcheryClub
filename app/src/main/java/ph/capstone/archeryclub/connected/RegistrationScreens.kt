@@ -217,6 +217,7 @@ fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: Snac
             val a = v.application!!
             WorkCard(a.text("full_name").ifBlank { "Applicant" },
                 listOf("Submitted ${fmtDateTime(a.instant("submitted_at"))}", a.text("student_number").let { if (it.isBlank()) "" else "Student no. $it" }),
+                leading = { Initials(a.text("full_name").ifBlank { "Applicant" }, 44) },
                 status = {
                     StatusPill(v.stage.label, v.stage.tone)
                     if (v.unverified > 0) StatusPill("${v.unverified} to verify", Tone.WARNING)
@@ -253,12 +254,14 @@ fun ApplicationReviewScreen(
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusPill(view.stage.label, view.stage.tone); if (own) StatusPill("Your own application", Tone.DANGER) }
         SectionHeader("Applicant")
-        KeyValue("Full name", app.text("full_name"))
-        KeyValue("Mobile", app.text("phone"))
-        KeyValue("Student no.", app.text("student_number"))
-        KeyValue("Experience", app.text("experience"))
-        KeyValue("Submitted", fmtDateTime(app.instant("submitted_at")))
-        if (view.remark.isNotBlank()) KeyValue("Last remark", view.remark)
+        RaisedCard { Column(Modifier.padding(16.dp)) {
+            KeyValue("Full name", app.text("full_name"))
+            KeyValue("Mobile", app.text("phone"))
+            KeyValue("Student no.", app.text("student_number"))
+            KeyValue("Experience", app.text("experience"))
+            KeyValue("Submitted", fmtDateTime(app.instant("submitted_at")))
+            if (view.remark.isNotBlank()) KeyValue("Last remark", view.remark)
+        } }
 
         SectionHeader("Documents")
         if (view.requirements.isEmpty() && view.otherDocuments.isEmpty()) Text("No documents are required by the club settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -277,7 +280,7 @@ fun ApplicationReviewScreen(
 
         if (!own && view.stage.decidable) {
             SectionHeader("Decision")
-            if (blockers.isNotEmpty()) blockers.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (blockers.isNotEmpty()) NoticeCard("Not ready to approve", blockers.joinToString("\n"), Tone.WARNING)
             PrimaryAction("Approve", !busy && blockers.isEmpty()) { decision = "approved" }
             SecondaryAction("Return for correction", !busy) { decision = "returned_for_correction" }
             if (view.missing.isNotEmpty()) SecondaryAction("Mark incomplete", !busy) { decision = "incomplete" }

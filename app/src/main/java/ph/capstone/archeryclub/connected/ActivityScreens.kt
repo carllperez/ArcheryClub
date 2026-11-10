@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.DialogProperties
 import java.time.Instant
 
@@ -378,28 +381,36 @@ fun RosterScreen(
     val window = workspace.records("attendance_windows").filter { it.text("event_id") == eventId }
         .filter { val now = Instant.now(); (it.instant("opens_at")?.isBefore(now) ?: false) && (it.instant("closes_at")?.isAfter(now) ?: false) }
         .maxByOrNull { it.text("closes_at") }
-    ScreenShell("Participants", onBack, snackbar) {
-        Text(event.text("title"), style = MaterialTheme.typography.titleLarge)
-        Text(fmtRange(v.start, v.end), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        TileRow {
-            StatTile("${registrations.size}/${v.capacity}", "Registered", Modifier.weight(1f).fillMaxHeight())
-            StatTile("$present", "Present", Modifier.weight(1f).fillMaxHeight(), Tone.POSITIVE) { filter = "present" }
-            StatTile("$unmarked", "Not yet marked", Modifier.weight(1f).fillMaxHeight(), if (unmarked > 0) Tone.WARNING else Tone.NEUTRAL) { filter = "unmarked" }
-        }
-        if (registrations.isNotEmpty() && attendance.isNotEmpty()) {
-            val excusedCount = attendance.values.count { it.text("status") == "excused" }
-            val rate = attendanceRate(present, registrations.size, excusedCount)
-            Text("Attendance rate ${rate?.let { "$it%" } ?: "—"} · $absent absent · $excusedCount excused (not counted)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    val excusedCount = attendance.values.count { it.text("status") == "excused" }
+    val rate = attendanceRate(present, registrations.size, excusedCount)
+    HeroScaffold(event.text("title"), onBack, snackbar, overlap = 0.dp, busy = busy,
+        eyebrow = { StatusPill(fmtRange(v.start, v.end).uppercase(), Tone.NEUTRAL) },
+        heroExtra = { HeroStats(listOf("$present" to "Present", "$excusedCount" to "Excused", (rate?.let { "$it%" } ?: "—") to "Rate")) },
+        sticky = if (unmarked > 0 && registrations.isNotEmpty()) ({
+            Column(Modifier.weight(1f)) {
+                Text("$unmarked not yet marked", style = MaterialTheme.typography.titleSmall)
+                Text("${registrations.size} registered · $absent absent", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            StickyButton("Show unmarked", true) { filter = "unmarked" }
+        }) else null) {
+        Spacer(Modifier.height(4.dp))
         if (window != null) {
-            WorkCard("Self check-in is open", listOf("Members scan this code to mark themselves present. Closes ${fmtTime(window.instant("closes_at"))}."),
-                footer = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CheckInQr("archeryclub://attendance?token=${window.text("token")}") } })
-        } else if (event.text("published") == "true") SecondaryAction("Open self check-in (QR)", !busy) { onOpenCheckIn(event) }
-
-        if (walkInWindowOpen(event)) SecondaryAction("Add a walk-in (not registered)", !busy) { walkIn = true }
-        SectionHeader("Registered members")
-        OutlinedTextField(search, { search = it }, label = { Text("Search by name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            RaisedCard { Column(Modifier.padding(16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Self check-in is open", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Members scan this code to mark themselves present. Closes ${fmtTime(window.instant("closes_at"))}.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                CheckInQr("archeryclub://attendance?token=${window.text("token")}")
+            } }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(search, { search = it }, placeholder = { Text("Find a member") }, singleLine = true, shape = CircleShape,
+                leadingIcon = { ph.capstone.archeryclub.ui.ClubIcon("search", Modifier.size(18.dp)) },
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.weight(1f))
+            if (walkInWindowOpen(event)) Button(onClick = { walkIn = true }, enabled = !busy, shape = CircleShape, modifier = Modifier.heightIn(min = 52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.mint, contentColor = Club.forestDeep)) { Text("+ Walk-in", fontWeight = FontWeight.ExtraBold) }
+        }
+        if (window == null && event.text("published") == "true") HintRow("qr", "Let members check themselves in with a QR code.", "Open", { if (!busy) onOpenCheckIn(event) })
         ChoiceChips(listOf("all" to "All", "unmarked" to "Not marked", "present" to "Present", "absent" to "Absent", "excused" to "Excused"), filter) { filter = it }
         val shown = registrations.filter { r ->
             val status = attendance[r.text("user_id")]?.text("status") ?: "unmarked"
@@ -407,39 +418,45 @@ fun RosterScreen(
         }
         if (registrations.isEmpty()) EmptyState("No registrations yet", "Members who register in the app appear here instantly.")
         else if (shown.isEmpty()) Text("No members match this filter.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        shown.forEach { r ->
-            val uid = r.text("user_id")
-            val record = attendance[uid]
-            val status = record?.text("status").orEmpty()
-            WorkCard(names[uid].orEmpty().ifBlank { "Club member" },
-                listOf("Registered ${fmtDateTime(r.instant("created_at"))}", record?.let { "Marked ${it.text("method")} · ${it.text("remark")}" }.orEmpty()),
-                status = {
-                    StatusPill(if (status.isBlank()) "Not marked" else human(status), when (status) { "present" -> Tone.POSITIVE; "absent" -> Tone.DANGER; "excused" -> Tone.WARNING; else -> Tone.NEUTRAL })
-                    val noShows = recentNoShows(workspace, uid)
-                    if (noShows >= 2) StatusPill("$noShows no-shows in 60 days", Tone.DANGER)
-                },
-                footer = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("present" to "Present", "absent" to "Absent", "excused" to "Excused").forEach { (value, label) ->
-                            FilterChip(selected = status == value, enabled = !busy && status != value, label = { Text(label) }, onClick = {
-                                onCommand("record_attendance", buildJsonObject {
-                                    put("event_id", eventId); put("user_id", uid); put("status", value)
-                                    put("remark", "Marked $value from the participant roster")
-                                    record?.get("version")?.let { put("version", it) }
-                                }) {}
-                            })
-                        }
+        if (shown.isNotEmpty()) RowGroup {
+            shown.forEachIndexed { i, r ->
+                val uid = r.text("user_id")
+                val record = attendance[uid]
+                val status = record?.text("status").orEmpty()
+                val name = names[uid].orEmpty().ifBlank { "Club member" }
+                val noShows = recentNoShows(workspace, uid)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Initials(name)
+                    Column(Modifier.weight(1f)) {
+                        Text(name, style = MaterialTheme.typography.titleSmall)
+                        Text(if (noShows >= 2) "$noShows no-shows in 60 days" else record?.let { "Marked ${it.text("method")}" } ?: "Registered",
+                            style = MaterialTheme.typography.bodySmall, color = if (noShows >= 2) Club.roseInk else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (noShows >= 2) FontWeight.Bold else FontWeight.Normal)
                     }
-                })
+                    AttendanceToggle(status, !busy) { value ->
+                        onCommand("record_attendance", buildJsonObject {
+                            put("event_id", eventId); put("user_id", uid); put("status", value)
+                            put("remark", "Marked $value from the participant roster")
+                            record?.get("version")?.let { put("version", it) }
+                        }) {}
+                    }
+                }
+                if (i < shown.lastIndex) HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            }
         }
         if (waitlist.isNotEmpty()) {
             SectionHeader("Waitlist (${waitlist.size})")
             Text("Promoted automatically, in this order, when a registered member cancels before the activity starts.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            waitlist.forEachIndexed { i, w ->
-                WorkCard("${i + 1}. ${names[w.text("user_id")].orEmpty().ifBlank { "Club member" }}", listOf("Joined ${fmtDateTime(w.instant("created_at"))}"))
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            RowGroup {
+                waitlist.forEachIndexed { i, w ->
+                    GroupRow("clock", "${i + 1}. ${names[w.text("user_id")].orEmpty().ifBlank { "Club member" }}", fmtDay(w.instant("created_at")),
+                        tint = Club.amberInk, chip = Club.amberSoft, divider = i < waitlist.lastIndex, onClick = null)
+                }
             }
         }
+        Text("Rate = present ÷ (registered − excused). Results need a second officer to confirm.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
     if (walkIn) {
         val registeredIds = registrations.map { it.text("user_id") }.toSet()
@@ -452,6 +469,31 @@ fun RosterScreen(
                 if (candidates.isEmpty()) Text("Every active member is already on the list.")
                 else SelectField("Member", picked, candidates.map { it.text("user_id") to it.text("full_name") }) { picked = it }
             })
+    }
+}
+
+/** Round initials avatar used in member lists. */
+@Composable
+fun Initials(name: String, size: Int = 38) {
+    Box(Modifier.size(size.dp).clip(CircleShape).background(Club.mint), contentAlignment = Alignment.Center) {
+        Text(name.split(Regex("\\s+")).filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }.uppercase(),
+            style = MaterialTheme.typography.labelLarge, color = Club.forestDeep)
+    }
+}
+
+/** Compact P / A / E attendance switch: the current mark is filled. */
+@Composable
+private fun AttendanceToggle(status: String, enabled: Boolean, onMark: (String) -> Unit) {
+    Row(Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainer).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        listOf(Triple("present", "P", Club.forest), Triple("absent", "A", Club.roseInk), Triple("excused", "E", Club.amberInk)).forEach { (value, label, color) ->
+            val on = status == value
+            Box(Modifier.size(36.dp).clip(CircleShape).background(if (on) color else Color.Transparent)
+                .clickable(enabled = enabled && !on, role = androidx.compose.ui.semantics.Role.RadioButton,
+                    onClickLabel = "Mark ${human(value).lowercase()}") { onMark(value) }
+                .semantics { contentDescription = human(value); selected = on }, contentAlignment = Alignment.Center) {
+                Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 

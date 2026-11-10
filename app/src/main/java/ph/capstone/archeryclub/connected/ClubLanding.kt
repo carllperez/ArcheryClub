@@ -109,7 +109,7 @@ fun ClubLanding(
         }else if(hasModule(15))"Partner workspace" else if(membership!=null)"Your membership" else "Your application"
     }
     val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
-        else listOf("home" to "Home","modules" to "Modules","account" to "Account")
+        else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
         ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
     }
@@ -119,6 +119,10 @@ fun ClubLanding(
     }
     if(memberHome&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
     if(memberHome&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
+    if(staff&&page=="home"){
+        OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery)
+        return
+    }
     if(!staff&&!isMember&&!hasModule(15)&&page=="home"){
         ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery)
         return
@@ -149,9 +153,10 @@ fun ClubLanding(
             "modules"->{
                 var search by rememberSaveable{mutableStateOf("")}
                 Text("Your available club services",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(search,{search=it},label={Text("Find a module")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(search,{search=it},placeholder={Text("Find a service")},singleLine=true,shape=CircleShape,
+                    leadingIcon={ph.capstone.archeryclub.ui.ClubIcon("search",Modifier.size(18.dp))},modifier=Modifier.fillMaxWidth())
                 val matches=modules.filter{it.text("name").contains(search,true)||("M"+it.text("number")).contains(search,true)}
-                Column{matches.forEach{m->QuietRow(m.text("name")){onModule(m.text("number").toInt())}}}
+                if(matches.isNotEmpty())RowGroup{matches.forEachIndexed{i,m->GroupRow(moduleIcon(m.text("number").toInt()),m.text("name"),divider=i<matches.lastIndex,onClick={onModule(m.text("number").toInt())})}}
                 if(matches.isEmpty())Text("No matching modules. Try a different name or number.")
             }
             "notices"->{
@@ -263,3 +268,6 @@ private fun MemberHome(
         }
     }
 }
+
+/** Icon for each club module in lists. */
+fun moduleIcon(n:Int)=when(n){1,2,7->"profile";3,8->"calendar";4,11->"target";5,10->"box";6->"tasks";9->"vote";12->"money";13->"chart";14->"settings";15->"users";else->"modules"}

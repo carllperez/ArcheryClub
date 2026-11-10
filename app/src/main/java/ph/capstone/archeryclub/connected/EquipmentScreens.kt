@@ -39,7 +39,7 @@ private fun statusFor(item: JsonObject, workspace: JsonObject) = workspace.recor
 private fun EquipmentCard(item: JsonObject, workspace: JsonObject, onClick: () -> Unit) {
     val state = equipmentState(item, workspace)
     val s = statusFor(item, workspace)
-    WorkCard(item.text("label"), itemLines(item), status = {
+    WorkCard(item.text("label"), itemLines(item), leading = { IconChip(gearIcon(item), if (state.borrowable) Tone.POSITIVE else Tone.NEUTRAL) }, status = {
         StatusPill(state.label, state.tone())
         val until = s?.instant("busy_until")
         if (state in setOf(EquipmentState.IN_USE, EquipmentState.RESERVED) && until != null) StatusPill("Free ${fmtDay(until)}", Tone.NEUTRAL)
@@ -52,6 +52,7 @@ private fun BorrowingCard(b: JsonObject, workspace: JsonObject, showMember: Bool
     val overdue = isOverdue(b)
     val who = if (showMember) workspace.records("member_directory").find { it.text("user_id") == b.text("user_id") }?.text("full_name").orEmpty() else ""
     WorkCard(item?.text("label") ?: "Equipment", listOf(who, fmtRange(b.instant("starts_at"), b.instant("ends_at")), b.text("purpose")),
+        leading = { IconChip(if (overdue) "clock" else if (item != null) gearIcon(item) else "box", if (overdue) Tone.DANGER else if (b.text("status") == "pending") Tone.WARNING else Tone.POSITIVE) },
         status = { StatusPill(borrowingLabel(b.text("status"), overdue), borrowingTone(b.text("status"), overdue)) }, onClick = onClick)
 }
 

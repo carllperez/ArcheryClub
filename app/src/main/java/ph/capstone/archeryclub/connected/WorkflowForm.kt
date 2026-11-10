@@ -54,7 +54,8 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
     BackHandler(onBack=leave)
     if(confirmDiscard)DiscardDialog(onDismiss={confirmDiscard=false},onDiscard={confirmDiscard=false;onBack()})
     ScreenShell(form.text("label"),leave,snackbar) {
-        if(form.text("help").isNotEmpty())Text(form.text("help"))
+        if(form.text("help").isNotEmpty())ph.capstone.archeryclub.ui.InfoCard("About this form",form.text("help"))
+        RaisedCard{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         (form.records("fields")+if(values["status"]=="approved")correctionFields else emptyList()).forEach { field ->
             val name=field.text("name");val value=values[name].orEmpty()
             val label=field.text("label")+if(field.text("optional")=="true")" (optional)" else ""
@@ -106,8 +107,10 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                     minLines=if(field.text("type") in setOf("long","lines"))3 else 1,modifier=Modifier.fillMaxWidth())
             }
         }
-        error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-        Button(enabled=!busy,onClick={
+        }}
+        error?.let{NoticeCard("Check the form",it,Tone.DANGER)}
+        Button(enabled=!busy,shape=androidx.compose.foundation.shape.CircleShape,
+            colors=ButtonDefaults.buttonColors(containerColor=ph.capstone.archeryclub.ui.Club.forestDeep,contentColor=androidx.compose.ui.graphics.Color.White),onClick={
             runCatching {
                 buildJsonObject {
                     listOf("id","version","user_id","event_id","election_id","record_id","delegate_id").forEach{key->initial[key]?.let{put(key,it)}}
@@ -123,6 +126,6 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                     })
                 }
             }.onSuccess{error=null;onSubmit(it)}.onFailure{error=it.message?:"Review the form fields."}
-        },modifier=Modifier.fillMaxWidth()){Text(if(busy)"Saving…" else form.text("label"))}
+        },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(if(busy)"Saving…" else form.text("label"),fontWeight=androidx.compose.ui.text.font.FontWeight.ExtraBold)}
     }
 }

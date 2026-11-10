@@ -33,6 +33,8 @@ import ph.capstone.archeryclub.ui.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.shape.CircleShape
+import ph.capstone.archeryclub.ui.ClubIcon
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -197,9 +199,9 @@ fun ConnectedApp(vm:SystemViewModel){
                         Text("${human(it.text("action"))} · ${it.text("created_at")}",style=MaterialTheme.typography.bodySmall)
                     }
                 }
-                if(table=="documents")Button(onClick={vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}){Text("Open private document")}
-                if(table=="notifications")Button(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}){Text("Acknowledge notice")}
-                if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
+                if(table=="documents")PrimaryAction("Open private document"){vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}
+                if(table=="notifications")PrimaryAction("Mark as read"){vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}
+                if(table=="notifications")SecondaryAction("Open related records"){openNotice(row)}
                 if(table=="attendance_windows")QrImage("archeryclub://attendance?token=${row.text("token")}")
                 if(table=="equipment"&&allowed("equipment"))QrImage(row.text("id"))
                 if(table=="elections")ElectionPanel(row,workspace,vm,isMember)
@@ -209,7 +211,7 @@ fun ConnectedApp(vm:SystemViewModel){
                     DocumentsPanel(row.text("id").ifBlank{row.text("event_id")},docModule,workspace,vm,state.busy)
                 }
                 recordWorkflowActions(available,table,row,user).forEach{form->
-                    Button(onClick={start(form.text("action"),row)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
+                    PrimaryAction(form.text("label"),!state.busy){start(form.text("action"),row)}
                 }
             };return
         }
@@ -217,7 +219,7 @@ fun ConnectedApp(vm:SystemViewModel){
         var table by rememberSaveable(module){mutableStateOf(current["tables"]!!.jsonArray.firstOrNull()?.jsonPrimitive?.content.orEmpty())}
         ScreenShell(current.text("name"),onBack={moduleVar=0},snackbar=snackbar){
             if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-            OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
+            TextButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
             if(module in integratedClubModules)ClubModuleOverview(module,workspace)
             if(module==6)MemberOverview(workspace,onNavigate={moduleVar=it;selectedVar=null},onTask={task->moduleVar=task.module;selectedVar=task.table to task.row})
             if(module==13)ReportsPanel(workspace,vm)
@@ -241,7 +243,7 @@ fun ConnectedApp(vm:SystemViewModel){
                         else->null
                     }
                     start(form.text("action"),initial?:buildJsonObject{})
-                },enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
+                },enabled=!state.busy,shape=CircleShape,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp)){Text(form.text("label"))}
             }
             if(module in integratedClubModules){
                 ClubModuleRecords(module,current,workspace,available,state.busy,
@@ -249,7 +251,7 @@ fun ConnectedApp(vm:SystemViewModel){
                     onAction={action,row->if(available.any{it.text("action")==action})start(action,row)})
             } else {
             SelectField("Records",table,current["tables"]!!.jsonArray.map{it.jsonPrimitive.content to human(it.jsonPrimitive.content)}){table=it}
-            OutlinedTextField(search,{search=it},label={Text("Search records")},modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(search,{search=it},placeholder={Text("Search records")},singleLine=true,shape=CircleShape,leadingIcon={ClubIcon("search",Modifier.size(18.dp))},modifier=Modifier.fillMaxWidth())
             val rows=workspace.records(table).filter{r->
                 val own=when(module){1->table=="profiles"&&r.text("id")==user||table!="profiles"&&r.text("user_id")==user
                     2->table=="documents"&&r.text("owner_id")==user||table!="documents"&&r.text("user_id")==user
@@ -261,10 +263,11 @@ fun ConnectedApp(vm:SystemViewModel){
                 own&&correction&&r.toString().contains(search,true)
             }
             if(rows.isEmpty())Text("No matching records yet.")
-            rows.forEach{r->Card(Modifier.fillMaxWidth().clickable{selectedVar=table to r}){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-                Text(recordTitle(r,workspace),style=MaterialTheme.typography.titleMedium)
-                listOf("status","validation","category","starts_at","training_date","amount","notified_at").map{r.text(it)}.filter{it.isNotBlank()}.take(3).forEach{Text(human(it))}
-            }}}
+            rows.forEach{r->
+                val facts=listOf("status","validation","category","starts_at","training_date","amount","notified_at").map{r.text(it)}.filter{it.isNotBlank()}.take(3).map(::human)
+                WorkCard(recordTitle(r,workspace),facts.drop(1),leading={IconChip(moduleIcon(module),Tone.POSITIVE)},
+                    status=facts.firstOrNull()?.let{f-> @Composable {StatusPill(f,Tone.NEUTRAL)}},onClick={selectedVar=table to r})
+            }
             }
         }
     }
@@ -286,10 +289,12 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
         DropdownMenu(expanded,{expanded=false}){options.forEach{(id,name)->DropdownMenuItem(text={Text(name)},onClick={onChange(id);expanded=false})}}}
 }
 @Composable private fun RecordDetails(row:JsonObject,workspace:JsonObject){
-    row.entries.filter{(k,v)->k !in setOf("id","module","user_id","owner_id","event_id","encoded_by","reviewed_by","created_by","approved_by","token","path","snapshot","version")&&v!=JsonNull}.forEach{(key,value)->
-        if(value is JsonPrimitive)Text("${human(key)}: ${human(value.content)}",style=MaterialTheme.typography.bodyMedium)
-        else if(value is JsonArray&&value.all{it is JsonPrimitive})Text("${human(key)}: ${value.joinToString{it.jsonPrimitive.content}}")
-    }
+    val facts=row.entries.filter{(k,v)->k !in setOf("id","module","user_id","owner_id","event_id","encoded_by","reviewed_by","created_by","approved_by","token","path","snapshot","version")&&v!=JsonNull}
+        .mapNotNull{(key,value)->when{
+            value is JsonPrimitive->human(key) to (if(key.endsWith("_at")||key.endsWith("_on"))runCatching{fmtDateTime(java.time.Instant.parse(value.content))}.getOrElse{human(value.content)} else human(value.content))
+            value is JsonArray&&value.all{it is JsonPrimitive}->human(key) to value.joinToString{it.jsonPrimitive.content}
+            else->null}}
+    RaisedCard{Column(Modifier.padding(16.dp)){facts.forEach{(k,v)->KeyValue(k,v)}}}
 }
 @Composable private fun QrImage(value:String){
     val bitmap=remember(value){val matrix=MultiFormatWriter().encode(value,BarcodeFormat.QR_CODE,480,480);Bitmap.createBitmap(480,480,Bitmap.Config.ARGB_8888).apply{for(y in 0 until 480)for(x in 0 until 480)setPixel(x,y,if(matrix[x,y])android.graphics.Color.BLACK else android.graphics.Color.WHITE)}}
