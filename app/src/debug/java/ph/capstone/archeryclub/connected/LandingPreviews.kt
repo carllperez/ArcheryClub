@@ -32,7 +32,7 @@ private fun previewWorkspace(officer:Boolean):JsonObject=buildJsonObject {
         if(officer)listOf(7 to "Membership and Applicant Processing",8 to "Announcement, Event, Registration, and Attendance Management",10 to "Equipment Inventory and Allocation Support")else emptyList()
     ArcheryTheme {
         ClubLanding(page,{},remember{previewWorkspace(officer)},modules.map{(n,name)->buildJsonObject{put("number",n);put("name",name)}},
-            SystemState(signedIn=true),remember{SnackbarHostState()},onModule={},onRecord={_,_,_->},onAnnouncement={},onNotice={},onAcknowledge={},
+            SystemState(signedIn=true),remember{SnackbarHostState()},onModule={},onRoute={},onRecord={_,_,_->},onAnnouncement={},onNotice={},onAcknowledge={},
             onRefresh={},onSignOut={},onScan={},recovery={})
     }
 }
