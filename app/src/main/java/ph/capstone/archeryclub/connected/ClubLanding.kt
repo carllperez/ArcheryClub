@@ -1,7 +1,13 @@
 package ph.capstone.archeryclub.connected
 
+import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -103,8 +109,15 @@ fun ClubLanding(
             "$greeting,\n${fullName.substringBefore(' ')}."
         }else if(hasModule(15))"Partner workspace" else if(membership!=null)"Your membership" else "Your application"
     }
-    val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","account" to "Account")
+    val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
         else listOf("home" to "Home","modules" to "Modules","account" to "Account")
+    val bottomBar:@Composable ()->Unit={
+        ClubBottomBar(tabs,page,mapOf("account" to notices.size)){if(it=="gear")onRoute("equipment_member") else onPage(it)}
+    }
+    if(memberHome&&page=="home"){
+        MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery)
+        return
+    }
     ScreenShell(title,snackbar=snackbar,onBack=if(page=="notices" || (page=="modules"&&memberHome)){{onPage("home")}}else null,
         actions={
             TextButton(onClick={onPage("account")},modifier=Modifier.padding(end=8.dp).semantics{contentDescription="Open account"}) {
@@ -112,16 +125,7 @@ fun ClubLanding(
                     Box(Modifier.size(40.dp),contentAlignment=Alignment.Center){Text(initials,color=MaterialTheme.colorScheme.onSurface,style=MaterialTheme.typography.labelLarge)}
                 }
             }
-        },bottomBar={
-            Surface(color=MaterialTheme.colorScheme.surface){Column {
-                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                    tabs.forEach{(key,label)->NavigationBarItem(selected=page==key,onClick={onPage(key)},icon={LineIcon(key)},label={Text(label)},
-                        colors=NavigationBarItemDefaults.colors(indicatorColor=MaterialTheme.colorScheme.surface,
-                            selectedIconColor=MaterialTheme.colorScheme.primary,selectedTextColor=MaterialTheme.colorScheme.primary))}
-                }
-            }}
-        }) {
+        },bottomBar=bottomBar) {
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
         when(page){
@@ -175,36 +179,6 @@ fun ClubLanding(
                 if(staff){
                     OfficerDashboardContent(workspace,permissions,onRoute)
                     if("activities" in permissions)Button(onClick=onAnnouncement,enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Create announcement")}
-                }else if(memberHome){
-                    Spacer(Modifier.height(8.dp));SectionLabel("Your next session")
-                    val next=landingEvents(workspace,registeredOnly=true).firstOrNull()
-                    if(next!=null){
-                        Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                            Text(next.text("title"),style=MaterialTheme.typography.headlineMedium)
-                            Text(eventWhen(next),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            if(next.text("venue").isNotBlank())Text(next.text("venue"),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        val nextView=activityView(next,workspace)
-                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){StatusPill(nextView.status.label,nextView.status.tone());StatusPill(relative(nextView.start),Tone.NEUTRAL)}
-                        Button(onClick={onRoute("activity:${next.text("id")}")},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("View session")}
-                    }else{
-                        Text("Your next session starts here.",style=MaterialTheme.typography.titleLarge)
-                        Text("Explore upcoming activities and register when you're ready.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        Button(onClick={onPage("activities")},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Browse activities")}
-                    }
-                    Spacer(Modifier.height(4.dp));SectionLabel("Quick actions")
-                    val open=memberActivities(workspace).count{!it.status.isMine}
-                    TileRow {
-                        StatTile("$open","Open activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
-                        val borrowed=workspace.records("borrowings").count{it.text("user_id")==user&&it.text("status") in setOf("pending","approved","released")}
-                        StatTile("$borrowed","Equipment requests",Modifier.weight(1f).fillMaxHeight()){onRoute("equipment_member")}
-                    }
-                    Column {
-                        QuietRow("Borrow equipment","Bows, arrows and accessories from the club"){onRoute("equipment_member")}
-                        QuietRow("My profile","${profileCompleteness(profile)}% complete"){onRoute("profile")}
-                    }
-                    val tasks=memberTasks(workspace)
-                    if(tasks.isNotEmpty())QuietRow("Your tasks","${tasks.size} requests and tasks to follow up"){onModule(6)}
                 }else if(hasModule(15)){
                     QuietRow("Shared interclub events","Delegates, schedules and coordination"){onModule(15)}
                 }else if(membership!=null){
@@ -237,6 +211,58 @@ fun ClubLanding(
                     }
                     if(notices.isNotEmpty())QuietRow("Notices to review","${notices.size} updates"){onPage("notices")}
                     QuietRow("All modules",leading={LineIcon("modules")}){onPage("modules")}
+                }
+            }
+        }
+    }
+}
+
+/** Member home in the forest-and-target design: hero, raised next-session card, quick tiles, rows. */
+@Composable
+private fun MemberHome(
+    workspace:JsonObject,profile:JsonObject?,fullName:String,noticeCount:Int,state:SystemState,snackbar:SnackbarHostState,
+    bottomBar:@Composable ()->Unit,onPage:(String)->Unit,onModule:(Int)->Unit,onRoute:(String)->Unit,
+    onRecord:(Int,String,JsonObject)->Unit,onRefresh:()->Unit,hasModule:(Int)->Boolean,recovery:@Composable ()->Unit,
+) {
+    val user=workspace.text("user_id")
+    val clubName=workspace.records("settings").firstOrNull()?.text("club_name").orEmpty().ifBlank{"Archery Club"}
+    val next=landingEvents(workspace,registeredOnly=true).firstOrNull()
+    val session=next?.let{val v=activityView(it,workspace);SessionCardData(it.text("title"),v.start,it.text("venue"),v.status.label)}
+    val open=memberActivities(workspace).count{!it.status.isMine}
+    val borrowed=workspace.records("borrowings").count{it.text("user_id")==user&&it.text("status") in setOf("pending","approved","released")}
+    val tasks=memberTasks(workspace)
+    val announcement=workspace.records("announcements").maxByOrNull{it.text("created_at")}
+    // White status-bar icons over the dark hero; restore the theme default when leaving home.
+    val view=LocalView.current
+    val dark=isSystemInDarkTheme()
+    DisposableEffect(view){
+        val window=(view.context as? Activity)?.window
+        val bars=window?.let{WindowCompat.getInsetsController(it,view)}
+        bars?.isAppearanceLightStatusBars=false
+        onDispose{bars?.isAppearanceLightStatusBars=!dark}
+    }
+    Scaffold(bottomBar=bottomBar,snackbarHost={SnackbarHost(snackbar)},containerColor=MaterialTheme.colorScheme.background,
+        contentWindowInsets=WindowInsets(0,0,0,0)) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())) {
+            Box {
+                HomeHero(clubName,"Active member","${greetingFor(LocalTime.now().hour)}, ${firstName(fullName)}")
+                if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding())
+            }
+            // Pulled up so the card overlaps the hero, as in the design.
+            Column(Modifier.offset(y=(-64).dp).padding(horizontal=16.dp).widthIn(max=640.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
+                state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
+                if(state.recovery)recovery()
+                TileRow {
+                    HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
+                    HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onRoute("equipment_member")}
+                }
+                HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onRoute("equipment_member")}
+                HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
+                if(tasks.isNotEmpty())HomeRow("tasks","Your tasks","${tasks.size} to follow up"){onModule(6)}
+                if(noticeCount>0)HomeRow("bell","Notices","$noticeCount new update${if(noticeCount==1)"" else "s"}"){onPage("notices")}
+                if(announcement!=null&&(hasModule(3)||hasModule(8)))HomeRow("activities",announcement.text("title"),"Latest announcement"){
+                    onRecord(if(hasModule(8))8 else 3,"announcements",announcement)
                 }
             }
         }

@@ -26,11 +26,12 @@ fun ScreenShell(
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("ArcheryClub", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.surface),
+                colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.background),
                 actions=actions,
                 navigationIcon = { onBack?.let { TextButton(onClick = it) { Text("Back") } } })
         },
         bottomBar = bottomBar,
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { snackbar?.let { SnackbarHost(it) } },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {

@@ -10,28 +10,42 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Brand tokens from the "forest and target" home design; the colour scheme below is derived from them. */
+object Club {
+    val forestDeep = Color(0xFF183F27)
+    val forest = Color(0xFF2B5E3C)
+    val lime = Color(0xFFB9DC7A)
+    val mint = Color(0xFFDDEFD3)
+    val sage = Color(0xFFF2F6EF)
+    val amberSoft = Color(0xFFFCEBC2)
+    val amberInk = Color(0xFF7A4B00)
+    val roseSoft = Color(0xFFFBE1DF)
+    val roseInk = Color(0xFF8C1D18)
+    val shadow = Color(0x33183F27)
+}
+
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF00532B), onPrimary = Color.White,
-    primaryContainer = Color(0xFFE7F2EB), onPrimaryContainer = Color(0xFF003D20),
-    secondary = Color(0xFF526359), secondaryContainer = Color(0xFFEEF3EF),
-    background = Color(0xFFFFFFFF), surface = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFFFFFF), surfaceVariant = Color(0xFFE9EDE5),
-    surfaceContainer = Color(0xFFF3F5F4), surfaceContainerHighest = Color(0xFFEEF1EF),
+    primary = Club.forest, onPrimary = Color.White,
+    primaryContainer = Color(0xFFE6F1E0), onPrimaryContainer = Club.forestDeep,
+    secondary = Color(0xFF4F6354), secondaryContainer = Club.mint,
+    background = Club.sage, surface = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFFFFFF), surfaceVariant = Color(0xFFE6ECE3),
+    surfaceContainer = Color(0xFFEDF2EA), surfaceContainerHighest = Color(0xFFE6ECE3),
     onBackground = Color(0xFF131715), onSurface = Color(0xFF131715),
     onSurfaceVariant = Color(0xFF565F59),
     outline = Color(0xFF78817B), outlineVariant = Color(0xFFE2E7E3),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF9AD4B8), primaryContainer = Color(0xFF174E3C),
-    onPrimary = Color(0xFF073829), background = Color(0xFF121914), surface = Color(0xFF121914),
-    surfaceContainerLow = Color(0xFF1A241E),
+    primary = Color(0xFFA8D5A2), primaryContainer = Color(0xFF23402E),
+    onPrimary = Color(0xFF0B2A17), background = Color(0xFF101612), surface = Color(0xFF18211B),
+    surfaceContainerLow = Color(0xFF18211B), surfaceContainer = Color(0xFF1E2921),
 )
 
 @Composable
 fun ArcheryTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        shapes = Shapes(small=RoundedCornerShape(8.dp),medium=RoundedCornerShape(12.dp),large=RoundedCornerShape(16.dp)),
+        shapes = Shapes(small=RoundedCornerShape(12.dp),medium=RoundedCornerShape(16.dp),large=RoundedCornerShape(20.dp)),
         typography = Typography(
             headlineLarge=TextStyle(fontSize=32.sp,lineHeight=38.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.6).sp),
             headlineMedium=TextStyle(fontSize=28.sp,lineHeight=34.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.4).sp),
