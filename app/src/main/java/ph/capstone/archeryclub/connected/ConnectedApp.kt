@@ -33,6 +33,10 @@ import ph.capstone.archeryclub.ui.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntOffset
 import ph.capstone.archeryclub.BuildConfig
 
 @Composable
@@ -53,18 +57,18 @@ fun ConnectedApp(vm:SystemViewModel){
     val context=LocalContext.current
     val catalog=remember{Json.parseToJsonElement(context.assets.open("modules.json").bufferedReader().use{it.readText()}).jsonObject}
     val modules=catalog.records("modules");val forms=catalog.getValue("forms").jsonObject
-    var module by rememberSaveable{mutableIntStateOf(0)}
-    var landingPage by rememberSaveable{mutableStateOf("home")}
+    var moduleVar by rememberSaveable{mutableIntStateOf(0)}
+    var landingVar by rememberSaveable{mutableStateOf("home")}
     var returnToLanding by rememberSaveable{mutableStateOf(false)}
     // Purpose-built workflow screens are addressed by a small back stack of routes,
     // e.g. "equipment|item:<id>|borrowing:<id>". Generic module screens remain available.
-    var routeStack by rememberSaveable{mutableStateOf("")}
-    val route=routeStack.substringAfterLast('|')
-    var selected by rememberSaveable(stateSaver=Saver<Pair<String,JsonObject>?,String>(
+    var stackVar by rememberSaveable{mutableStateOf("")}
+    val route=stackVar.substringAfterLast('|')
+    var selectedVar by rememberSaveable(stateSaver=Saver<Pair<String,JsonObject>?,String>(
         save={it?.let{pair->JsonArray(listOf(JsonPrimitive(pair.first),pair.second)).toString()}.orEmpty()},
         restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonPrimitive.content to a[1].jsonObject}}}
     )){mutableStateOf<Pair<String,JsonObject>?>(null)}
-    var editing by rememberSaveable(stateSaver=Saver<Pair<JsonObject,JsonObject>?,String>(
+    var editingVar by rememberSaveable(stateSaver=Saver<Pair<JsonObject,JsonObject>?,String>(
         save={it?.let{pair->JsonArray(listOf(pair.first,pair.second)).toString()}.orEmpty()},
         restore={s->s.takeIf{it.isNotEmpty()}?.let{Json.parseToJsonElement(it).jsonArray.let{a->a[0].jsonObject to a[1].jsonObject}}}
     )){mutableStateOf<Pair<JsonObject,JsonObject>?>(null)}
@@ -72,7 +76,7 @@ fun ConnectedApp(vm:SystemViewModel){
     LaunchedEffect(state.error,state.message,state.signedIn){
         if(state.signedIn)(state.error?:state.message)?.let{snackbar.showSnackbar(it);vm.clearMessage()}
     }
-    LaunchedEffect(state.signedIn){if(!state.signedIn){selected=null;editing=null;module=0;landingPage="home";returnToLanding=false;routeStack=""}}
+    LaunchedEffect(state.signedIn){if(!state.signedIn){selectedVar=null;editingVar=null;moduleVar=0;landingVar="home";returnToLanding=false;stackVar=""}}
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
     if(!state.signedIn){AuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
@@ -85,7 +89,7 @@ fun ConnectedApp(vm:SystemViewModel){
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}
-    LaunchedEffect(isMember){if(!isMember&&landingPage=="activities")landingPage="home"}
+    LaunchedEffect(isMember){if(!isMember&&landingVar=="activities")landingVar="home"}
     val access=workspace.records("event_access").filter{it.text("user_id")==user&&it.text("revoked_at").isBlank()}
     fun allowed(permission:String)=when(permission){
         "account"->true;"member"->isMember;"funds"->"finance" in permissions||"president" in permissions
@@ -94,17 +98,17 @@ fun ConnectedApp(vm:SystemViewModel){
         else->permission in permissions
     }
     fun visible(n:Int)=when(n){1->workspace.records("memberships").any{it.text("user_id")==user};3,4,5,6->isMember;2->true;7->allowed("membership");8->allowed("activities");9->isMember||allowed("elections");10->allowed("equipment");11->allowed("training");12->true;13->allowed("reports");14->allowed("administration");15->allowed("partner");else->false}
-    fun push(r:String){routeStack=if(routeStack.isEmpty())r else "$routeStack|$r"}
-    fun pop(){routeStack=routeStack.substringBeforeLast('|',"")}
+    fun push(r:String){stackVar=if(stackVar.isEmpty())r else "$stackVar|$r"}
+    fun pop(){stackVar=stackVar.substringBeforeLast('|',"")}
     fun go(r:String){
-        if(r.startsWith("module:")){routeStack="";module=r.removePrefix("module:").toInt();selected=null;returnToLanding=false} else push(r)
+        if(r.startsWith("module:")){stackVar="";moduleVar=r.removePrefix("module:").toInt();selectedVar=null;returnToLanding=false} else push(r)
     }
     /** Modules that have a purpose-built workflow screen open it first; its "records" link reaches the generic view. */
     fun dedicated(n:Int):String?=when(n){
         1->"profile";2->"application";7->"applications";3->if(isMember)"activities" else null;5->if(isMember)"equipment_member" else null
         8->"officer_activities";10->"equipment";else->null
     }
-    fun openModule(n:Int){val r=dedicated(n);if(r!=null){module=0;selected=null;routeStack=r}else{module=n;selected=null;returnToLanding=false}}
+    fun openModule(n:Int){val r=dedicated(n);if(r!=null){moduleVar=0;selectedVar=null;stackVar=r}else{moduleVar=n;selectedVar=null;returnToLanding=false}}
     fun start(action:String,row:JsonObject=buildJsonObject{}){
         val form=forms[action]?.jsonObject?:return
         val initial=buildJsonObject{
@@ -112,22 +116,22 @@ fun ConnectedApp(vm:SystemViewModel){
             form["seed"]?.jsonObject?.forEach{(target,source)->row[source.jsonPrimitive.content]?.let{put(target,it)}}
             if(action=="define_role"&&row.containsKey("id"))put("role_id",row.getValue("id"))
         }
-        editing=form to initial
+        editingVar=form to initial
     }
     fun openNotice(notice:JsonObject) {
         val destination=notice.text("module").toIntOrNull()?:return
         val record=notice.text("record_id")
-        if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){routeStack="activity:$record";return}
-        if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){routeStack="borrowing:$record";return}
-        workspace.records("name_corrections").find{it.text("id")==record}?.let{routeStack=if(it.text("user_id")==user)"profile" else "name_corrections";return}
+        if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){stackVar="activity:$record";return}
+        if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){stackVar="borrowing:$record";return}
+        workspace.records("name_corrections").find{it.text("id")==record}?.let{stackVar=if(it.text("user_id")==user)"profile" else "name_corrections";return}
         workspace.records("applications").find{it.text("id")==record}?.let{
             val target=if(it.text("user_id")==user)"application" else if(allowed("membership"))"application_review:$record" else null
-            if(target!=null){routeStack=target;return}}
+            if(target!=null){stackVar=target;return}}
         if(!visible(destination)){vm.error("This notice's module is not available under your current role.");return}
         val tables=modules.first{it.text("number")==destination.toString()}["tables"]!!.jsonArray.map{it.jsonPrimitive.content}
-        returnToLanding=module==0
-        module=destination
-        selected=tables.firstNotNullOfOrNull { table -> workspace.records(table).find {
+        returnToLanding=moduleVar==0
+        moduleVar=destination
+        selectedVar=tables.firstNotNullOfOrNull { table -> workspace.records(table).find {
             it.text("id")==notice.text("record_id") || (table=="interclub_events"&&it.text("event_id")==notice.text("record_id"))
         }?.let { table to it } }
     }
@@ -137,132 +141,141 @@ fun ConnectedApp(vm:SystemViewModel){
             val token=uri.getQueryParameter("token")
             if(token!=null)vm.command("check_in",buildJsonObject{put("token",token)})
             else if(uri.host=="event"){
-                workspace.records("events").find{it.text("id")==uri.getQueryParameter("id")}?.let{routeStack="activity:${it.text("id")}"}
+                workspace.records("events").find{it.text("id")==uri.getQueryParameter("id")}?.let{stackVar="activity:${it.text("id")}"}
                     ?:vm.error("This event is not available to your account. Refresh and try again.")
-            } else workspace.records("equipment").find{it.text("id")==value}?.let{routeStack="item:${it.text("id")}"}
+            } else workspace.records("equipment").find{it.text("id")==value}?.let{stackVar="item:${it.text("id")}"}
                 ?:vm.error("This is not an available club attendance, event, or equipment code.")
         }
     }
-    fun leaveRecord(){selected=null;if(returnToLanding){module=0;returnToLanding=false}}
-    BackHandler(module!=0||selected!=null||editing!=null||landingPage!="home"||routeStack.isNotEmpty()){
-        if(editing!=null)editing=null else if(routeStack.isNotEmpty())pop() else if(selected!=null)leaveRecord() else if(module!=0)module=0 else landingPage="home"
+    fun leaveRecord(){selectedVar=null;if(returnToLanding){moduleVar=0;returnToLanding=false}}
+    BackHandler(moduleVar!=0||selectedVar!=null||editingVar!=null||landingVar!="home"||stackVar.isNotEmpty()){
+        if(editingVar!=null)editingVar=null else if(stackVar.isNotEmpty())pop() else if(selectedVar!=null)leaveRecord() else if(moduleVar!=0)moduleVar=0 else landingVar="home"
     }
-    editing?.let{(form,initial)->
-        WorkflowForm(form,initial,workspace,state.busy,onBack={editing=null},onSubmit={payload->
-            vm.command(form.text("action"),payload){editing=null;leaveRecord()}
-        },snackbar=snackbar)
-        return
-    }
-    if(routeStack.isNotEmpty()){
-        WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,
-            onBack=::pop,onPush=::push,onGo=::go,onStart=::start,
-            onCommand={action,data,done->vm.command(action,data,done)},
-            onUpload={uri,m,record,requirement->vm.upload(context,uri,m,record,requirement)},
-            onOpenDocument={path->vm.openDocument(path){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}})
-        return
-    }
-    if(module==0){
-        ClubLanding(page=landingPage,onPage={landingPage=it},workspace=workspace,
-            modules=modules.filter{visible(it.text("number").toInt())},state=state,snackbar=snackbar,
-            onModule={openModule(it)},onRoute={go(it)},
-            onRecord={target,table,row->if(visible(target)){module=target;selected=table to row;returnToLanding=true}},
-            onAnnouncement={if(allowed("activities"))start("publish_announcement")},
-            onNotice=::openNotice,
-            onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
-            onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
-            onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
-            recovery={PasswordChange(vm,state.busy)},
-            onCommand={action,data->vm.command(action,data)})
-        return
-    }
-    if(!visible(module)){LaunchedEffect(module){module=0;selected=null;editing=null};return}
-    val current=modules.first{it.text("number").toInt()==module}
-    val actionIds=current["actions"]!!.jsonArray.map{it.jsonPrimitive.content}
-    val available=actionIds.mapNotNull{forms[it] as? JsonObject}.filter{allowed(it.text("permission"))&&(BuildConfig.EMAIL_ENABLED||it.text("action")!="invite_account")}
-    val item=selected
-    if(item!=null){
-        val(table,original)=item
-        val row=workspace.records(table).find{it.text("id")==original.text("id")&&it.text("user_id")==original.text("user_id")&&it.text("event_id")==original.text("event_id")}?:original
-        ScreenShell(recordTitle(row,workspace),onBack=::leaveRecord,snackbar=snackbar){
-            RecordDetails(row,workspace)
-            if(module in integratedClubModules) {
-                workspace.records("financial_approvals").filter{table=="financial_records"&&it.text("record_id")==row.text("id")}.forEach{
-                    InfoCard("${human(it.text("office"))} approval", "${it.text("remark")} · ${it.text("approved_at")}")
-                }
-                workspace.records("audit_log").filter{it.text("record_id")==row.text("id")}.sortedByDescending{it.text("created_at")}.take(10).forEach{
-                    Text("${human(it.text("action"))} · ${it.text("created_at")}",style=MaterialTheme.typography.bodySmall)
-                }
-            }
-            if(table=="documents")Button(onClick={vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}){Text("Open private document")}
-            if(table=="notifications")Button(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}){Text("Acknowledge notice")}
-            if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
-            if(table=="attendance_windows")QrImage("archeryclub://attendance?token=${row.text("token")}")
-            if(table=="equipment"&&allowed("equipment"))QrImage(row.text("id"))
-            if(table=="elections")ElectionPanel(row,workspace,vm,isMember)
-            if(table in setOf("applications","renewals","candidates","training_records","financial_records","delegates","interclub_events")){
-                val docModule=mapOf("applications" to 2,"renewals" to 1,"candidates" to 9,"training_records" to 11,"financial_records" to 12,"delegates" to 15,"interclub_events" to 15).getValue(table)
-                if(table=="interclub_events")Text("Event documents are shared with this event's invited representatives. Attach only approved event materials.")
-                DocumentsPanel(row.text("id").ifBlank{row.text("event_id")},docModule,workspace,vm,state.busy)
-            }
-            recordWorkflowActions(available,table,row,user).forEach{form->
-                Button(onClick={start(form.text("action"),row)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
-            }
-        };return
-    }
-    var search by rememberSaveable(module){mutableStateOf("")}
-    var table by rememberSaveable(module){mutableStateOf(current["tables"]!!.jsonArray.firstOrNull()?.jsonPrimitive?.content.orEmpty())}
-    ScreenShell(current.text("name"),onBack={module=0},snackbar=snackbar){
-        if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-        OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
-        if(module in integratedClubModules)ClubModuleOverview(module,workspace)
-        if(module==6)MemberOverview(workspace,onNavigate={module=it;selected=null},onTask={task->module=task.module;selected=task.table to task.row})
-        if(module==13)ReportsPanel(workspace,vm)
-        if(module==10||module==5)AvailabilityPanel(vm)
-        if(module==11)TrainingImport(vm)
-        if(module==3||module==8)RecordCalendar(workspace.records("events"),workspace){selected="events" to it}
-        if(module==10)RecordCalendar(workspace.records("borrowings").filter{it.text("status") in setOf("approved","released")},workspace){selected="borrowings" to it}
-        if(module==4||module==11)TrainingHistory(workspace.records("training_records").filter{module==11||it.text("user_id")==user},vm)
-        val createActions=setOf("assess_fee_bulk","set_membership_fee","save_profile","request_renewal","save_application","check_in","save_event","publish_announcement","record_attendance","save_term","record_residency","create_election","record_leadership","save_equipment","request_borrowing","save_personal_training","save_training","save_financial_request","assess_fee","save_goal","configure_club","define_role","save_partner","share_interclub_event","save_delegate","raise_concern")
-        available.filter{it.text("action") in createActions && it.text("action")!="request_renewal" || it.text("action") in setOf("save_renewal","invite_account")}.forEach{form->
-            val application=workspace.records("applications").find{it.text("user_id")==user}
-            val renewal=workspace.records("renewals").find{it.text("user_id")==user&&it.text("status") in setOf("draft","returned_for_correction","pending")}
-            if(form.text("action")=="save_application"&&(workspace.records("memberships").any{it.text("user_id")==user}||(application!=null&&application.text("status") !in setOf("draft","incomplete","returned_for_correction"))))return@forEach
-            if(form.text("action")=="save_renewal"&&renewal?.text("status")=="pending")return@forEach
-            OutlinedButton(onClick={
-                val initial=when(form.text("action")){
-                    "save_profile"->workspace.records("profiles").find{it.text("id")==user}
-                    "save_application"->workspace.records("applications").find{it.text("user_id")==user}
-                    "save_renewal"->renewal
-                    "configure_club"->workspace.records("settings").firstOrNull()
-                    else->null
-                }
-                start(form.text("action"),initial?:buildJsonObject{})
-            },enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
+    /* Each screen renders from a snapshot of the navigation state, so the outgoing screen keeps
+     * showing its own content while it animates away. Writes still go to the live state above. */
+    @Composable fun Screen(nav:Nav){
+        val module=nav.module;val selected=nav.selected;val editing=nav.editing;val landingPage=nav.landing;val routeStack=nav.stack
+        val route=routeStack.substringAfterLast('|')
+        editing?.let{(form,initial)->
+            WorkflowForm(form,initial,workspace,state.busy,onBack={editingVar=null},onSubmit={payload->
+                vm.command(form.text("action"),payload){editingVar=null;leaveRecord()}
+            },snackbar=snackbar)
+            return
         }
-        if(module in integratedClubModules){
-            ClubModuleRecords(module,current,workspace,available,state.busy,
-                onOpen={recordTable,row->selected=recordTable to row},
-                onAction={action,row->if(available.any{it.text("action")==action})start(action,row)})
-        } else {
-        SelectField("Records",table,current["tables"]!!.jsonArray.map{it.jsonPrimitive.content to human(it.jsonPrimitive.content)}){table=it}
-        OutlinedTextField(search,{search=it},label={Text("Search records")},modifier=Modifier.fillMaxWidth())
-        val rows=workspace.records(table).filter{r->
-            val own=when(module){1->table=="profiles"&&r.text("id")==user||table!="profiles"&&r.text("user_id")==user
-                2->table=="documents"&&r.text("owner_id")==user||table!="documents"&&r.text("user_id")==user
-                4->r.text("user_id")==user
-                5->table=="equipment"||r.text("user_id")==user
-                6->table=="documents"&&r.text("owner_id")==user||table=="notifications"&&r.text("user_id")==user
-                else->true}
-            val correction=table!="corrections"||module==4||r.text("module")==if(module==8)"8" else "11"
-            own&&correction&&r.toString().contains(search,true)
+        if(routeStack.isNotEmpty()){
+            WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,
+                onBack=::pop,onPush=::push,onGo=::go,onStart=::start,
+                onCommand={action,data,done->vm.command(action,data,done)},
+                onUpload={uri,m,record,requirement->vm.upload(context,uri,m,record,requirement)},
+                onOpenDocument={path->vm.openDocument(path){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}})
+            return
         }
-        if(rows.isEmpty())Text("No matching records yet.")
-        rows.forEach{r->Card(Modifier.fillMaxWidth().clickable{selected=table to r}){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-            Text(recordTitle(r,workspace),style=MaterialTheme.typography.titleMedium)
-            listOf("status","validation","category","starts_at","training_date","amount","notified_at").map{r.text(it)}.filter{it.isNotBlank()}.take(3).forEach{Text(human(it))}
-        }}}
+        if(module==0){
+            ClubLanding(page=landingPage,onPage={landingVar=it},workspace=workspace,
+                modules=modules.filter{visible(it.text("number").toInt())},state=state,snackbar=snackbar,
+                onModule={openModule(it)},onRoute={go(it)},
+                onRecord={target,table,row->if(visible(target)){moduleVar=target;selectedVar=table to row;returnToLanding=true}},
+                onAnnouncement={if(allowed("activities"))start("publish_announcement")},
+                onNotice=::openNotice,
+                onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
+                onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
+                onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
+                recovery={PasswordChange(vm,state.busy)},
+                onCommand={action,data->vm.command(action,data)})
+            return
+        }
+        if(!visible(module)){LaunchedEffect(module){moduleVar=0;selectedVar=null;editingVar=null};return}
+        val current=modules.first{it.text("number").toInt()==module}
+        val actionIds=current["actions"]!!.jsonArray.map{it.jsonPrimitive.content}
+        val available=actionIds.mapNotNull{forms[it] as? JsonObject}.filter{allowed(it.text("permission"))&&(BuildConfig.EMAIL_ENABLED||it.text("action")!="invite_account")}
+        val item=selected
+        if(item!=null){
+            val(table,original)=item
+            val row=workspace.records(table).find{it.text("id")==original.text("id")&&it.text("user_id")==original.text("user_id")&&it.text("event_id")==original.text("event_id")}?:original
+            ScreenShell(recordTitle(row,workspace),onBack=::leaveRecord,snackbar=snackbar){
+                RecordDetails(row,workspace)
+                if(module in integratedClubModules) {
+                    workspace.records("financial_approvals").filter{table=="financial_records"&&it.text("record_id")==row.text("id")}.forEach{
+                        InfoCard("${human(it.text("office"))} approval", "${it.text("remark")} · ${it.text("approved_at")}")
+                    }
+                    workspace.records("audit_log").filter{it.text("record_id")==row.text("id")}.sortedByDescending{it.text("created_at")}.take(10).forEach{
+                        Text("${human(it.text("action"))} · ${it.text("created_at")}",style=MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if(table=="documents")Button(onClick={vm.openDocument(row.text("path")){url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}}){Text("Open private document")}
+                if(table=="notifications")Button(onClick={vm.command("acknowledge_notification",buildJsonObject{put("id",row.text("id"))})}){Text("Acknowledge notice")}
+                if(table=="notifications")OutlinedButton(onClick={openNotice(row)}){Text("Open related records")}
+                if(table=="attendance_windows")QrImage("archeryclub://attendance?token=${row.text("token")}")
+                if(table=="equipment"&&allowed("equipment"))QrImage(row.text("id"))
+                if(table=="elections")ElectionPanel(row,workspace,vm,isMember)
+                if(table in setOf("applications","renewals","candidates","training_records","financial_records","delegates","interclub_events")){
+                    val docModule=mapOf("applications" to 2,"renewals" to 1,"candidates" to 9,"training_records" to 11,"financial_records" to 12,"delegates" to 15,"interclub_events" to 15).getValue(table)
+                    if(table=="interclub_events")Text("Event documents are shared with this event's invited representatives. Attach only approved event materials.")
+                    DocumentsPanel(row.text("id").ifBlank{row.text("event_id")},docModule,workspace,vm,state.busy)
+                }
+                recordWorkflowActions(available,table,row,user).forEach{form->
+                    Button(onClick={start(form.text("action"),row)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
+                }
+            };return
+        }
+        var search by rememberSaveable(module){mutableStateOf("")}
+        var table by rememberSaveable(module){mutableStateOf(current["tables"]!!.jsonArray.firstOrNull()?.jsonPrimitive?.content.orEmpty())}
+        ScreenShell(current.text("name"),onBack={moduleVar=0},snackbar=snackbar){
+            if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+            OutlinedButton(onClick=vm::refresh,enabled=!state.busy){Text("Refresh records")}
+            if(module in integratedClubModules)ClubModuleOverview(module,workspace)
+            if(module==6)MemberOverview(workspace,onNavigate={moduleVar=it;selectedVar=null},onTask={task->moduleVar=task.module;selectedVar=task.table to task.row})
+            if(module==13)ReportsPanel(workspace,vm)
+            if(module==10||module==5)AvailabilityPanel(vm)
+            if(module==11)TrainingImport(vm)
+            if(module==3||module==8)RecordCalendar(workspace.records("events"),workspace){selectedVar="events" to it}
+            if(module==10)RecordCalendar(workspace.records("borrowings").filter{it.text("status") in setOf("approved","released")},workspace){selectedVar="borrowings" to it}
+            if(module==4||module==11)TrainingHistory(workspace.records("training_records").filter{module==11||it.text("user_id")==user},vm)
+            val createActions=setOf("assess_fee_bulk","set_membership_fee","save_profile","request_renewal","save_application","check_in","save_event","publish_announcement","record_attendance","save_term","record_residency","create_election","record_leadership","save_equipment","request_borrowing","save_personal_training","save_training","save_financial_request","assess_fee","save_goal","configure_club","define_role","save_partner","share_interclub_event","save_delegate","raise_concern")
+            available.filter{it.text("action") in createActions && it.text("action")!="request_renewal" || it.text("action") in setOf("save_renewal","invite_account")}.forEach{form->
+                val application=workspace.records("applications").find{it.text("user_id")==user}
+                val renewal=workspace.records("renewals").find{it.text("user_id")==user&&it.text("status") in setOf("draft","returned_for_correction","pending")}
+                if(form.text("action")=="save_application"&&(workspace.records("memberships").any{it.text("user_id")==user}||(application!=null&&application.text("status") !in setOf("draft","incomplete","returned_for_correction"))))return@forEach
+                if(form.text("action")=="save_renewal"&&renewal?.text("status")=="pending")return@forEach
+                OutlinedButton(onClick={
+                    val initial=when(form.text("action")){
+                        "save_profile"->workspace.records("profiles").find{it.text("id")==user}
+                        "save_application"->workspace.records("applications").find{it.text("user_id")==user}
+                        "save_renewal"->renewal
+                        "configure_club"->workspace.records("settings").firstOrNull()
+                        else->null
+                    }
+                    start(form.text("action"),initial?:buildJsonObject{})
+                },enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text(form.text("label"))}
+            }
+            if(module in integratedClubModules){
+                ClubModuleRecords(module,current,workspace,available,state.busy,
+                    onOpen={recordTable,row->selectedVar=recordTable to row},
+                    onAction={action,row->if(available.any{it.text("action")==action})start(action,row)})
+            } else {
+            SelectField("Records",table,current["tables"]!!.jsonArray.map{it.jsonPrimitive.content to human(it.jsonPrimitive.content)}){table=it}
+            OutlinedTextField(search,{search=it},label={Text("Search records")},modifier=Modifier.fillMaxWidth())
+            val rows=workspace.records(table).filter{r->
+                val own=when(module){1->table=="profiles"&&r.text("id")==user||table!="profiles"&&r.text("user_id")==user
+                    2->table=="documents"&&r.text("owner_id")==user||table!="documents"&&r.text("user_id")==user
+                    4->r.text("user_id")==user
+                    5->table=="equipment"||r.text("user_id")==user
+                    6->table=="documents"&&r.text("owner_id")==user||table=="notifications"&&r.text("user_id")==user
+                    else->true}
+                val correction=table!="corrections"||module==4||r.text("module")==if(module==8)"8" else "11"
+                own&&correction&&r.toString().contains(search,true)
+            }
+            if(rows.isEmpty())Text("No matching records yet.")
+            rows.forEach{r->Card(Modifier.fillMaxWidth().clickable{selectedVar=table to r}){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                Text(recordTitle(r,workspace),style=MaterialTheme.typography.titleMedium)
+                listOf("status","validation","category","starts_at","training_date","amount","notified_at").map{r.text(it)}.filter{it.isNotBlank()}.take(3).forEach{Text(human(it))}
+            }}}
+            }
         }
     }
+    val nav=Nav(moduleVar,landingVar,stackVar,selectedVar,editingVar)
+    AnimatedContent(targetState=nav,contentKey={it.key},label="screen",
+        transitionSpec={navTransition(initialState.depth,targetState.depth)}){snapshot->Screen(snapshot)}
 }
 
 @Composable private fun AuthScreen(state:SystemState,vm:SystemViewModel,snackbar:SnackbarHostState){
@@ -377,4 +390,33 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
         InfoCard("Upcoming: ${it.text("title")}","${it.text("starts_at")} · ${it.text("venue")}")
     }
     Text("Summaries use your recorded information. Unvalidated training and unverified financial submissions remain labelled in their source modules.")
+}
+
+
+/** What is on screen. `key` decides when a transition plays; `depth` decides its direction. */
+private data class Nav(val module:Int,val landing:String,val stack:String,val selected:Pair<String,JsonObject>?,val editing:Pair<JsonObject,JsonObject>?){
+    val key get()=when{
+        editing!=null->"form:"+editing.first.text("action")
+        stack.isNotEmpty()->"route:$stack"
+        selected!=null->"record:$module:${selected.first}:${selected.second.text("id")}"
+        module!=0->"module:$module"
+        else->"landing:$landing"
+    }
+    val depth get()=when{
+        editing!=null->100
+        stack.isNotEmpty()->10+stack.count{it=='|'}
+        selected!=null->3
+        module!=0->2
+        else->0
+    }
+}
+
+/** Forward: the new screen slides in from the right over the old one. Back: the reverse. Tabs: a soft fade-through. */
+private fun AnimatedContentTransitionScope<Nav>.navTransition(from:Int,to:Int):ContentTransform{
+    val slide=tween<IntOffset>(340,easing=FastOutSlowInEasing)
+    return when{
+        to>from->(slideInHorizontally(slide){it/3}+fadeIn(tween(220,60))) togetherWith (slideOutHorizontally(slide){-it/8}+fadeOut(tween(180)))
+        to<from->((slideInHorizontally(slide){-it/8}+fadeIn(tween(220,40))) togetherWith (slideOutHorizontally(slide){it/3}+fadeOut(tween(200)))).apply{targetContentZIndex=-1f}
+        else->(fadeIn(tween(240,80))+scaleIn(tween(240,80),initialScale=.97f)) togetherWith fadeOut(tween(100))
+    }.using(SizeTransform(clip=false))
 }

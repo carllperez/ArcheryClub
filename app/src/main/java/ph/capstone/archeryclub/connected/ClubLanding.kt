@@ -68,17 +68,16 @@ private fun eventWhen(row:JsonObject)=dateOf(row)?.format(DateTimeFormatter.ofPa
 }
 
 @Composable private fun QuietRow(title:String,subtitle:String="",leading:(@Composable ()->Unit)?=null,onClick:()->Unit) {
-    Column {
-        Row(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(vertical=20.dp).heightIn(min=48.dp),
-            horizontalArrangement=Arrangement.spacedBy(16.dp),verticalAlignment=Alignment.CenterVertically) {
+    RaisedCard(radius=16.dp,onClick=onClick) {
+        Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=14.dp).heightIn(min=40.dp),
+            horizontalArrangement=Arrangement.spacedBy(14.dp),verticalAlignment=Alignment.CenterVertically) {
             leading?.invoke()
-            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                Text(title,style=MaterialTheme.typography.titleMedium)
-                if(subtitle.isNotBlank())Text(subtitle,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                Text(title,style=MaterialTheme.typography.titleSmall)
+                if(subtitle.isNotBlank())Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            LineIcon("next")
+            ph.capstone.archeryclub.ui.ClubIcon("chevron",Modifier.size(16.dp),MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -112,10 +111,16 @@ fun ClubLanding(
     val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
         else listOf("home" to "Home","modules" to "Modules","account" to "Account")
     val bottomBar:@Composable ()->Unit={
-        ClubBottomBar(tabs,page,mapOf("account" to notices.size)){if(it=="gear")onRoute("equipment_member") else onPage(it)}
+        ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
     }
     if(memberHome&&page=="home"){
         MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery)
+        return
+    }
+    if(memberHome&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
+    if(memberHome&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
+    if(memberHome&&page=="account"){
+        MemberProfilePage(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onScan,onRefresh,onSignOut,recovery)
         return
     }
     ScreenShell(title,snackbar=snackbar,onBack=if(page=="notices" || (page=="modules"&&memberHome)){{onPage("home")}}else null,
@@ -136,6 +141,7 @@ fun ClubLanding(
                 if(calendar)RecordCalendar(memberActivities(workspace).map{it.event},workspace){onRoute("activity:${it.text("id")}")}
                 QuietRow("Announcements and attendance records","Club notices, registration history and corrections"){onRoute("module:3")}
             }
+            "gear"->MemberEquipmentContent(workspace,{onRoute("item:$it")}){onRoute("borrowing:$it")}
             "modules"->{
                 var search by rememberSaveable{mutableStateOf("")}
                 Text("Your available club services",color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -147,14 +153,7 @@ fun ClubLanding(
             "notices"->{
                 Text("Acknowledging a notice does not complete its related task.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 if(notices.isEmpty())InfoCard("You're all caught up","New notices will appear here when a club record needs your attention.")
-                notices.forEach{notice->Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(notice.text("message"),style=MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick={onNotice(notice)}){Text("View details")}
-                        TextButton(onClick={onAcknowledge(notice)},enabled=!state.busy){Text("Acknowledge")}
-                    }
-                    HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                }}
+                notices.forEach{notice->NoticeItem(notice,state.busy,onOpen={onNotice(notice)},onAcknowledge={onAcknowledge(notice)})}
             }
             "account"->{
                 Text(fullName,style=MaterialTheme.typography.titleLarge)
@@ -162,7 +161,7 @@ fun ClubLanding(
                 if(state.recovery)recovery()
                 Column {
                     if(hasModule(1))QuietRow("My profile","Contact, emergency contact, archery details and membership"){onRoute("profile")}
-                    if(isMember)QuietRow("Equipment","Browse the catalog and track your borrowings"){onRoute("equipment_member")}
+                    if(isMember)QuietRow("Equipment","Browse the catalog and track your borrowings"){onPage("gear")}
                     if(hasModule(2))QuietRow("My application","Submission and screening status"){onModule(2)}
                     QuietRow("Notices","${notices.size} to review"){onPage("notices")}
                     QuietRow("All modules","Browse your available services"){onPage("modules")}
@@ -232,15 +231,7 @@ private fun MemberHome(
     val borrowed=workspace.records("borrowings").count{it.text("user_id")==user&&it.text("status") in setOf("pending","approved","released")}
     val tasks=memberTasks(workspace)
     val announcement=workspace.records("announcements").maxByOrNull{it.text("created_at")}
-    // White status-bar icons over the dark hero; restore the theme default when leaving home.
-    val view=LocalView.current
-    val dark=isSystemInDarkTheme()
-    DisposableEffect(view){
-        val window=(view.context as? Activity)?.window
-        val bars=window?.let{WindowCompat.getInsetsController(it,view)}
-        bars?.isAppearanceLightStatusBars=false
-        onDispose{bars?.isAppearanceLightStatusBars=!dark}
-    }
+    LightStatusBarIcons()
     Scaffold(bottomBar=bottomBar,snackbarHost={SnackbarHost(snackbar)},containerColor=MaterialTheme.colorScheme.background,
         contentWindowInsets=WindowInsets(0,0,0,0)) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())) {
@@ -255,9 +246,9 @@ private fun MemberHome(
                 if(state.recovery)recovery()
                 TileRow {
                     HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
-                    HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onRoute("equipment_member")}
+                    HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
                 }
-                HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onRoute("equipment_member")}
+                HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
                 if(tasks.isNotEmpty())HomeRow("tasks","Your tasks","${tasks.size} to follow up"){onModule(6)}
                 if(noticeCount>0)HomeRow("bell","Notices","$noticeCount new update${if(noticeCount==1)"" else "s"}"){onPage("notices")}

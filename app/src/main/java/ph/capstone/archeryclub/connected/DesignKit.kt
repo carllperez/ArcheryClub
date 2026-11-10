@@ -9,6 +9,18 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import ph.capstone.archeryclub.ui.Club
+import ph.capstone.archeryclub.ui.ClubIcon
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,19 +41,23 @@ private data class ToneColors(val container: Color, val content: Color)
 @Composable private fun toneColors(tone: Tone): ToneColors {
     val dark = MaterialTheme.colorScheme.background.red < .5f
     return when (tone) {
-        Tone.POSITIVE -> if (dark) ToneColors(Color(0xFF1F3D2E), Color(0xFF9AD4B8)) else ToneColors(Color(0xFFE3F2E8), Color(0xFF0B5A33))
-        Tone.WARNING -> if (dark) ToneColors(Color(0xFF3F3218), Color(0xFFF1C76B)) else ToneColors(Color(0xFFFFF3D6), Color(0xFF7A4B00))
-        Tone.DANGER -> if (dark) ToneColors(Color(0xFF452222), Color(0xFFF3A6A0)) else ToneColors(Color(0xFFFDE7E5), Color(0xFF9C1C13))
-        Tone.INFO -> if (dark) ToneColors(Color(0xFF1C3046), Color(0xFFA6C8F0)) else ToneColors(Color(0xFFE5EEFA), Color(0xFF184A85))
+        Tone.POSITIVE -> if (dark) ToneColors(Color(0xFF23402E), Club.mint) else ToneColors(Club.mint, Club.forestDeep)
+        Tone.WARNING -> if (dark) ToneColors(Color(0xFF3F3218), Color(0xFFF1C76B)) else ToneColors(Club.amberSoft, Club.amberInk)
+        Tone.DANGER -> if (dark) ToneColors(Color(0xFF452222), Color(0xFFF3A6A0)) else ToneColors(Club.roseSoft, Club.roseInk)
+        Tone.INFO -> if (dark) ToneColors(Color(0xFF1F2F37), Color(0xFFB5D3E2)) else ToneColors(Color(0xFFE4EEF2), Color(0xFF214556))
         Tone.NEUTRAL -> ToneColors(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
+/** Soft forest shadow + white card: the one surface style for every card in the app. */
+fun Modifier.clubCard(radius: Int = 18, elevation: Int = 6): Modifier =
+    shadow(elevation.dp, RoundedCornerShape(radius.dp), ambientColor = Club.shadow, spotColor = Club.shadow)
+
 @Composable
 fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
     val c = toneColors(tone)
-    Text(text, modifier.clip(RoundedCornerShape(50)).background(c.container).padding(horizontal = 10.dp, vertical = 4.dp),
-        color = c.content, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    Text(text, modifier.clip(CircleShape).background(c.container).padding(horizontal = 10.dp, vertical = 4.dp),
+        color = c.content, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
 }
 
 fun ActivityStatus.tone() = when (this) {
@@ -70,8 +86,9 @@ fun borrowingTone(status: String, overdue: Boolean) = when {
 
 @Composable
 fun SectionHeader(title: String, action: String? = null, onAction: () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelMedium, letterSpacing = 1.6.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         if (action != null) TextButton(onClick = onAction) { Text(action) }
     }
 }
@@ -79,11 +96,13 @@ fun SectionHeader(title: String, action: String? = null, onAction: () -> Unit = 
 @Composable
 fun StatTile(value: String, label: String, modifier: Modifier = Modifier, tone: Tone = Tone.NEUTRAL, onClick: (() -> Unit)? = null) {
     val c = toneColors(tone)
-    Surface(modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier), shape = MaterialTheme.shapes.medium,
-        color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.surfaceContainer else c.container) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val shape = RoundedCornerShape(18.dp)
+    Surface(modifier.clubCard().clip(shape).then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier), shape = shape,
+        color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.surface else c.container) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(value, style = MaterialTheme.typography.headlineMedium, color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.onSurface else c.content)
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            Text(label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold,
+                color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.onSurfaceVariant else c.content, maxLines = 2)
         }
     }
 }
@@ -94,29 +113,35 @@ fun TileRow(content: @Composable RowScope.() -> Unit) =
 
 @Composable
 fun CapacityBar(registered: Int, capacity: Int, waitlisted: Int = 0) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val fraction = if (capacity <= 0) 0f else (registered.toFloat() / capacity).coerceIn(0f, 1f)
-        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)),
-            color = if (fraction >= 1f) Color(0xFFB26A00) else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+        val animated by animateFloatAsState(fraction, tween(700), label = "capacity")
+        Box(Modifier.fillMaxWidth().height(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(animated).clip(CircleShape)
+                .background(Brush.horizontalGradient(if (fraction >= 1f) listOf(Club.amberInk, Color(0xFFB26A00)) else listOf(Club.forest, Club.forestDeep))))
+        }
         val left = (capacity - registered).coerceAtLeast(0)
         Text(buildString {
             append("$registered of $capacity slots taken")
             append(if (left > 0) " · $left left" else " · full")
             if (waitlisted > 0) append(" · $waitlisted waitlisted")
-        }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
+/** Dark forest date tile (weekday over day number), as on the home card. */
 @Composable
-fun DateBlock(instant: Instant?, modifier: Modifier = Modifier) {
+fun DateBlock(instant: Instant?, modifier: Modifier = Modifier, muted: Boolean = false) {
     val date = instant?.atZone(ZoneId.systemDefault())
-    Surface(modifier.width(56.dp), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
-        Column(Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(date?.format(DateTimeFormatter.ofPattern("MMM", Locale.getDefault()))?.uppercase().orEmpty(),
-                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Text(date?.dayOfMonth?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
+    Column(modifier.size(60.dp, 72.dp).clip(RoundedCornerShape(14.dp))
+        .background(if (muted) MaterialTheme.colorScheme.primaryContainer else Club.forestDeep),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(date?.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))?.uppercase().orEmpty(),
+            style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = if (muted) Club.forestDeep else Club.mint)
+        Text(date?.dayOfMonth?.toString() ?: "–", style = MaterialTheme.typography.headlineSmall,
+            color = if (muted) Club.forestDeep else Color.White)
+        Text(date?.format(DateTimeFormatter.ofPattern("MMM", Locale.getDefault()))?.uppercase().orEmpty(),
+            style = MaterialTheme.typography.labelSmall, color = (if (muted) Club.forestDeep else Color.White).copy(alpha = .75f))
     }
 }
 
@@ -124,20 +149,21 @@ fun DateBlock(instant: Instant?, modifier: Modifier = Modifier) {
 @Composable
 fun WorkCard(title: String, lines: List<String>, modifier: Modifier = Modifier, leading: (@Composable () -> Unit)? = null,
              status: (@Composable () -> Unit)? = null, footer: (@Composable ColumnScope.() -> Unit)? = null, onClick: (() -> Unit)? = null) {
-    Surface(modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
+    val shape = RoundedCornerShape(20.dp)
+    Surface(modifier.fillMaxWidth().clubCard(20).clip(shape).then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier),
+        shape = shape, color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 leading?.invoke()
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     lines.filter { it.isNotBlank() }.forEach {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                if (onClick != null) ClubIcon("chevron", Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (status != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { status() }
+            if (status != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { status() }
             footer?.invoke(this)
         }
     }
@@ -145,12 +171,12 @@ fun WorkCard(title: String, lines: List<String>, modifier: Modifier = Modifier, 
 
 @Composable
 fun EmptyState(title: String, body: String, action: String? = null, onAction: () -> Unit = {}) {
-    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(Modifier.fillMaxWidth().clubCard(20), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ph.capstone.archeryclub.ui.TargetMark()
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (action != null) OutlinedButton(onClick = onAction) { Text(action) }
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            if (action != null) OutlinedButton(onClick = onAction, shape = CircleShape) { Text(action) }
         }
     }
 }
@@ -158,43 +184,58 @@ fun EmptyState(title: String, body: String, action: String? = null, onAction: ()
 @Composable
 fun KeyValue(label: String, value: String) {
     if (value.isBlank()) return
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(label, Modifier.width(132.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, Modifier.width(120.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 fun PrimaryAction(text: String, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = MaterialTheme.shapes.small,
+    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = CircleShape,
         colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
-        else ButtonDefaults.buttonColors()) { Text(text) }
+        else ButtonDefaults.buttonColors(containerColor = Club.forestDeep, contentColor = Color.White)) {
+        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
+    }
 }
 
 @Composable
 fun SecondaryAction(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = MaterialTheme.shapes.small) { Text(text) }
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = CircleShape,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Text(text, style = MaterialTheme.typography.labelLarge)
+    }
 }
 
 @Composable
 fun ConfirmDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit, destructive: Boolean = false,
                   extra: (@Composable ColumnScope.() -> Unit)? = null, confirmEnabled: Boolean = true) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
+    AlertDialog(onDismissRequest = onDismiss, shape = RoundedCornerShape(28.dp), containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(body); extra?.invoke(this) } },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = confirmEnabled) {
-                Text(confirm, color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified)
-            }
+            Button(onClick = onConfirm, enabled = confirmEnabled, shape = CircleShape,
+                colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                else ButtonDefaults.buttonColors(containerColor = Club.forestDeep, contentColor = Color.White)) { Text(confirm) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } })
 }
 
-/** A chip row used for filters and segmented choices. */
+/** Pill chips for filters and segmented choices: filled forest when selected, outlined white otherwise. */
 @Composable
 fun ChoiceChips(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { (value, label) ->
-            FilterChip(selected = selected == value, onClick = { onSelect(value) }, label = { Text(label) })
+            val on = selected == value
+            Surface(onClick = { onSelect(value) }, shape = CircleShape, modifier = Modifier.heightIn(min = 40.dp).semantics { this.selected = on },
+                color = if (on) Club.forestDeep else MaterialTheme.colorScheme.surface,
+                contentColor = if (on) Color.White else MaterialTheme.colorScheme.onSurface,
+                border = if (on) null else BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                Box(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold)
+                }
+            }
         }
     }
 }

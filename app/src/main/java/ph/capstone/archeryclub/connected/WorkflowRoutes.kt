@@ -1,6 +1,9 @@
 package ph.capstone.archeryclub.connected
 
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.ScreenShell
@@ -25,7 +28,8 @@ fun WorkflowRoute(
         }
         "activity" -> ActivityDetailScreen(workspace, id, busy, snackbar, isMember, officerActivities, onBack, onCommand,
             onRoster = { onPush("roster:$id") }, onEdit = { onStart("save_event", it) },
-            onAnnounce = { onStart("publish_announcement", buildJsonObject { put("event_id", it.text("id")) }) })
+            onAnnounce = { onStart("publish_announcement", buildJsonObject { put("event_id", it.text("id")) }) },
+            onBorrow = { onPush("equipment_member") })
         "roster" -> RosterScreen(workspace, id, busy, snackbar, onBack, onCommand) { onStart("open_attendance", it) }
         "officer_activities" -> ScreenShell("Manage activities", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
@@ -57,9 +61,12 @@ fun WorkflowRoute(
 }
 
 @Composable
-private fun MemberEquipment(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onPush: (String) -> Unit, onGo: (String) -> Unit) =
-    ScreenShell("Equipment", onBack, snackbar) {
-        if (busy) LinearProgressIndicator()
+private fun MemberEquipment(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onPush: (String) -> Unit, onGo: (String) -> Unit) {
+    val profile = workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }
+    HeroScaffold("Club Gear", onBack, snackbar, overlap = 0.dp, busy = busy,
+        heroExtra = { Text(gearMatchLine(profile), color = androidx.compose.ui.graphics.Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodySmall) }) {
+        Spacer(Modifier.height(4.dp))
         MemberEquipmentContent(workspace, { onPush("item:$it") }) { onPush("borrowing:$it") }
         TextButton(onClick = { onGo("module:5") }) { Text("Reimbursements and other member requests") }
     }
+}

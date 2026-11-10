@@ -12,6 +12,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.ScreenShell
+import ph.capstone.archeryclub.ui.Club
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import java.time.Duration
 import java.time.Instant
 
@@ -45,38 +55,96 @@ private fun BorrowingCard(b: JsonObject, workspace: JsonObject, showMember: Bool
         status = { StatusPill(borrowingLabel(b.text("status"), overdue), borrowingTone(b.text("status"), overdue)) }, onClick = onClick)
 }
 
-/** Member equipment tab: browse the catalog or follow my requests. */
+private fun gearIcon(item: JsonObject) = item.text("category").lowercase().let { c ->
+    when { "bow" in c -> "bow"; "arrow" in c -> "arrows"; else -> "box" }
+}
+
+/** Member Gear tab: what I have now, catalog cards that say whether they fit me, and my requests. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MemberEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onBorrowing: (String) -> Unit) {
     val user = workspace.text("user_id")
-    var tab by rememberSaveable { mutableStateOf("catalog") }
-    var category by rememberSaveable { mutableStateOf("") }
-    var availableOnly by rememberSaveable { mutableStateOf(false) }
+    val profile = workspace.records("profiles").find { it.text("id") == user }
+    val hand = profile?.text("dominant_hand").orEmpty()
+    val maxWeight = profile?.text("draw_weight")?.toDoubleOrNull()
+    var category by rememberSaveable { mutableStateOf("fits") }
     var search by rememberSaveable { mutableStateOf("") }
     val mine = workspace.records("borrowings").filter { it.text("user_id") == user }.sortedByDescending { it.text("starts_at") }
-    val active = mine.filter { it.text("status") in setOf("pending", "approved", "released", "returned_for_correction") }
-    TileRow {
-        StatTile("${active.count { it.text("status") == "released" }}", "Borrowed now", Modifier.weight(1f).fillMaxHeight(), Tone.NEUTRAL) { tab = "mine" }
-        StatTile("${active.count { it.text("status") in setOf("pending", "approved") }}", "Requests in progress", Modifier.weight(1f).fillMaxHeight(), Tone.NEUTRAL) { tab = "mine" }
-        val overdue = mine.count { isOverdue(it) }
-        StatTile("$overdue", "Overdue", Modifier.weight(1f).fillMaxHeight(), if (overdue > 0) Tone.DANGER else Tone.NEUTRAL) { tab = "mine" }
+    val withMe = mine.filter { it.text("status") == "released" }
+    val requests = mine.filter { it.text("status") in setOf("pending", "approved", "returned_for_correction") }
+    withMe.forEach { b -> WithYouCard(b, workspace) { onBorrowing(b.text("id")) } }
+    if (hasOverdueItem(workspace)) NoticeCard("Return your overdue item first", "New requests open again once the equipment officer records the return.", Tone.DANGER)
+
+    val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
+    val categories = items.map { it.text("category") }.filter { it.isNotBlank() }.distinct().sorted()
+    ChoiceChips(listOf("fits" to "Fits me", "" to "All") + categories.map { it to it }, category) { category = it }
+    OutlinedTextField(search, { search = it }, placeholder = { Text("Search gear") }, singleLine = true, shape = CircleShape,
+        leadingIcon = { ph.capstone.archeryclub.ui.ClubIcon("search", Modifier.size(18.dp)) },
+        colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth())
+    val shown = items.filter { i ->
+        val fits = fitProblems(i.text("handedness"), i.text("draw_weight").toDoubleOrNull(), hand, maxWeight).isEmpty()
+        when (category) { "fits" -> fits && equipmentState(i, workspace).borrowable; "" -> true; else -> i.text("category") == category } &&
+            (i.text("label") + i.text("specifications") + i.text("category")).contains(search, true)
+    }.sortedWith(compareBy({ equipmentState(it, workspace).ordinal }, { it.text("label") }))
+    if (category == "fits" && (hand.isBlank() || maxWeight == null))
+        Text("Add your shooting hand and draw weight to your profile for better matches.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (shown.isEmpty()) EmptyState("No gear matches", "Try All or another category.")
+    shown.chunked(2).forEach { pair ->
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            pair.forEach { item -> GearCard(item, workspace, hand, maxWeight, Modifier.weight(1f).fillMaxHeight()) { onItem(item.text("id")) } }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
     }
-    ChoiceChips(listOf("catalog" to "Catalog", "mine" to "My borrowings (${active.size})"), tab) { tab = it }
-    if (tab == "catalog") {
-        val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
-        OutlinedTextField(search, { search = it }, label = { Text("Search equipment") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        val categories = items.map { it.text("category") }.filter { it.isNotBlank() }.distinct().sorted()
-        ChoiceChips(listOf("" to "All") + categories.map { it to it }, category) { category = it }
-        FilterChip(selected = availableOnly, onClick = { availableOnly = !availableOnly }, label = { Text("Available now only") })
-        val shown = items.filter { i ->
-            (category.isBlank() || i.text("category") == category) && (!availableOnly || equipmentState(i, workspace) == EquipmentState.AVAILABLE) &&
-                (i.text("label") + i.text("specifications") + i.text("category")).contains(search, true)
-        }.sortedWith(compareBy({ equipmentState(it, workspace).ordinal }, { it.text("label") }))
-        if (shown.isEmpty()) EmptyState("No equipment matches", "Try another category or turn off \"Available now only\".")
-        shown.forEach { EquipmentCard(it, workspace) { onItem(it.text("id")) } }
-    } else {
-        if (mine.isEmpty()) EmptyState("No borrowings yet", "Pick an item from the catalog and request it for a practice or event.", "Open catalog") { tab = "catalog" }
-        mine.forEach { b -> BorrowingCard(b, workspace, false) { onBorrowing(b.text("id")) } }
+    if (requests.isNotEmpty()) { SectionHeader("My requests"); requests.forEach { b -> BorrowingCard(b, workspace, false) { onBorrowing(b.text("id")) } } }
+    val past = mine.filter { it.text("status") in setOf("returned", "rejected", "cancelled") }
+    if (past.isNotEmpty()) { SectionHeader("History"); past.take(5).forEach { b -> BorrowingCard(b, workspace, false) { onBorrowing(b.text("id")) } } }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GearCard(item: JsonObject, workspace: JsonObject, hand: String, maxWeight: Double?, modifier: Modifier, onClick: () -> Unit) {
+    val state = equipmentState(item, workspace)
+    val problems = fitProblems(item.text("handedness"), item.text("draw_weight").toDoubleOrNull(), hand, maxWeight)
+    val dim = !state.borrowable || problems.isNotEmpty()
+    RaisedCard(modifier.alpha(if (dim) .78f else 1f), radius = 18.dp, onClick = onClick) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(12.dp))
+                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.background))), contentAlignment = Alignment.Center) {
+                ph.capstone.archeryclub.ui.ClubIcon(gearIcon(item), Modifier.size(38.dp), if (dim) MaterialTheme.colorScheme.onSurfaceVariant else Club.forest)
+            }
+            Text(item.text("label"), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(itemLines(item).first(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            Spacer(Modifier.weight(1f))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                StatusPill(state.label, state.tone())
+                if (problems.isEmpty() && (item.text("handedness") in setOf("left", "right") || item.text("draw_weight").isNotBlank())) StatusPill("✓ Fits", Tone.NEUTRAL)
+            }
+            problems.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Club.roseInk) }
+        }
+    }
+}
+
+/** Dark countdown card for an item the member currently has. */
+@Composable
+private fun WithYouCard(b: JsonObject, workspace: JsonObject, onClick: () -> Unit) {
+    val item = workspace.records("equipment").find { it.text("id") == b.text("equipment_id") }
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(b.text("id")) { while (true) { kotlinx.coroutines.delay(30_000); now = Instant.now() } }
+    val due = b.instant("ends_at")
+    val late = due != null && now.isAfter(due)
+    Box(Modifier.fillMaxWidth().clubCard(22, 10).clip(RoundedCornerShape(22.dp))
+        .background(Brush.linearGradient(if (late) listOf(Club.roseInk, Color(0xFF5E120F)) else listOf(Club.forestDeep, Club.forest))).clickable(onClick = onClick)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (late) "OVERDUE" else "WITH YOU NOW", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.6.sp, color = if (late) Club.roseSoft else Club.mint)
+            Text(item?.text("label") ?: "Equipment", style = MaterialTheme.typography.titleLarge, color = Color.White)
+            if (due != null) Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(durationLabel(now, due), style = MaterialTheme.typography.displaySmall, color = if (late) Club.roseSoft else Club.lime)
+                Text(if (late) "late · was due ${fmtTime(due)}" else "left · return by ${fmtTime(due)}", style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = .9f), modifier = Modifier.padding(bottom = 6.dp))
+            }
+            Text("Hand it to the equipment officer. New requests pause while anything is overdue.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .8f))
+        }
     }
 }
 
@@ -144,14 +212,14 @@ fun EquipmentItemScreen(
             StatusPill(state.label, state.tone())
             s?.instant("next_booking")?.let { StatusPill("Next booking ${fmtDay(it)}", Tone.NEUTRAL) }
         }
-        Column {
+        RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Category", item.text("category")); KeyValue("Handedness", human(item.text("handedness")))
             KeyValue("Draw weight", item.text("draw_weight").toDoubleOrNull()?.let { "${fmtNumber(it)} lb" }.orEmpty())
             KeyValue("Setup", item.text("bow_setup")); KeyValue("Condition", human(item.text("condition")))
             KeyValue("Times borrowed", s?.text("times_borrowed").orEmpty())
             KeyValue("Specifications", item.text("specifications"))
             if (isOfficer) KeyValue("Notes", item.text("notes"))
-        }
+        } }
         val blocked = hasOverdueItem(workspace)
         if (isMember && state.borrowable && blocked) {
             NoticeCard("Return your overdue item first", "You have equipment past its return time. New requests open again once the officer records the return.", Tone.DANGER)
@@ -227,11 +295,11 @@ fun BorrowingScreen(
     val member = workspace.records("member_directory").find { it.text("user_id") == b.text("user_id") }?.text("full_name").orEmpty()
     var decision by remember { mutableStateOf<String?>(null) }
     var cancel by remember { mutableStateOf(false) }
-    ScreenShell(item?.text("label") ?: "Borrowing", onBack, snackbar) {
+    ScreenShell(item?.text("label") ?: "Borrowing", onBack, snackbar, actions = { StatusPill(borrowingLabel(status, overdue), borrowingTone(status, overdue)) }) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        StatusPill(borrowingLabel(status, overdue), borrowingTone(status, overdue))
-        BorrowingTimeline(status)
-        Column {
+        if (status == "released" && b.text("user_id") == user) WithYouCard(b, workspace) {}
+        BorrowingTimeline(b)
+        RaisedCard { Column(Modifier.padding(16.dp)) {
             if (isOfficer) KeyValue("Member", member)
             KeyValue("Pick-up", fmtDateTime(b.instant("starts_at"))); KeyValue("Return by", fmtDateTime(b.instant("ends_at")))
             if (overdue) KeyValue("Overdue", relative(b.instant("ends_at")).removeSuffix(" ago") + " late")
@@ -241,7 +309,7 @@ fun BorrowingScreen(
             KeyValue("Receipt", if (b.text("received_at").isNotBlank()) "Confirmed by member ${fmtDateTime(b.instant("received_at"))}" else if (status == "released") "Not yet confirmed by member" else "")
             KeyValue("Returned", fmtDateTime(b.instant("returned_at")).takeIf { b.text("returned_at").isNotBlank() }.orEmpty())
             KeyValue("Officer remark", b.text("remark"))
-        }
+        } }
         item?.let { SecondaryAction("View item details") { onItem(it.text("id")) } }
         if (b.text("user_id") == user) {
             if (status == "returned_for_correction") PrimaryAction("Edit and resubmit", !busy) { onResubmit(b) }
@@ -301,17 +369,34 @@ private fun ReviewDialog(step: String, b: JsonObject, item: JsonObject?, onDismi
         })
 }
 
+/** Vertical progress with the real times recorded at each step. */
 @Composable
-private fun BorrowingTimeline(status: String) {
-    val steps = listOf("Requested", "Approved", "Handed over", "Returned")
+private fun BorrowingTimeline(b: JsonObject) {
+    val status = b.text("status")
     val reached = when (status) { "pending", "returned_for_correction" -> 0; "approved" -> 1; "released" -> 2; "returned" -> 3; else -> -1 }
-    if (reached < 0) { Text(if (status == "cancelled") "This request was cancelled." else "This request was declined.", color = MaterialTheme.colorScheme.onSurfaceVariant); return }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        steps.forEachIndexed { i, label ->
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(if (i <= reached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest))
-                Text(label, style = MaterialTheme.typography.labelMedium, color = if (i <= reached) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+    if (reached < 0) { NoticeCard(if (status == "cancelled") "Cancelled" else "Declined", if (status == "cancelled") "This request was cancelled." else "This request was declined. ${b.text("remark")}", Tone.NEUTRAL); return }
+    val steps = listOf(
+        "Requested" to "For ${fmtDateTime(b.instant("starts_at"))}",
+        "Approved by equipment officer" to (if (reached >= 1) "Reserved for you" else "Waiting for review"),
+        "Handed over" to listOfNotNull(b.instant("released_at")?.let { fmtDateTime(it) }, b.instant("received_at")?.let { "you confirmed receipt" }).joinToString(" · ").ifBlank { "At the range" },
+        "Returned" to (b.instant("returned_at")?.let { fmtDateTime(it) } ?: "Due ${fmtDateTime(b.instant("ends_at"))}"),
+    )
+    RaisedCard { Column(Modifier.padding(16.dp)) {
+        Text("Progress", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(bottom = 10.dp))
+        steps.forEachIndexed { i, (title, sub) ->
+            val done = i <= reached; val current = i == reached + 1
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(if (done) Club.forest else MaterialTheme.colorScheme.surface)
+                        .then(if (!done) Modifier.border(2.5.dp, if (current) Club.lime else MaterialTheme.colorScheme.outlineVariant, CircleShape) else Modifier),
+                        contentAlignment = Alignment.Center) { if (done) ph.capstone.archeryclub.ui.ClubIcon("check", Modifier.size(13.dp), Color.White) }
+                    if (i < steps.lastIndex) Box(Modifier.width(2.dp).weight(1f).defaultMinSize(minHeight = 16.dp).background(if (i < reached) Club.forest else MaterialTheme.colorScheme.outlineVariant))
+                }
+                Column(Modifier.padding(bottom = if (i < steps.lastIndex) 12.dp else 0.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, color = if (done || current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(sub, style = MaterialTheme.typography.bodySmall, color = if (current && b.text("status") == "released" && isOverdue(b)) Club.roseInk else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
-    }
+    } }
 }
