@@ -385,4 +385,18 @@ class DeskLogicTest {
         assertEquals("slightly high", groupDescription(0.0 to -0.05))
         assertTrue(roundArrows(obj("id" to "r")).isEmpty())
     }
+
+    @Test fun tapPositionsScoreLikeTheFace() {
+        assertEquals("X", scoreAt(0.02, 0.03))
+        assertEquals("10", scoreAt(0.07, 0.0))
+        assertEquals("9", scoreAt(0.106, 0.039))
+        assertEquals("5", scoreAt(-0.368, 0.411))
+        assertEquals("4", scoreAt(-0.278, 0.579))
+        assertEquals("M", scoreAt(-0.294, 1.071))
+        // the scoring app's own points agree with ours for every arrow in the export
+        roundArrows(arrowImport(arrowCsv, "u1", "Ana").rows.single()).flatten().forEach { a -> assertEquals(a.p, scoreAt(a.x!!, a.y!!)) }
+        val ends = listOf(listOf(Arrow("9", 0.1, 0.2), Arrow("M")), listOf(Arrow("X")))
+        assertEquals(ends, decodeEnds(encodeEnds(ends)))
+        assertTrue(groupSpread(listOf(Arrow("9", 0.0, 0.0), Arrow("9", 0.2, 0.0)))!!.first > 0.09)
+    }
 }

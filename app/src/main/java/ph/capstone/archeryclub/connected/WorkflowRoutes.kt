@@ -65,6 +65,7 @@ fun WorkflowRoute(
         "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument, onRoute = onPush,
             onDelete = if (vm != null) ({ reason: String -> vm.save("delete_record", deleteArgs("training_round", id, reason)) { onBack() } }) else null)
         "scorestats" -> ScoreStatsScreen(workspace, id, snackbar, onBack)
+        "end" -> EndScreen(workspace, id, snackbar, onBack, onPush)
         "score_entry" -> if (isMember) ScoreEntryScreen(workspace, id, busy, snackbar, vm, onBack) { onBack(); onStart("save_personal_training", it) }
             else denied("Members only", "Only active members log their own rounds.")
         "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart) { onGo("records:11") }

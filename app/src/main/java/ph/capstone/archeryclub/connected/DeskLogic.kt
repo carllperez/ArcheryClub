@@ -747,3 +747,29 @@ fun endTrend(stats: RoundStats): String? {
     if (kotlin.math.abs(d) < 0.5) return "Steady across ${a.size} ends."
     return "${if (d < 0) "Dropped" else "Rose"} ${oneDecimal(kotlin.math.abs(d))} points per arrow from end $i to end ${i + 1}."
 }
+
+/** The score where an arrow hit, on a WA face where 1 is the outer edge: X inside half the 10 ring, a miss outside the 1 ring.
+ *  Line cutters count up (WA rule): the shaft's own width, about 0.012 of the radius, is taken off before reading the ring. */
+fun scoreAt(x: Double, y: Double): String {
+    val r = kotlin.math.sqrt(x * x + y * y) - 0.012
+    return when { r <= 0.05 -> "X"; r >= 1.0 -> "M"; else -> (10 - kotlin.math.floor(r * 10).toInt()).toString() }
+}
+
+/** How spread the group is across and up-down (one standard deviation each way), for the shaded ellipse. */
+fun groupSpread(arrows: List<Arrow>): Pair<Double, Double>? {
+    val p = arrows.filter { it.x != null && it.y != null && it.p != "M" }
+    if (p.size < 2) return null
+    val mx = p.sumOf { it.x!! } / p.size; val my = p.sumOf { it.y!! } / p.size
+    return kotlin.math.sqrt(p.sumOf { (it.x!! - mx) * (it.x!! - mx) } / p.size) to kotlin.math.sqrt(p.sumOf { (it.y!! - my) * (it.y!! - my) } / p.size)
+}
+
+/** Ends kept in a saved-state string: "9@0.1/0.2,M;8" (position optional). */
+fun encodeEnds(ends: List<List<Arrow>>): String = ends.joinToString(";") { e ->
+    e.joinToString(",") { a -> a.p + if (a.x != null && a.y != null) "@${a.x}/${a.y}" else "" }
+}
+fun decodeEnds(text: String): List<List<Arrow>> = text.split(';').filter { it.isNotBlank() }.map { e ->
+    e.split(',').filter { it.isNotBlank() }.map { s ->
+        val p = s.substringBefore('@'); val pos = s.substringAfter('@', "")
+        Arrow(p, pos.substringBefore('/').toDoubleOrNull(), pos.substringAfter('/', "").toDoubleOrNull())
+    }
+}

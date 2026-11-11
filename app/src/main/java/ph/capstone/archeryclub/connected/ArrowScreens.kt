@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -57,10 +59,10 @@ fun ArrowDot(p: String, size: Dp = 32.dp) {
 
 /** One row per end: its total and the arrows, highest first, as on a scoresheet. */
 @Composable
-fun EndsCard(ends: List<List<Arrow>>) {
+fun EndsCard(ends: List<List<Arrow>>, onEnd: ((Int) -> Unit)? = null) {
     RowGroup {
         ends.forEachIndexed { i, end ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(enabled = onEnd != null) { onEnd?.invoke(i) }.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.width(60.dp)) {
                     Text("End ${i + 1}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
                     Text("${end.sumOf { it.points }}/${end.size * 10}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -76,10 +78,19 @@ fun EndsCard(ends: List<List<Arrow>>) {
 
 /** The target face with every arrow that has a position, and the group centre as a lime cross. */
 @Composable
-fun TargetPlot(ends: List<List<Arrow>>, size: Dp) {
+fun TargetPlot(ends: List<List<Arrow>>, size: Dp, showSpread: Boolean = false, onTap: ((Double, Double) -> Unit)? = null) {
     val placed = ends.flatten().filter { it.x != null && it.y != null && it.p != "M" }
     val centre = roundStats(ends).centre
-    Canvas(Modifier.size(size)) {
+    val spread = if (showSpread) groupSpread(ends.flatten()) else null
+    // The tap handler is set up once; reading the latest callback keeps each tap adding to the current end.
+    val latestTap by rememberUpdatedState(onTap)
+    val tap = if (onTap == null) Modifier else Modifier.pointerInput(Unit) {
+        detectTapGestures { o ->
+            val r = this.size.width.coerceAtMost(this.size.height) / 2f * 0.96f
+            latestTap?.invoke(((o.x - this.size.width / 2f) / r).toDouble(), ((o.y - this.size.height / 2f) / r).toDouble())
+        }
+    }
+    Canvas(Modifier.size(size).then(tap)) {
         val c = Offset(this.size.width / 2, this.size.height / 2); val r = this.size.minDimension / 2 * 0.96f
         // Ten scoring rings from the outside in: white, white, black, black, blue, blue, red, red, gold, gold.
         listOf(Color.White, Color.White, RingBlack, RingBlack, RingBlue, RingBlue, RingRed, RingRed, Gold, Gold).forEachIndexed { i, col ->
@@ -93,6 +104,11 @@ fun TargetPlot(ends: List<List<Arrow>>, size: Dp) {
             val onDark = a.points in 3..6
             drawCircle(if (onDark) Color.White else Ink, r * 0.035f, p)
             drawCircle(Ink, r * 0.035f, p, style = Stroke(1f))
+        }
+        if (spread != null && centre != null) {
+            val (sx, sy) = spread; val (mx, my) = centre
+            val w = (2 * sx * r).toFloat().coerceAtLeast(r * 0.06f); val h = (2 * sy * r).toFloat().coerceAtLeast(r * 0.06f)
+            drawOval(Color(0xFF6B746E).copy(alpha = .45f), Offset(c.x + r * mx.toFloat() - w / 2, c.y + r * my.toFloat() - h / 2), Size(w, h))
         }
         centre?.let { (x, y) ->
             val p = Offset(c.x + r * x.toFloat(), c.y + r * y.toFloat()); val lime = Color(0xFF9BCB3C)
@@ -154,10 +170,10 @@ private fun DistributionDonut(stats: RoundStats) {
 
 /** On a scorecard: the ends, plus a small target and one line for the coach, and a way into the statistics. */
 @Composable
-fun RoundArrowsSection(ends: List<List<Arrow>>, coachView: Boolean, onStats: () -> Unit) {
+fun RoundArrowsSection(ends: List<List<Arrow>>, coachView: Boolean, onEnd: (Int) -> Unit = {}, onStats: () -> Unit) {
     val st = roundStats(ends)
     DeskLabel("Ends", "Statistics", onStats)
-    EndsCard(ends)
+    EndsCard(ends, onEnd)
     if (coachView || st.plotted > 0) RaisedCard(onClick = onStats) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             if (st.plotted > 0) TargetPlot(ends, 96.dp)
@@ -192,7 +208,7 @@ fun ScoreStatsScreen(workspace: JsonObject, id: String, snackbar: SnackbarHostSt
             if (st.plotted == 0) Text("This round was scored by tapping, so there are no hit positions. Import from a scoring app to see where arrows landed.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else {
-                TargetPlot(ends, 240.dp)
+                TargetPlot(ends, 240.dp, showSpread = true)
                 Text("Group centre ${groupDescription(st.centre)} (lime cross)." + if (st.misses > 0) " ${st.misses} miss${if (st.misses == 1) "" else "es"} not shown." else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -214,19 +230,21 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
     var notes by rememberSaveable { mutableStateOf(existing?.text("observations").orEmpty()) }
     var perEnd by rememberSaveable { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
     // Ends kept as "9,6,6;9,9" so they survive rotation.
-    var encoded by rememberSaveable { mutableStateOf(existing?.let { roundArrows(it).joinToString(";") { e -> e.joinToString(",") { a -> a.p } } }.orEmpty()) }
-    val ends = encoded.split(';').filter { it.isNotBlank() }.map { e -> e.split(',').filter { it.isNotBlank() }.map { Arrow(it) } }
+    var encoded by rememberSaveable { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
+    val ends = decodeEnds(encoded)
+    // Tap where the arrow hit (keeps positions, so statistics can show the group) or tap its score on a keypad.
+    var onTarget by rememberSaveable { mutableStateOf(true) }
     var editingSetup by rememberSaveable { mutableStateOf(existing == null) }
-    fun add(p: String) {
+    fun add(a: Arrow) {
         val list = ends.map { it.toMutableList() }.toMutableList()
         if (list.isEmpty() || list.last().size >= perEnd) list.add(mutableListOf())
-        list.last().add(Arrow(p))
-        encoded = list.joinToString(";") { e -> e.joinToString(",") { it.p } }
+        list.last().add(a)
+        encoded = encodeEnds(list)
     }
     fun undo() {
         val list = ends.map { it.toMutableList() }.toMutableList()
         if (list.isNotEmpty()) { list.last().removeAt(list.last().lastIndex); if (list.last().isEmpty()) list.removeAt(list.lastIndex) }
-        encoded = list.joinToString(";") { e -> e.joinToString(",") { it.p } }
+        encoded = encodeEnds(list)
     }
     val total = ends.flatten().sumOf { it.points }; val count = ends.flatten().size
     val ready = count > 0 && distance.toDoubleOrNull() != null && face.isNotBlank() && bow.isNotBlank() && title.isNotBlank() &&
@@ -280,13 +298,24 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
                 fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
             TextButton(onClick = { undo() }, enabled = count > 0) { Text("Undo last", fontWeight = FontWeight.ExtraBold) }
         }
-        ARROW_KEYS.chunked(4).forEach { rowKeys ->
+        ChoiceChips(listOf("target" to "Tap the target", "keypad" to "Tap the score"), if (onTarget) "target" else "keypad") { onTarget = it == "target" }
+        if (onTarget) {
+            // The end being shot is drawn on the face; a full end starts a fresh one on the next tap.
+            val current = ends.lastOrNull()?.takeIf { it.size < perEnd }.orEmpty()
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TargetPlot(listOf(current), 300.dp, showSpread = current.size > 1) { x, y -> if (!busy && count < 1440) add(Arrow(scoreAt(x, y), x, y)) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { add(Arrow("M")) }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text("Miss (off the face)") }
+            }
+            Text("Tap where each arrow hit. Arrows touching a line get the higher score.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else ARROW_KEYS.chunked(4).forEach { rowKeys ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 rowKeys.forEach { k ->
                     val (bg, fg) = arrowColors(k)
                     Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(14.dp)).background(bg)
                         .let { if (bg == Color.White) it.border(1.5.dp, Color(0xFFC9D3C5), RoundedCornerShape(14.dp)) else it }
-                        .clickable(enabled = !busy && count < 1440) { add(k) }, contentAlignment = Alignment.Center) {
+                        .clickable(enabled = !busy && count < 1440) { add(Arrow(k)) }, contentAlignment = Alignment.Center) {
                         Text(k, color = fg, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
@@ -294,5 +323,40 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
         }
         if (existing == null) TextButton(onClick = { onTotalOnly(newRoundSeed(workspace, scoreCards(workspace, workspace.text("user_id")).firstOrNull())) },
             modifier = Modifier.fillMaxWidth()) { Text("Just enter the total instead") }
+    }
+}
+
+
+/** One end at a time, like a scoring app: the end's arrows, where they hit, the group, and previous/next. */
+@Composable
+fun EndScreen(workspace: JsonObject, routeId: String, snackbar: SnackbarHostState, onBack: () -> Unit, onGo: (String) -> Unit) {
+    val id = routeId.substringBefore(':'); val start = routeId.substringAfter(':', "0").toIntOrNull() ?: 0
+    val card = scoreCards(workspace).find { it.id == id }
+    val ends = card?.row?.let(::roundArrows).orEmpty()
+    var index by rememberSaveable(routeId) { mutableIntStateOf(start.coerceIn(0, (ends.size - 1).coerceAtLeast(0))) }
+    if (card == null || ends.isEmpty()) { ScreenShell("End", onBack, snackbar) { EmptyState("No arrows on this round", "Only rounds scored arrow by arrow have ends to show.") }; return }
+    val end = ends[index]; val st = roundStats(ends)
+    HeroScaffold(card.row.text("observations").substringBefore(" · ").ifBlank { card.row.text("scoring_format") }, onBack, snackbar, overlap = 44.dp,
+        heroExtra = { HeroStats(listOf("${end.sumOf { it.points }}/${end.size * 10}" to "End ${index + 1} of ${ends.size}",
+            "${st.total}/${st.max}" to "Round", (Math.round(st.average * 100) / 100.0).toString() to "Average")) },
+        sticky = {
+            OutlinedButton(onClick = { index-- }, enabled = index > 0, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp)) { Text("Previous", fontWeight = FontWeight.ExtraBold) }
+            Button(onClick = { index++ }, enabled = index < ends.lastIndex, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Next", fontWeight = FontWeight.ExtraBold) }
+        }) {
+        RaisedCard {
+            Row(Modifier.padding(14.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                end.sortedWith(compareByDescending<Arrow> { it.points }.thenBy { if (it.p == "X") 0 else 1 }).forEach { ArrowDot(it.p, 38.dp) }
+            }
+        }
+        val placed = end.count { it.x != null && it.y != null && it.p != "M" }
+        RaisedCard { Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (placed == 0) Text("Scored by tapping the score, so there are no hit positions for this end.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else {
+                TargetPlot(listOf(end), 300.dp, showSpread = true)
+                Text("This end's group sits ${groupDescription(roundStats(listOf(end)).centre)}. The shaded oval shows how spread it is.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } }
     }
 }

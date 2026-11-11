@@ -116,7 +116,7 @@ fun ScorecardScreen(
         }
         // Rounds scored arrow by arrow show their ends first; the coach sees where the group sits before validating.
         val ends = roundArrows(row)
-        if (ends.isNotEmpty()) RoundArrowsSection(ends, coach && !own) { onRoute("scorestats:$id") }
+        if (ends.isNotEmpty()) RoundArrowsSection(ends, coach && !own, onEnd = { onRoute("end:$id:$it") }) { onRoute("scorestats:$id") }
         RaisedCard {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 ScoreRing(card.percent, plainNumber(card.score), "of ${plainNumber(card.max)}")
