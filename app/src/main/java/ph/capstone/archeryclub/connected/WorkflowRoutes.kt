@@ -59,8 +59,11 @@ fun WorkflowRoute(
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
             else ScreenShell("Application", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
-        "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("scorecard:$it") }) { onStart("save_personal_training", it) }
-        "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument)
+        "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("scorecard:$it") }, onTap = { onPush("score_entry") }) { onStart("save_personal_training", it) }
+        "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument, onRoute = onPush)
+        "scorestats" -> ScoreStatsScreen(workspace, id, snackbar, onBack)
+        "score_entry" -> if (isMember) ScoreEntryScreen(workspace, id, busy, snackbar, vm, onBack) { onBack(); onStart("save_personal_training", it) }
+            else denied("Members only", "Only active members log their own rounds.")
         "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart) { onGo("records:11") }
             else denied("Coaches only", "Your current role can't validate scorecards.")
         "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)

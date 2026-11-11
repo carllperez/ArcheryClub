@@ -676,9 +676,74 @@ fun arrowImport(csv: String, userId: String, memberName: String): CoachImport {
             "score" to kotlinx.serialization.json.JsonPrimitive(score.toString()),
             "maximum_score" to kotlinx.serialization.json.JsonPrimitive(max.toString()),
             "observations" to kotlinx.serialization.json.JsonPrimitive(notes),
+            "arrows" to arrowsJson(list.groupBy { (r, _) -> at(r, iEnd) }.values.map { e ->
+                e.map { (r, _) -> Arrow(at(r, iPts).uppercase().ifBlank { "M" }, at(r, col("x")).toDoubleOrNull(), at(r, col("y")).toDoubleOrNull()) }
+            }),
         )))
         preview.add("$memberName · $score/$max · ${list.size} arrows, ${ends.size} ends · $date")
     }
     if (rows.isEmpty() && problems.isEmpty()) problems.add("The file has no arrows in it.")
     return CoachImport(rows, preview, problems)
+}
+
+// ---------------------------------------------------------------- Arrow-by-arrow rounds
+
+/** One arrow: its score as written (X, 10..1, M) and, from scoring apps, where it hit (1 = the target's outer edge, +y is down). */
+data class Arrow(val p: String, val x: Double? = null, val y: Double? = null) { val points get() = arrowPoints(p) ?: 0 }
+
+val ARROW_KEYS = listOf("X", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "M")
+
+/** The round's ends, or empty when the round was saved as a total only. */
+fun roundArrows(row: JsonObject): List<List<Arrow>> {
+    val ends = (row["arrows"] as? JsonObject)?.get("ends") as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+    return ends.mapNotNull { e ->
+        (e as? kotlinx.serialization.json.JsonArray)?.mapNotNull { a ->
+            (a as? JsonObject)?.let { o -> Arrow(o.text("p").uppercase(), o.text("x").toDoubleOrNull(), o.text("y").toDoubleOrNull()) }
+        }?.takeIf { it.isNotEmpty() }
+    }
+}
+
+fun arrowsJson(ends: List<List<Arrow>>): JsonObject = JsonObject(mapOf("ends" to kotlinx.serialization.json.JsonArray(ends.map { e ->
+    kotlinx.serialization.json.JsonArray(e.map { a -> JsonObject(buildMap {
+        put("p", kotlinx.serialization.json.JsonPrimitive(a.p))
+        a.x?.let { put("x", kotlinx.serialization.json.JsonPrimitive(it)) }; a.y?.let { put("y", kotlinx.serialization.json.JsonPrimitive(it)) }
+    }) })
+})))
+
+data class RoundStats(val total: Int, val max: Int, val endTotals: List<Int>, val endAverages: List<Double>,
+                      val counts: List<Pair<String, Int>>, val hits: Int, val misses: Int, val centre: Pair<Double, Double>?, val plotted: Int) {
+    val average get() = if (max == 0) 0.0 else total * 10.0 / max
+}
+
+fun roundStats(ends: List<List<Arrow>>): RoundStats {
+    val all = ends.flatten()
+    val placed = all.filter { it.x != null && it.y != null && it.p != "M" }
+    return RoundStats(all.sumOf { it.points }, all.size * 10, ends.map { e -> e.sumOf { it.points } },
+        ends.map { e -> e.sumOf { it.points }.toDouble() / e.size }, ARROW_KEYS.map { k -> k to all.count { it.p == k } }.filter { it.second > 0 },
+        all.count { it.p != "M" }, all.count { it.p == "M" },
+        placed.takeIf { it.isNotEmpty() }?.let { p -> p.sumOf { it.x!! } / p.size to p.sumOf { it.y!! } / p.size }, placed.size)
+}
+
+private fun oneDecimal(v: Double) = (Math.round(v * 10) / 10.0).toString()
+
+/** Where the group sits, in words a coach would use: a tenth of the radius off centre is "low", less than that "slightly low". */
+fun groupDescription(centre: Pair<Double, Double>?): String? {
+    val (x, y) = centre ?: return null
+    fun side(d: Double, minus: String, plus: String) = when {
+        kotlin.math.abs(d) >= 0.1 -> if (d > 0) plus else minus
+        kotlin.math.abs(d) >= 0.03 -> "slightly " + if (d > 0) plus else minus
+        else -> ""
+    }
+    val v = side(y, "high", "low"); val h = side(x, "left", "right")
+    return when { v.isEmpty() && h.isEmpty() -> "centred"; v.isEmpty() -> h; h.isEmpty() -> v; else -> "$v and $h" }
+}
+
+/** The one thing worth saying about the ends: the biggest drop or rise from one end to the next. */
+fun endTrend(stats: RoundStats): String? {
+    val a = stats.endAverages
+    if (a.size < 2) return null
+    val i = (1 until a.size).maxByOrNull { kotlin.math.abs(a[it] - a[it - 1]) } ?: return null
+    val d = a[i] - a[i - 1]
+    if (kotlin.math.abs(d) < 0.5) return "Steady across ${a.size} ends."
+    return "${if (d < 0) "Dropped" else "Rose"} ${oneDecimal(kotlin.math.abs(d))} points per arrow from end $i to end ${i + 1}."
 }

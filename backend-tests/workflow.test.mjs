@@ -684,3 +684,23 @@ test('The Equipment desk attaches item photos; active members can see them, othe
  const seen=await as(reader.n,async()=>(await db.query('select path from app_private.documents where module=10 and record_id=$1',[eq.id])).rows);
  assert.equal(seen[0]?.path,path,'an active member sees the photo');
 });
+
+test('Rounds keep their arrows; the server works the score out from them',async()=>{
+ await grant('officer','training_officer');
+ const end=(...ps)=>ps.map(p=>({p}));
+ const arrows={ends:[end('9','6','6','6','5','4'),end('9','9','8','7','6','5'),end('6','6','5','5','4','M')]};
+ // A member taps a round in and sends it to the coach in one step; the totals they send are ignored.
+ const mine=await rpc('successor','save_round',['save_personal_training',JSON.stringify({training_date:'2026-11-05',distance:18,target_face:'WA 40 cm',category:'Recurve',scoring_format:'Practice',score:999,maximum_score:999,arrows}),true],'$1,$2::jsonb,$3');
+ let r=await row('training_records',mine.id);
+ assert.equal(Number(r.score),106);assert.equal(Number(r.maximum_score),180);assert.equal(r.validation,'pending');
+ assert.equal(r.arrows.ends[2][5].p,'M');
+ await denied(()=>rpc('successor','save_round',['save_personal_training',JSON.stringify({training_date:'2026-11-05',distance:18,target_face:'x',category:'Recurve',scoring_format:'P',arrows:{ends:[[{p:'11'}]]}}),false],'$1,$2::jsonb,$3'),/Arrow scores/);
+ // The coach imports a scoring-app session with positions.
+ const rows=[{import_key:'arrows:test:1',user_id:ids.successor,training_date:'2026-11-06',distance:18,target_face:'WA Full (40cm)',category:'Recurve',scoring_format:'Practice · 3 arrows',
+  arrows:{ends:[[{p:'X',x:0.01,y:0.02},{p:'9',x:0.1,y:0.05},{p:'M',x:0.3,y:1.07}]]}}];
+ const out=await rpc('officer','import_rounds',[JSON.stringify(rows)],'$1::jsonb');
+ r=await row('training_records',out[0].id);
+ assert.equal(Number(r.score),19);assert.equal(Number(r.maximum_score),30);assert.equal(r.validation,'validated');assert.equal(r.arrows.ends[0][0].x,0.01);
+ await denied(()=>rpc('officer','import_rounds',[JSON.stringify(rows)],'$1::jsonb'),/already imported/);
+ await denied(()=>rpc('successor','import_rounds',[JSON.stringify(rows)],'$1::jsonb'),/Permission/);
+});

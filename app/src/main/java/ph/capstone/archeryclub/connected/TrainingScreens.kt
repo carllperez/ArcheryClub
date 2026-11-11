@@ -37,7 +37,7 @@ fun newRoundSeed(workspace: JsonObject, last: ScoreCard?): JsonObject = buildJso
 }
 
 @Composable
-fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit, onLog: (JsonObject) -> Unit) {
+fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit, onTap: (() -> Unit)? = null, onLog: (JsonObject) -> Unit) {
     val cards = scoreCards(workspace, workspace.text("user_id"))
     val stats = trainingStats(cards, LocalDate.now())
     val trend = trendPercents(cards)
@@ -50,7 +50,7 @@ fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostS
                 "${stats.roundsThisMonth}" to "Rounds this month",
                 (stats.monthDelta?.let { (if (it >= 0) "+" else "") + it + "%" } ?: "—") to "vs last month"))
         },
-        sticky = { StickyButton("Log a round", !busy, Modifier.weight(1f)) { onLog(newRoundSeed(workspace, cards.firstOrNull())) } }) {
+        sticky = { StickyButton("Log a round", !busy, Modifier.weight(1f)) { onTap?.invoke() ?: onLog(newRoundSeed(workspace, cards.firstOrNull())) } }) {
         RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -81,6 +81,7 @@ fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostS
 fun ScorecardScreen(
     workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, coach: Boolean, vm: SystemViewModel?,
     onBack: () -> Unit, onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onOpenDocument: (String) -> Unit,
+    onRoute: (String) -> Unit = {},
 ) {
     val card = scoreCards(workspace).find { it.id == id }
     if (card == null) { ScreenShell("Scorecard", onBack, snackbar) { EmptyState("Scorecard not found", "It may have been removed. Go back and refresh.") }; return }
@@ -91,7 +92,7 @@ fun ScorecardScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm?.upload(context, it, 11, id, "Supporting document") } }
     val sticky: (@Composable RowScope.() -> Unit)? = when {
         editable -> ({
-            CardButton("Edit", Modifier.weight(1f), enabled = !busy) { onStart("save_personal_training", row) }
+            CardButton("Edit", Modifier.weight(1f), enabled = !busy) { if (roundArrows(row).isNotEmpty()) onRoute("score_entry:$id") else onStart("save_personal_training", row) }
             StickyButton(if (card.state == ScoreState.RETURNED) "Fix and resend" else "Send to coach", !busy, Modifier.weight(1.4f)) { confirmSend = true }
         })
         own && card.state == ScoreState.VALIDATED -> ({ CardButton("Ask for a correction", Modifier.weight(1f), enabled = !busy) { onStart("request_training_correction", row) } })
@@ -112,6 +113,9 @@ fun ScorecardScreen(
             ScoreState.PERSONAL -> if (own) NoticeCard("Only you can see this round", "Send it to a coach to make it part of your official record.", Tone.INFO)
             ScoreState.VALIDATED -> NoticeCard("Official record", "Validated${row.text("validated_at").takeIf { it.isNotBlank() }?.let { " on " + fmtDate(row.date("validated_at")) }.orEmpty()}. Ask for a correction if something is wrong.", Tone.POSITIVE)
         }
+        // Rounds scored arrow by arrow show their ends first; the coach sees where the group sits before validating.
+        val ends = roundArrows(row)
+        if (ends.isNotEmpty()) RoundArrowsSection(ends, coach && !own) { onRoute("scorestats:$id") }
         RaisedCard {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 ScoreRing(card.percent, plainNumber(card.score), "of ${plainNumber(card.max)}")
@@ -281,7 +285,7 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
                 if (r.preview.size > 8) Text("…and ${r.preview.size - 8} more", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Imported rounds count as checked by you.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Button(onClick = { vm.command("import_training", buildJsonObject { put("rows", JsonArray(r.rows)) }) { result = null; arrowText = null; onDone() } },
+            Button(onClick = { vm.save("import_rounds", buildJsonObject { put("p_rows", JsonArray(r.rows)) }) { result = null; arrowText = null; onDone() } },
                 enabled = !busy && r.rows.isNotEmpty() && r.problems.isEmpty(), modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) {
                 Text(if (r.problems.isEmpty()) "Import ${r.rows.size} round${if (r.rows.size == 1) "" else "s"}" else "Fix the file, then choose it again", fontWeight = FontWeight.ExtraBold)

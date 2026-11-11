@@ -367,4 +367,22 @@ class DeskLogicTest {
         assertEquals("Ana Cruz · 106/180 · 18 arrows, 3 ends · 2026-11-05", r.preview.single())
         assertEquals(10, arrowPoints("X")); assertEquals(0, arrowPoints("M"))
     }
+
+    @Test fun importedArrowsGiveEndsStatsAndGroupCentre() {
+        val row = arrowImport(arrowCsv, "u1", "Ana Cruz").rows.single()
+        val ends = roundArrows(row)
+        assertEquals(listOf(6, 6, 6), ends.map { it.size })
+        assertEquals("M", ends[2][5].p)
+        val st = roundStats(ends)
+        assertEquals(106, st.total); assertEquals(180, st.max)
+        assertEquals(listOf(36, 44, 26), st.endTotals)
+        assertEquals(17, st.hits); assertEquals(1, st.misses); assertEquals(17, st.plotted)
+        assertEquals(listOf("9" to 3, "8" to 1, "7" to 1, "6" to 6, "5" to 4, "4" to 2, "M" to 1), st.counts)
+        assertEquals("low and slightly left", groupDescription(st.centre))
+        assertEquals("Dropped 3.0 points per arrow from end 2 to end 3.", endTrend(st))
+        assertEquals(ends, roundArrows(JsonObject(mapOf("arrows" to arrowsJson(ends)))))
+        assertEquals("centred", groupDescription(0.02 to -0.02))
+        assertEquals("slightly high", groupDescription(0.0 to -0.05))
+        assertTrue(roundArrows(obj("id" to "r")).isEmpty())
+    }
 }
