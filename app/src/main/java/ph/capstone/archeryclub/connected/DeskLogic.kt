@@ -888,3 +888,39 @@ fun scoreboardHtml(t: TrainingView, archer: String, coach: String = ""): String 
     append("<div class='sig'><div>Archer: ${esc(archer)}</div><div>Coach${if (coach.isBlank()) "" else ": " + esc(coach)}</div></div>")
     append("</body></html>")
 }
+
+/* Scoring moves end by end only when the scorer says so. The cursor is the end being filled or fixed;
+ * a cursor equal to ends.size is a fresh end with no arrows yet. Empty ends are never kept. */
+data class EndCursor(val ends: List<List<Arrow>>, val cursor: Int) {
+    val current: List<Arrow> get() = ends.getOrNull(cursor).orEmpty()
+    fun full(perEnd: Int) = current.size >= perEnd
+}
+
+/** Adds to the end under the cursor; null when that end already has its arrows. */
+fun EndCursor.add(a: Arrow, perEnd: Int): EndCursor? = when {
+    cursor >= ends.size -> EndCursor(ends + listOf(listOf(a)), ends.size)
+    ends[cursor].size >= perEnd -> null
+    else -> EndCursor(ends.mapIndexed { i, e -> if (i == cursor) e + a else e }, cursor)
+}
+
+/** Takes one arrow out of the end under the cursor. An end left empty disappears and the cursor stays on that place. */
+fun EndCursor.remove(index: Int): EndCursor {
+    val e = current; if (index !in e.indices) return this
+    val left = e.filterIndexed { i, _ -> i != index }
+    return if (left.isEmpty()) EndCursor(ends.filterIndexed { i, _ -> i != cursor }, cursor.coerceAtMost(ends.size - 1))
+    else EndCursor(ends.mapIndexed { i, x -> if (i == cursor) left else x }, cursor)
+}
+
+/** Undo: the last arrow of this end, or of the end before when this one is still blank. */
+fun EndCursor.undo(): EndCursor = when {
+    current.isNotEmpty() -> remove(current.lastIndex)
+    ends.isNotEmpty() -> EndCursor(ends, ends.lastIndex).let { it.remove(it.current.lastIndex) }
+    else -> this
+}
+
+fun EndCursor.clearEnd(): EndCursor = if (cursor < ends.size) EndCursor(ends.filterIndexed { i, _ -> i != cursor }, cursor.coerceAtMost(ends.size - 1)) else this
+
+/** Next end is allowed from any end with arrows, up to the round's planned number of ends. */
+fun EndCursor.canNext(planned: Int?): Boolean = cursor < ends.size && (cursor < ends.lastIndex || planned == null || ends.size < planned)
+fun EndCursor.next(planned: Int?): EndCursor = if (canNext(planned)) copy(cursor = cursor + 1) else this
+fun EndCursor.previous(): EndCursor = if (cursor > 0) copy(cursor = cursor - 1) else this

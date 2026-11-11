@@ -286,27 +286,18 @@ fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snac
     var perEnd by rememberSaveable(routeId) { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: preset?.perEnd ?: seed?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
     // Ends kept as "9@0.1/0.2,M;8" so they survive rotation.
     var encoded by rememberSaveable(routeId) { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
-    val ends = decodeEnds(encoded)
+    // The end being filled or fixed. Scoring never moves to the next end by itself: the scorer taps Next end.
+    var cursor by rememberSaveable(routeId) { mutableIntStateOf(existing?.let { roundArrows(it).lastIndex.coerceAtLeast(0) } ?: 0) }
+    val state = EndCursor(decodeEnds(encoded), cursor)
+    val ends = state.ends
     var onTarget by rememberSaveable(routeId) { mutableStateOf(true) }
     // New trainings open on their setup; another round in a training goes straight to scoring.
     var editingSetup by rememberSaveable(routeId) { mutableStateOf(existing == null && addTo == null) }
-    // The end on screen; -1 means the end being shot.
-    var viewing by rememberSaveable(routeId) { mutableIntStateOf(-1) }
     val planned = plannedEnds.toIntOrNull()
-    val endFull = ends.lastOrNull()?.let { it.size >= perEnd } ?: true
-    val finished = planned != null && ends.size >= planned && endFull
-    fun add(a: Arrow) {
-        if (finished) return
-        val list = ends.map { it.toMutableList() }.toMutableList()
-        if (list.isEmpty() || list.last().size >= perEnd) list.add(mutableListOf())
-        list.last().add(a)
-        encoded = encodeEnds(list); viewing = -1
-    }
-    fun undo() {
-        val list = ends.map { it.toMutableList() }.toMutableList()
-        if (list.isNotEmpty()) { list.last().removeAt(list.last().lastIndex); if (list.last().isEmpty()) list.removeAt(list.lastIndex) }
-        encoded = encodeEnds(list); viewing = -1
-    }
+    val endFull = state.full(perEnd)
+    val finished = planned != null && ends.size >= planned && ends.lastOrNull()?.size == perEnd && cursor >= ends.lastIndex
+    fun set(c: EndCursor) { encoded = encodeEnds(c.ends); cursor = c.cursor }
+    fun add(a: Arrow) { if (!busy && ends.flatten().size < 1440) state.add(a, perEnd)?.let(::set) }
     val flat = ends.flatten(); val total = flat.sumOf { it.points }; val count = flat.size
     val ready = count > 0 && distance.toDoubleOrNull() != null && face.isNotBlank() && bow.isNotBlank() && title.isNotBlank() && standard.isNotBlank() &&
         runCatching { LocalDate.parse(date) }.isSuccess
@@ -323,8 +314,8 @@ fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snac
         }) { onSaved(sessionId) }
     }
     val roundNo = (addTo?.rounds?.size ?: 0) + 1
-    val endNo = if (viewing >= 0) viewing + 1 else if (ends.isEmpty() || (endFull && !finished)) ends.size + 1 else ends.size
-    val shown = if (viewing >= 0) ends.getOrNull(viewing).orEmpty() else ends.lastOrNull()?.takeIf { !endFull || finished }.orEmpty()
+    val endNo = cursor + 1
+    val shown = state.current
     val coachPill: (@Composable RowScope.() -> Unit)? = if (coachMode) ({ Pill("SCORING FOR ${archerName.uppercase()}", Club.lime, Club.forestDeep) }) else null
     HeroScaffold(if (existing != null) "Edit round" else title, onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = coachPill,
@@ -338,7 +329,8 @@ fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snac
             Button(onClick = { save() }, enabled = !busy && ready && vm != null, modifier = Modifier.weight(1.6f).height(50.dp), shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text(if (existing != null) "Save changes" else "Save round", fontWeight = FontWeight.ExtraBold, maxLines = 1) }
         }) {
-        if (coachMode) Text("You're scoring for $archerName. Rounds a coach enters are saved as validated, so they go straight onto $archerName's record.",
+        if (coachMode) Text(if (existing != null) "You're fixing $archerName's round. Saving keeps its status (${scoreState(existing.text("validation")).label.lowercase()}) and the total follows the arrows."
+            else "You're scoring for $archerName. Rounds a coach enters are saved as validated, so they go straight onto $archerName's record.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (editingSetup) {
             RaisedCard { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -402,24 +394,40 @@ fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snac
             Text("$standard · $environment · $distance m · $face · $bow", Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        // This end's arrows, with dashed spaces for the ones still to shoot.
-        RaisedCard { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                shown.forEach { ArrowDot(it.p, 34.dp) }
-                if (viewing < 0) repeat((perEnd - shown.size).coerceAtLeast(0)) {
-                    Box(Modifier.size(34.dp).border(1.5.dp, Color(0xFFB5BFB8), CircleShape)) }
+        // This end's arrows in the order shot, with dashed spaces for the ones still to come. Tap an arrow to take it out.
+        RaisedCard { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("End $endNo", fontWeight = FontWeight.ExtraBold, modifier = Modifier.width(56.dp))
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    shown.forEachIndexed { i, a -> Box(Modifier.clip(CircleShape).clickable(enabled = !busy) { set(state.remove(i)) }) { ArrowDot(a.p, 34.dp) } }
+                    repeat((perEnd - shown.size).coerceAtLeast(0)) { Box(Modifier.size(34.dp).border(1.5.dp, Color(0xFFB5BFB8), CircleShape)) }
+                }
+                Text("${shown.sumOf { it.points }}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                IconButton(onClick = { set(state.undo()) }, enabled = count > 0 && !busy) { Text("↶", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) }
             }
-            Text("${shown.sumOf { it.points }}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            IconButton(onClick = { undo() }, enabled = count > 0 && !busy) { Text("↶", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(when {
+                    shown.isEmpty() -> "Score the arrows for end $endNo."
+                    endFull -> "End $endNo is complete. Tap an arrow to change it, or go to the next end."
+                    else -> "Tap an arrow to take it out."
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (shown.isNotEmpty()) TextButton(onClick = { set(state.clearEnd()) }, enabled = !busy) { Text("Clear end", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
+            }
         } }
-        if (finished) NoticeCard("Round complete", "All ${planned} ends are in. Save the round, then add another or send the training to your coach.", Tone.POSITIVE)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { set(state.previous()) }, enabled = cursor > 0, modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(999.dp)) {
+                Text("Previous end", fontWeight = FontWeight.ExtraBold) }
+            Button(onClick = { set(state.next(planned)) }, enabled = state.canNext(planned), modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Next end", fontWeight = FontWeight.ExtraBold) }
+        }
+        if (finished) NoticeCard("Round complete", "All $planned ends are in. You can still go back and fix any end, then save the round.", Tone.POSITIVE)
         ChoiceChips(listOf("target" to "Tap the target", "keypad" to "Tap the score"), if (onTarget) "target" else "keypad") { onTarget = it == "target" }
         if (onTarget) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 TargetPlot(listOf(shown), 320.dp, showSpread = shown.size > 1,
-                    onTap = if (viewing >= 0 || finished) null else ({ x: Double, y: Double -> if (!busy && count < 1440) add(Arrow(scoreAt(x, y), x, y)) }))
+                    onTap = if (endFull) null else ({ x: Double, y: Double -> add(Arrow(scoreAt(x, y), x, y)) }))
             }
-            OutlinedButton(onClick = { add(Arrow("M")) }, enabled = !busy && !finished && viewing < 0, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(999.dp)) { Text("Miss (off the face)") }
+            OutlinedButton(onClick = { add(Arrow("M")) }, enabled = !busy && !endFull, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(999.dp)) { Text("Miss (off the face)") }
             Text("Press and hold on the target: a magnifier shows exactly where the arrow is. Lift your finger to place it. Arrows touching a line get the higher score.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else ARROW_KEYS.chunked(4).forEach { rowKeys ->
@@ -428,21 +436,14 @@ fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snac
                     val (bg, fg) = arrowColors(k)
                     Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(14.dp)).background(bg)
                         .let { if (bg == Color.White) it.border(1.5.dp, Color(0xFFC9D3C5), RoundedCornerShape(14.dp)) else it }
-                        .clickable(enabled = !busy && count < 1440 && !finished && viewing < 0) { add(Arrow(k)) }, contentAlignment = Alignment.Center) {
+                        .clickable(enabled = !busy && !endFull) { add(Arrow(k)) }, contentAlignment = Alignment.Center) {
                         Text(k, color = fg, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
-        // Step back through finished ends to check them; scoring always continues on the newest end.
-        val lastDone = if (endFull) ends.lastIndex else ends.lastIndex - 1
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { viewing = if (viewing < 0) lastDone else viewing - 1 }, enabled = lastDone >= 0 && viewing != 0,
-                modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text("Previous end") }
-            OutlinedButton(onClick = { viewing = if (viewing in 0 until lastDone) viewing + 1 else -1 }, enabled = viewing >= 0,
-                modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text(if (viewing >= 0 && viewing >= lastDone) "Back to scoring" else "Next end") }
-        }
-        if (ends.isNotEmpty()) EndsCard(ends.filter { it.isNotEmpty() }) { viewing = if (it <= lastDone) it else -1 }
+        // Every end so far: tap one to go back and fix it.
+        if (ends.isNotEmpty()) { DeskLabel("Ends · tap one to fix it"); EndsCard(ends) { if (!busy) cursor = it } }
     }
 }
 

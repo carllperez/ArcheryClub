@@ -119,6 +119,7 @@ fun ScorecardScreen(
     var confirmSend by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm?.upload(context, it, 11, id, "Supporting document") } }
+    val hasArrows = roundArrows(row).isNotEmpty()
     val sticky: (@Composable RowScope.() -> Unit)? = when {
         editable -> ({
             CardButton("Edit", Modifier.weight(1f), enabled = !busy) { if (roundArrows(row).isNotEmpty()) onRoute("score_entry:$id") else onStart("save_personal_training", row) }
@@ -126,10 +127,13 @@ fun ScorecardScreen(
         })
         own && card.state == ScoreState.VALIDATED -> ({ CardButton("Ask for a correction", Modifier.weight(1f), enabled = !busy) { onStart("request_training_correction", row) } })
         coach && !own && card.state == ScoreState.PENDING -> ({
+            if (hasArrows) CardButton("Edit ends", Modifier.weight(1f), enabled = !busy) { onRoute("score_entry:for:${card.userId}:$id") }
             CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("validate_training", JsonObject(row + ("validation" to JsonPrimitive("returned_for_correction")))) }
             StickyButton("Validate", !busy, Modifier.weight(1.3f)) { onStart("validate_training", JsonObject(row + ("validation" to JsonPrimitive("validated")))) }
         })
-        coach && !own -> ({ CardButton("Edit official record", Modifier.weight(1f), enabled = !busy) { onStart("save_training", row) } })
+        // A round scored arrow by arrow is edited end by end, so its total always matches its arrows.
+        coach && !own -> ({ CardButton(if (hasArrows) "Edit ends" else "Edit official record", Modifier.weight(1f), enabled = !busy) {
+            if (hasArrows) onRoute("score_entry:for:${card.userId}:$id") else onStart("save_training", row) } })
         else -> null
     }
     HeroScaffold(card.scoreLabel, onBack, snackbar, overlap = 44.dp, busy = busy,

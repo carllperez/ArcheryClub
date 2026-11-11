@@ -432,4 +432,21 @@ class DeskLogicTest {
         val html = scoreboardHtml(TrainingView("s", listOf(scoreCard(row))), "Juan")
         assertTrue(html.contains("A &lt;b&gt; &amp; C")); assertTrue(html.contains("Archer: Juan")); assertTrue(html.contains("<td>19</td>"))
     }
+
+    @Test fun endsMoveOnlyWhenAsked() {
+        var c = EndCursor(emptyList(), 0)
+        c = c.add(Arrow("9"), 3)!!.add(Arrow("8"), 3)!!.add(Arrow("X"), 3)!!
+        assertTrue(c.add(Arrow("7"), 3) == null)            // full end: no automatic new end
+        assertEquals(0, c.cursor)
+        c = c.next(2); assertEquals(1, c.cursor); assertEquals(0, c.current.size)
+        assertTrue(!c.canNext(2))                           // can't skip past a blank end
+        c = c.add(Arrow("M"), 3)!!; assertEquals(2, c.ends.size)
+        assertTrue(!c.canNext(2))                           // planned 2 ends reached
+        c = c.previous(); assertEquals("9,8,X", c.current.joinToString(",") { it.p })
+        c = c.remove(1); assertEquals("9,X", c.current.joinToString(",") { it.p })
+        c = c.add(Arrow("10"), 3)!!; assertEquals("9,X,10", c.current.joinToString(",") { it.p })
+        c = c.next(2).remove(0); assertEquals(1, c.ends.size); assertEquals(1, c.cursor)   // emptied end disappears
+        c = c.undo(); assertEquals("9,X", c.ends[0].joinToString(",") { it.p })
+        assertEquals(0, c.previous().clearEnd().ends.size)
+    }
 }
