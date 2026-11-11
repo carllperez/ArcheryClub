@@ -618,3 +618,13 @@ test('Restarting after a rejection clears earlier document verifications',async(
  await command('retry','restart_application',{});
  assert.equal((await db.query('select verified_by from app_private.documents where id=$1',[d.id])).rows[0].verified_by,null);
 });
+
+test('Treasurer sets where to pay; applicants can read it, members cannot change it',async()=>{
+ const details={gcash_name:'DLSU Archery Club',gcash_number:'0917 000 0000',bank_name:'',bank_account_name:'',bank_account_number:''};
+ await denied(()=>rpc('applicant','set_payment_details',[JSON.stringify(details)],'$1::jsonb'),/Permission/);
+ await denied(()=>rpc('officer','set_payment_details',[JSON.stringify({gcash_name:'x'})],'$1::jsonb'),/at least a GCash number/);
+ const saved=await rpc('officer','set_payment_details',[JSON.stringify(details)],'$1::jsonb');
+ assert.equal(saved.gcash_number,'0917 000 0000');
+ const seen=await as('applicant',async()=>(await db.query('select payment_details from app_private.settings')).rows[0].payment_details);
+ assert.equal(seen.gcash_name,'DLSU Archery Club','the applicant\'s pay step can show it');
+});

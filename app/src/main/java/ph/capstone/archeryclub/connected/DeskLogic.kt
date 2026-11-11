@@ -161,6 +161,42 @@ fun paymentsToLink(workspace: JsonObject): List<Pair<JsonObject, JsonObject>> {
 /** A receipt reference as the server stores it (spaces removed, upper case), or null when it can't be one. */
 fun receiptReference(input: String): String? = input.replace(Regex("\\s"), "").uppercase().takeIf { Regex("^[A-Z0-9-]{6,30}$").matches(it) }
 
+// ---------------------------------------------------------------- Applicant pay step
+
+/** Where to pay, as the Treasurer recorded it in club settings. */
+data class PaymentDetails(val gcashName: String, val gcashNumber: String, val bankName: String, val bankAccountName: String, val bankAccountNumber: String) {
+    val hasGcash get() = gcashNumber.isNotBlank()
+    val hasBank get() = bankAccountNumber.isNotBlank()
+    val isEmpty get() = !hasGcash && !hasBank
+}
+fun paymentDetails(settings: JsonObject?): PaymentDetails {
+    val d = settings?.get("payment_details") as? JsonObject
+    fun f(k: String) = d?.text(k).orEmpty().trim()
+    return PaymentDetails(f("gcash_name"), f("gcash_number"), f("bank_name"), f("bank_account_name"), f("bank_account_number"))
+}
+
+enum class PayStep { PAY, CHECKING, RETURNED }
+fun payStep(fee: FeeView): PayStep = when (fee.state) {
+    FeeState.CHECKING -> PayStep.CHECKING
+    FeeState.RETURNED -> PayStep.RETURNED
+    else -> PayStep.PAY
+}
+
+/** The unpaid membership fee an approved applicant must settle to become Active. */
+fun membershipFeeDue(workspace: JsonObject, userId: String, today: LocalDate): FeeView? =
+    feeViews(workspace, userId, today).firstOrNull { it.fee.text("purpose") == "Membership fee" && it.state != FeeState.PAID }
+
+/** What the Send button should do: save a changed reference first, then send. Null = not ready yet. */
+enum class PayAction { SAVE_REFERENCE, UPLOAD_PROOF, SEND }
+fun payAction(typedReference: String, payment: JsonObject?, hasProof: Boolean): PayAction? {
+    val clean = receiptReference(typedReference) ?: return null
+    return when {
+        payment == null || payment.text("reference") != clean -> PayAction.SAVE_REFERENCE
+        !hasProof -> PayAction.UPLOAD_PROOF
+        else -> PayAction.SEND
+    }
+}
+
 // ---------------------------------------------------------------- Elections (M9)
 
 fun electionStageLabel(status: String) = when (status) {

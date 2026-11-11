@@ -54,7 +54,7 @@ fun WorkflowRoute(
             onRenewal = { onGo("records:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
         "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack, onSave = { payload -> onCommand("save_profile", payload, onBack) }, onCommand = onCommand)
         "name_corrections" -> NameCorrectionsScreen(workspace, busy, snackbar, onBack, onCommand)
-        "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, onCommand, onUpload, onOpenDocument, onPayFee = { onGo("module:12") })
+        "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, onCommand, onUpload, onOpenDocument, onPayFee = onBack)
         "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }) { onGo("records:7") }
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
@@ -66,7 +66,7 @@ fun WorkflowRoute(
         "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
         "finance" -> FinanceRecordScreen(workspace, id, busy, snackbar, perms, onBack, onCommand, onStart, onUpload, onOpenDocument)
         "finance_desk" -> if ("finance" in perms || "president" in perms)
-            FinanceDeskScreen(workspace, busy, snackbar, perms, onBack, { onPush("finance:$it") }, onCommand, onStart, { onGo("records:12") }) { onPush("payments") }
+            FinanceDeskScreen(workspace, busy, snackbar, perms, onBack, { onPush("finance:$it") }, onCommand, onStart, { onGo("records:12") }, vm) { onPush("payments") }
             else PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
         "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }

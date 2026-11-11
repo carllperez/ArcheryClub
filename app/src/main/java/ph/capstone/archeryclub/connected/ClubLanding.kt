@@ -89,6 +89,7 @@ fun ClubLanding(
     onAnnouncement:()->Unit,onNotice:(JsonObject)->Unit,onAcknowledge:(JsonObject)->Unit,
     onRefresh:()->Unit,onSignOut:()->Unit,onScan:()->Unit,recovery:@Composable ()->Unit,
     onCommand:(String,JsonObject)->Unit={_,_->},
+    vm:SystemViewModel?=null,
 ) {
     val user=workspace.text("user_id")
     val profile=workspace.records("profiles").find{it.text("id")==user}
@@ -108,10 +109,24 @@ fun ClubLanding(
             "$greeting,\n${fullName.substringBefore(' ')}."
         }else if(hasModule(15))"Partner workspace" else if(membership!=null)"Your membership" else "Your application"
     }
+    // Until the membership is active, Home is the application: no Services tab (bylaws: club services are for members).
+    val applicant=!staff&&!isMember&&!hasModule(15)
     val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
+        else if(applicant)listOf("home" to "Home","account" to "Profile")
         else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
         ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
+    }
+    val context=androidx.compose.ui.platform.LocalContext.current
+    var welcomed by remember(user){mutableStateOf(context.clubPrefs().getBoolean(welcomedKey(user),false))}
+    if(isMember&&!welcomed&&page=="home"&&workspace.records("applications").any{it.text("user_id")==user}){
+        val paid=workspace.records("fee_assessments").find{it.text("user_id")==user&&it.text("purpose")=="Membership fee"&&it.text("payment_id").isNotBlank()}
+        WelcomeActive(firstName(fullName),paid?.let{peso(it.amount())}){context.clubPrefs().edit().putBoolean(welcomedKey(user),true).apply();welcomed=true}
+        return
+    }
+    if(applicant&&page=="account"){
+        ApplicantProfilePage(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onSignOut,recovery)
+        return
     }
     if(memberHome&&page=="home"){
         MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery)
@@ -123,8 +138,8 @@ fun ClubLanding(
         OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery)
         return
     }
-    if(!staff&&!isMember&&!hasModule(15)&&page=="home"){
-        ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery)
+    if(applicant&&page!="notices"){
+        ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery,vm)
         return
     }
     if(memberHome&&page=="account"){

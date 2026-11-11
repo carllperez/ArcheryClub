@@ -139,7 +139,7 @@ fun ApplicationScreen(
             membership?.text("status") == "Pending payment" -> {
                 val fee = workspace.records("fee_assessments").find { it.text("user_id") == user && it.text("purpose") == "Membership fee" && it.text("payment_id").isBlank() }
                 NoticeCard("Approved — one step left", "Pay the membership fee${fee?.let { " of ₱" + it.text("amount") + " by " + it.text("due_on") }.orEmpty()}. Your membership becomes Active once the Treasurer verifies the payment.", Tone.POSITIVE)
-                PrimaryAction("Pay membership fee", !busy, onClick = onPayFee)
+                SecondaryAction("Go to the payment step on Home", !busy, onClick = onPayFee)
             }
             membership != null -> NoticeCard("You're a member", "Your application was approved. Your profile, activities and equipment are now open to you.", Tone.POSITIVE)
             view.stage == ApplicationStage.SUBMITTED -> NoticeCard("Submitted", "The membership officer has your application. Details and documents are locked while it's reviewed; you'll get a notice when there's a decision.", Tone.INFO)

@@ -190,7 +190,7 @@ fun ConnectedApp(vm:SystemViewModel){
                 onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
                 onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
                 recovery={PasswordChangeCard(vm,state.busy)},
-                onCommand={action,data->vm.command(action,data)})
+                onCommand={action,data->vm.command(action,data)},vm=vm)
             return
         }
         if(!visible(module)){LaunchedEffect(module){moduleVar=0;selectedVar=null;editingVar=null};return}

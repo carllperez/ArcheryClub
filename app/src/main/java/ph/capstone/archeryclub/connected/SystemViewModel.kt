@@ -82,6 +82,8 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         refreshAfterSave("Saved to the club system.")
     }
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
+    /** An RPC that changes club data: run it, then reload the workspace so screens show the change. */
+    fun save(name:String,data:JsonObject,onDone:()->Unit={})=runAction {gateway.rpc(name,data);withContext(Dispatchers.Main){onDone()};refreshAfterSave("Saved to the club system.")}
     fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String,onDone:()->Unit={})=runAction {
         gateway.upload(context,uri,module,record,requirement)
         withContext(Dispatchers.Main){onDone()}

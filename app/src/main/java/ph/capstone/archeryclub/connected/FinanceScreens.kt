@@ -267,9 +267,11 @@ private fun VerifyDialog(workspace: JsonObject, r: JsonObject, onCommand: (Strin
 @Composable
 fun FinanceDeskScreen(
     workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onOpen: (String) -> Unit,
-    onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit, onMine: () -> Unit,
+    onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit, vm: SystemViewModel?, onMine: () -> Unit,
 ) {
     val finance = "finance" in permissions; val president = "president" in permissions
+    var editingPayTo by remember { mutableStateOf(false) }
+    val payTo = paymentDetails(workspace.records("settings").firstOrNull())
     val records = workspace.records("financial_records"); val approvals = workspace.records("financial_approvals")
     val funds = fundsSummary(records)
     val toVerify = financeToVerify(workspace)
@@ -334,6 +336,9 @@ fun FinanceDeskScreen(
                 RowGroup {
                     GroupRow("users", "Charge a fee to all members", "Once per member") { onStart("assess_fee_bulk", buildJsonObject {}) }
                     GroupRow("profile", "Charge one member") { onStart("assess_fee", buildJsonObject {}) }
+                    GroupRow("settings", "Where members pay", if (payTo.isEmpty) "Not set: applicants can't see where to pay" else listOfNotNull(
+                        "GCash".takeIf { payTo.hasGcash }, "Bank".takeIf { payTo.hasBank }).joinToString(" · "),
+                        tint = if (payTo.isEmpty) Club.roseInk else Club.forest, chip = if (payTo.isEmpty) Club.roseSoft else Club.mint) { editingPayTo = true }
                     GroupRow("money", "Membership fee for new members", if (settingsFee > 0) peso(settingsFee) else "Free", divider = false) {
                         onStart("set_membership_fee", buildJsonObject { put("amount", settingsFee.toString()) })
                     }
@@ -368,4 +373,7 @@ fun FinanceDeskScreen(
         TextButton(onClick = onMine, modifier = Modifier.fillMaxWidth()) { Text("My own payments and claims") }
     }
     verifying?.let { r -> VerifyDialog(workspace, r, onCommand) { verifying = null } }
+    if (editingPayTo && vm != null) PaymentDetailsDialog(payTo, busy, onSave = { details ->
+        vm.save("set_payment_details", buildJsonObject { put("p_details", details) }) { editingPayTo = false }
+    }, onDismiss = { editingPayTo = false })
 }

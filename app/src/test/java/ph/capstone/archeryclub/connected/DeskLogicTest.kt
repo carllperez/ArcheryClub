@@ -145,4 +145,22 @@ class DeskLogicTest {
         assertEquals("OR-12345", receiptReference("or-12345"))
         assertNull(receiptReference("12345")); assertNull(receiptReference("")); assertNull(receiptReference("ref #1234567"))
     }
+
+    @Test fun applicantPayStepFollowsThePayment() {
+        val settings = JsonObject(mapOf("payment_details" to obj("gcash_name" to "DLSU Archery Club", "gcash_number" to " 0917 000 0000 ")))
+        val d = paymentDetails(settings); assertTrue(d.hasGcash); assertTrue(!d.hasBank); assertEquals("0917 000 0000", d.gcashNumber)
+        assertTrue(paymentDetails(null).isEmpty)
+        val fee = obj("id" to "f", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "due_on" to "2026-11-25", "payment_id" to "")
+        val draft = obj("id" to "p", "kind" to "payment", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "status" to "draft", "reference" to "9046292514078", "created_at" to "1")
+        val w = ws("fee_assessments" to listOf(fee), "financial_records" to listOf(draft))
+        val due = membershipFeeDue(w, "me", today)!!
+        assertEquals(PayStep.PAY, payStep(due))
+        assertEquals(PayStep.CHECKING, payStep(FeeView(fee, obj("status" to "pending_verification"), FeeState.CHECKING)))
+        assertNull(payAction("123", null, false))
+        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514078", null, false))
+        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514079", draft, true))
+        assertEquals(PayAction.UPLOAD_PROOF, payAction("9046 2925 14078", draft, false))
+        assertEquals(PayAction.SEND, payAction("9046292514078", draft, true))
+        assertNull(membershipFeeDue(ws("fee_assessments" to listOf(obj("purpose" to "Membership fee", "user_id" to "me", "amount" to "800", "payment_id" to "p"))), "me", today))
+    }
 }

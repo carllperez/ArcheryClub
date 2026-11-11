@@ -185,6 +185,7 @@ private fun Modifier.verticalScrollable() = this.verticalScroll(androidx.compose
 fun ApplicantHome(
     workspace: JsonObject, fullName: String, noticeCount: Int, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit,
     onPage: (String) -> Unit, onModule: (Int) -> Unit, onCommand: (String, JsonObject) -> Unit, recovery: @Composable () -> Unit,
+    vm: SystemViewModel? = null,
 ) {
     val user = workspace.text("user_id")
     val membership = workspace.records("memberships").find { it.text("user_id") == user }
@@ -192,11 +193,22 @@ fun ApplicantHome(
     val pendingPayment = membership?.text("status") == "Pending payment"
     val first = firstName(fullName.takeUnless { it == "Club account" }.orEmpty())
     HeroScaffold("${greetingFor(java.time.LocalTime.now().hour)}, $first", snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
-        eyebrow = { Pill(if (membership != null) membership.text("status").uppercase() else "APPLICANT", Club.mint, Club.forestDeep) },
+        eyebrow = {
+            val fee = if (pendingPayment) membershipFeeDue(workspace, user, java.time.LocalDate.now()) else null
+            when (fee?.let(::payStep)) {
+                PayStep.PAY -> Pill("APPROVED · PAY TO ACTIVATE", Club.lime, Club.forestDeep)
+                PayStep.CHECKING -> Pill("PAYMENT SENT", Color.White, Club.forestDeep)
+                PayStep.RETURNED -> Pill("PAYMENT NEEDS FIXING", Club.roseSoft, Club.roseInk)
+                null -> Pill(if (membership != null) membership.text("status").uppercase() else "APPLICANT", Club.mint, Club.forestDeep)
+            }
+        },
         heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) }) {
         state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING) }
         if (state.recovery) recovery()
-        RaisedCard {
+        val feeDue = if (pendingPayment) membershipFeeDue(workspace, user, java.time.LocalDate.now()) else null
+        // The pay step happens right here on Home: no separate Pay button or Payments screen for applicants.
+        if (feeDue != null && vm != null) MembershipFeeStep(workspace, feeDue, state.busy, vm)
+        else RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (pendingPayment) "PAYMENT" else "YOUR APPLICATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val (title, body) = when {
@@ -218,8 +230,10 @@ fun ApplicantHome(
             }
         }
         RowGroup {
-            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft, trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
-            GroupRow("modules", "All club services", divider = false, onClick = { onPage("modules") })
+            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft, divider = false,
+                trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
         }
+        if (view.stage != ApplicationStage.NOT_STARTED && (pendingPayment || !view.stage.editable))
+            TextButton(onClick = { onModule(2) }, modifier = Modifier.fillMaxWidth()) { Text("View what I submitted") }
     }
 }
