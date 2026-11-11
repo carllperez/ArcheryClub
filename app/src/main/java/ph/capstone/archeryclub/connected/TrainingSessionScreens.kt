@@ -30,7 +30,7 @@ import ph.capstone.archeryclub.ui.ScreenShell
 
 @Composable
 fun TrainingOverviewScreen(workspace: JsonObject, sessionId: String, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?,
-                           onBack: () -> Unit, onRoute: (String) -> Unit) {
+                           onBack: () -> Unit, onRoute: (String) -> Unit, coach: Boolean = false) {
     val t = trainingById(workspace, sessionId)
     if (t == null) { ScreenShell("Training", onBack, snackbar) { EmptyState("Training not found", "It may have been removed. Go back and refresh.") }; return }
     val own = t.first.userId == workspace.text("user_id")
@@ -41,7 +41,8 @@ fun TrainingOverviewScreen(workspace: JsonObject, sessionId: String, busy: Boole
         StickyButton(if (t.state == ScoreState.RETURNED) "Fix and resend" else "Send training to coach", !busy, Modifier.weight(1f)) { confirmSend = true }
     }) else null
     HeroScaffold(t.title, onBack, snackbar, overlap = 44.dp, busy = busy,
-        eyebrow = { Pill(t.state.label.uppercase(), Color.White.copy(alpha = .16f), Color.White) },
+        eyebrow = { Pill(t.state.label.uppercase(), Color.White.copy(alpha = .16f), Color.White)
+            if (!own) Pill(memberName(workspace, t.first.userId).uppercase(), Club.lime, Club.forestDeep) },
         heroExtra = { HeroStats(listOf("${plainNumber(t.total)}/${plainNumber(t.max)}" to "Total",
             "${t.rounds.size}" to if (t.rounds.size == 1) "Round" else "Rounds",
             (if (t.max > 0) (Math.round(t.total * 1000 / t.max) / 100.0).toString() else "—") to "Average")) },
@@ -57,7 +58,8 @@ fun TrainingOverviewScreen(workspace: JsonObject, sessionId: String, busy: Boole
             }
         }
         if (t.state == ScoreState.RETURNED) NoticeCard("Your coach sent this back", "Open the returned round to see the note, fix it, then resend the training.", Tone.DANGER)
-        DeskLabel("Rounds", if (own) "+ Add a round" else null) { onRoute("score_entry:add:${t.sessionId}") }
+        DeskLabel("Rounds", if (own || coach) "+ Add a round" else null) {
+            onRoute(if (own) "score_entry:add:${t.sessionId}" else "score_entry:for:${t.first.userId}:add:${t.sessionId}") }
         t.rounds.forEachIndexed { i, r ->
             val ends = roundArrows(r.row); val flat = ends.flatten()
             val chips: (@Composable ColumnScope.() -> Unit)? = if (flat.isEmpty()) null else ({
@@ -99,11 +101,13 @@ fun ScoreboardScreen(workspace: JsonObject, sessionId: String, snackbar: Snackba
     val t = trainingById(workspace, sessionId)
     if (t == null) { ScreenShell("Scoreboard", onBack, snackbar) { EmptyState("Training not found", "It may have been removed. Go back and refresh.") }; return }
     val archer = memberName(workspace, t.first.userId)
+    // The coach who validated (or entered) the rounds is printed on the coach's signature line.
+    val coachName = t.rounds.firstNotNullOfOrNull { r -> r.row.text("validated_by").ifBlank { null } }?.let { memberName(workspace, it) }?.takeIf { it != "Club member" }.orEmpty()
     val context = LocalContext.current
     // Kept here so the page isn't thrown away before it has finished loading for the printer.
     var printer by remember { mutableStateOf<WebView?>(null) }
     ScreenShell("Scoreboard", onBack, snackbar, stickyAction = {
-        Button(onClick = { printer = printScoreboard(context, t.title, scoreboardHtml(t, archer)) }, modifier = Modifier.fillMaxWidth().height(52.dp),
+        Button(onClick = { printer = printScoreboard(context, t.title, scoreboardHtml(t, archer, coachName)) }, modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) {
             Text("Print or save as PDF", fontWeight = FontWeight.ExtraBold) }
     }) {

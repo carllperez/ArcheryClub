@@ -251,39 +251,47 @@ fun ScoreStatsScreen(workspace: JsonObject, id: String, snackbar: SnackbarHostSt
 }
 
 /** A member scores a round arrow by arrow. Route ids: "new" (free training), "std:WA 18m" (a standard round),
- *  "add:<session id>" (another round in the same training) or a round id to edit it. */
+ *  "add:<session id>" (another round in the same training) or a round id to edit it.
+ *  A coach scores for an archer with "for:<archer id>:" in front; those rounds are saved as validated coach records. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit,
+fun ScoreEntryScreen(workspace: JsonObject, routeId: String, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit,
                      onSaved: (String) -> Unit = { onBack() }, onTotalOnly: (JsonObject) -> Unit) {
-    val mine = scoreCards(workspace, workspace.text("user_id"))
+    val me = workspace.text("user_id")
+    val forArcher = if (routeId.startsWith("for:")) routeId.removePrefix("for:").substringBefore(':') else null
+    val id = if (forArcher != null) routeId.removePrefix("for:").substringAfter(':') else routeId
     val existing = scoreCards(workspace).find { it.id == id }?.row
     val addTo = id.removePrefix("add:").takeIf { id.startsWith("add:") }?.let { trainingById(workspace, it) }
     val preset = STANDARD_ROUNDS.find { it.name == id.removePrefix("std:") }?.takeIf { id.startsWith("std:") }
+    // Whose record this is: the archer the coach picked, or the owner of the round or training, or the person scoring.
+    val archer = forArcher ?: existing?.text("user_id") ?: addTo?.first?.userId ?: me
+    val coachMode = archer != me
+    val archerName = memberName(workspace, archer)
+    val mine = scoreCards(workspace, archer)
     // Details come from the round being edited, else the training it joins, else the member's last round.
     val seed = existing ?: addTo?.rounds?.last()?.row ?: mine.firstOrNull()?.row
     val seedInfo = seed?.let(::roundInfo) ?: RoundInfo()
     val sessionInfo = (existing ?: addTo?.first?.row)?.let(::roundInfo)
-    val sessionId = rememberSaveable(id) { sessionInfo?.sessionId?.ifBlank { null } ?: addTo?.sessionId ?: java.util.UUID.randomUUID().toString() }
-    var date by rememberSaveable(id) { mutableStateOf((existing ?: addTo?.first?.row)?.text("training_date")?.take(10) ?: LocalDate.now().toString()) }
-    var title by rememberSaveable(id) { mutableStateOf(sessionInfo?.title?.ifBlank { null } ?: preset?.name?.let { "$it · ${LocalDate.now()}" } ?: "Training ${LocalDate.now()}") }
-    var standard by rememberSaveable(id) { mutableStateOf(existing?.let { roundInfo(it).standardRound }?.ifBlank { null } ?: preset?.name ?: addTo?.info?.standardRound ?: "Free training") }
-    var plannedEnds by rememberSaveable(id) { mutableStateOf((existing?.let { roundInfo(it).plannedEnds } ?: preset?.ends ?: addTo?.info?.plannedEnds)?.toString().orEmpty()) }
-    var environment by rememberSaveable(id) { mutableStateOf(seedInfo.environment.ifBlank { if ((preset?.distance ?: 18) <= 25) "Indoor" else "Outdoor" }) }
-    var bow by rememberSaveable(id) { mutableStateOf(seedInfo.bow.ifBlank { "Recurve" }) }
-    var arrowName by rememberSaveable(id) { mutableStateOf(seedInfo.arrow) }
-    var distance by rememberSaveable(id) { mutableStateOf(preset?.distance?.toString() ?: seed?.text("distance")?.toDoubleOrNull()?.let(::plainNumber) ?: "18") }
-    var face by rememberSaveable(id) { mutableStateOf(preset?.face ?: seed?.text("target_face")?.ifBlank { null } ?: "WA Full (40cm)") }
-    var notes by rememberSaveable(id) { mutableStateOf(existing?.text("observations").orEmpty()) }
-    var perEnd by rememberSaveable(id) { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: preset?.perEnd ?: seed?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
+    val sessionId = rememberSaveable(routeId) { sessionInfo?.sessionId?.ifBlank { null } ?: addTo?.sessionId ?: java.util.UUID.randomUUID().toString() }
+    var date by rememberSaveable(routeId) { mutableStateOf((existing ?: addTo?.first?.row)?.text("training_date")?.take(10) ?: LocalDate.now().toString()) }
+    var title by rememberSaveable(routeId) { mutableStateOf(sessionInfo?.title?.ifBlank { null } ?: preset?.name?.let { "$it · ${LocalDate.now()}" } ?: "Training ${LocalDate.now()}") }
+    var standard by rememberSaveable(routeId) { mutableStateOf(existing?.let { roundInfo(it).standardRound }?.ifBlank { null } ?: preset?.name ?: addTo?.info?.standardRound ?: "Free training") }
+    var plannedEnds by rememberSaveable(routeId) { mutableStateOf((existing?.let { roundInfo(it).plannedEnds } ?: preset?.ends ?: addTo?.info?.plannedEnds)?.toString().orEmpty()) }
+    var environment by rememberSaveable(routeId) { mutableStateOf(seedInfo.environment.ifBlank { if ((preset?.distance ?: 18) <= 25) "Indoor" else "Outdoor" }) }
+    var bow by rememberSaveable(routeId) { mutableStateOf(seedInfo.bow.ifBlank { "Recurve" }) }
+    var arrowName by rememberSaveable(routeId) { mutableStateOf(seedInfo.arrow) }
+    var distance by rememberSaveable(routeId) { mutableStateOf(preset?.distance?.toString() ?: seed?.text("distance")?.toDoubleOrNull()?.let(::plainNumber) ?: "18") }
+    var face by rememberSaveable(routeId) { mutableStateOf(preset?.face ?: seed?.text("target_face")?.ifBlank { null } ?: "WA Full (40cm)") }
+    var notes by rememberSaveable(routeId) { mutableStateOf(existing?.text("observations").orEmpty()) }
+    var perEnd by rememberSaveable(routeId) { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: preset?.perEnd ?: seed?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
     // Ends kept as "9@0.1/0.2,M;8" so they survive rotation.
-    var encoded by rememberSaveable(id) { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
+    var encoded by rememberSaveable(routeId) { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
     val ends = decodeEnds(encoded)
-    var onTarget by rememberSaveable(id) { mutableStateOf(true) }
+    var onTarget by rememberSaveable(routeId) { mutableStateOf(true) }
     // New trainings open on their setup; another round in a training goes straight to scoring.
-    var editingSetup by rememberSaveable(id) { mutableStateOf(existing == null && addTo == null) }
+    var editingSetup by rememberSaveable(routeId) { mutableStateOf(existing == null && addTo == null) }
     // The end on screen; -1 means the end being shot.
-    var viewing by rememberSaveable(id) { mutableIntStateOf(-1) }
+    var viewing by rememberSaveable(routeId) { mutableIntStateOf(-1) }
     val planned = plannedEnds.toIntOrNull()
     val endFull = ends.lastOrNull()?.let { it.size >= perEnd } ?: true
     val finished = planned != null && ends.size >= planned && endFull
@@ -304,8 +312,9 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
         runCatching { LocalDate.parse(date) }.isSuccess
     fun save() {
         vm?.save("save_round", buildJsonObject {
-            put("p_action", "save_personal_training"); put("p_submit", false)
+            put("p_action", if (coachMode) "save_training" else "save_personal_training"); put("p_submit", false)
             put("p_data", buildJsonObject {
+                if (coachMode) put("user_id", archer)
                 existing?.let { put("id", it.text("id")); it.text("version").toLongOrNull()?.let { v -> put("version", v) } }
                 put("training_date", date); put("distance", distance); put("target_face", face.trim()); put("category", bowCategory(bow.trim()))
                 put("scoring_format", standard.trim()); put("observations", notes.trim()); put("score", total); put("maximum_score", count * 10)
@@ -316,7 +325,9 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
     val roundNo = (addTo?.rounds?.size ?: 0) + 1
     val endNo = if (viewing >= 0) viewing + 1 else if (ends.isEmpty() || (endFull && !finished)) ends.size + 1 else ends.size
     val shown = if (viewing >= 0) ends.getOrNull(viewing).orEmpty() else ends.lastOrNull()?.takeIf { !endFull || finished }.orEmpty()
+    val coachPill: (@Composable RowScope.() -> Unit)? = if (coachMode) ({ Pill("SCORING FOR ${archerName.uppercase()}", Club.lime, Club.forestDeep) }) else null
     HeroScaffold(if (existing != null) "Edit round" else title, onBack, snackbar, overlap = 44.dp, busy = busy,
+        eyebrow = coachPill,
         heroExtra = { HeroStats(listOf(
             "${endNo}${planned?.let { "/$it" } ?: ""}" to "End",
             "$total/${count * 10}" to "Round ${if (existing != null) "" else roundNo.toString() + " "}· ${distance} m",
@@ -327,6 +338,8 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
             Button(onClick = { save() }, enabled = !busy && ready && vm != null, modifier = Modifier.weight(1.6f).height(50.dp), shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text(if (existing != null) "Save changes" else "Save round", fontWeight = FontWeight.ExtraBold, maxLines = 1) }
         }) {
+        if (coachMode) Text("You're scoring for $archerName. Rounds a coach enters are saved as validated, so they go straight onto $archerName's record.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (editingSetup) {
             RaisedCard { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, placeholder = { Text("e.g. Final Year T1 Week 9") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -381,7 +394,7 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
                     modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Start scoring", fontWeight = FontWeight.ExtraBold) }
             } }
-            if (existing == null && addTo == null) TextButton(onClick = { onTotalOnly(newRoundSeed(workspace, mine.firstOrNull())) }, modifier = Modifier.fillMaxWidth()) {
+            if (existing == null && addTo == null) TextButton(onClick = { onTotalOnly(newRoundSeed(workspace, mine.firstOrNull()).let { if (coachMode) JsonObject(it + ("user_id" to JsonPrimitive(archer))) else it }) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Just enter the total instead") }
             return@HeroScaffold
         }

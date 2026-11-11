@@ -203,9 +203,10 @@ fun ScorecardScreen(
 @Composable
 fun TrainingDeskScreen(
     workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit,
-    onOpen: (String) -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit,
+    onOpen: (String) -> Unit, onStart: (String, JsonObject) -> Unit, onScore: ((String) -> Unit)? = null, onRecords: () -> Unit,
 ) {
     val queue = coachQueue(workspace)
+    var adding by remember { mutableStateOf(false) }
     val corrections = trainingCorrections(workspace)
     val today = LocalDate.now()
     val validatedThisMonth = scoreCards(workspace).count { it.state == ScoreState.VALIDATED && it.row.date("validated_at")?.let { d -> d.year == today.year && d.month == today.month } == true }
@@ -217,7 +218,7 @@ fun TrainingDeskScreen(
         // A white card, so both buttons read the same whether they sit over the green hero or the page.
         RaisedCard {
             Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }, enabled = !busy,
+                Button(onClick = { if (onScore != null) adding = true else onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }, enabled = !busy,
                     modifier = Modifier.weight(1f).height(48.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep), contentPadding = PaddingValues(horizontal = 12.dp)) {
                     Text("Add a round", fontWeight = FontWeight.ExtraBold, maxLines = 1)
@@ -258,6 +259,30 @@ fun TrainingDeskScreen(
             recent.forEach { c -> DeskRow("${memberName(workspace, c.userId)} · ${c.scoreLabel}", "${fmtDate(c.date)} · ${c.conditions}",
                 leading = { DayChip(c.date, Tone.POSITIVE) }, onClick = { onOpen(c.id) }) }
         } else TextButton(onClick = onRecords, modifier = Modifier.fillMaxWidth()) { Text("All training records") }
+    }
+    if (adding && onScore != null) {
+        // Pick the archer first, then how to score: arrow by arrow (free or a standard round) or just the total.
+        var archer by remember { mutableStateOf("") }
+        val active = workspace.records("member_directory").filter { it.text("status") == "Active" }.sortedBy { it.text("full_name") }
+        AlertDialog(onDismissRequest = { adding = false },
+            title = { Text("Add a round for an archer") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SelectField("Archer", archer, listOf("" to "Choose a member") + active.map { it.text("user_id") to it.text("full_name") }) { archer = it }
+                if (archer.isNotBlank()) {
+                    (listOf("new" to ("Free training" to "Your own distance, face and arrows per end.")) +
+                        STANDARD_ROUNDS.map { "std:${it.name}" to (it.name to "${it.distance} m · ${it.face} · ${it.ends} ends of ${it.perEnd}") }).forEach { (route, label) ->
+                        RaisedCard(radius = 14.dp, onClick = { adding = false; onScore("for:$archer:$route") }) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(label.first, fontWeight = FontWeight.ExtraBold)
+                                Text(label.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    TextButton(onClick = { adding = false; onStart("save_training", buildJsonObject { put("training_date", today.toString()); put("user_id", archer) }) }) {
+                        Text("Just enter the total instead") }
+                }
+            } },
+            confirmButton = {}, dismissButton = { TextButton(onClick = { adding = false }) { Text("Cancel") } })
     }
 }
 
