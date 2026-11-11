@@ -165,6 +165,8 @@ fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onB
         val overdue = out.count { isOverdue(it) }
         StatTile("$overdue", "Overdue", Modifier.weight(1f).fillMaxHeight(), if (overdue > 0) Tone.DANGER else Tone.NEUTRAL) { tab = "queue" }
     }
+    // Adding gear is the Armorer's other main job, so it is reachable from every tab, not only Inventory.
+    PrimaryAction("Add equipment", onClick = onAddItem)
     ChoiceChips(listOf("queue" to "To do (${pending.size + toRelease.size + out.size})", "inventory" to "Inventory (${items.size})", "history" to "History"), tab) { tab = it }
     when (tab) {
         "queue" -> {
@@ -174,7 +176,7 @@ fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onB
             if (out.isNotEmpty()) { SectionHeader("Awaiting return (${out.size})"); out.sortedByDescending { isOverdue(it) }.forEach { BorrowingCard(it, workspace, true) { onBorrowing(it.text("id")) } } }
         }
         "inventory" -> {
-            PrimaryAction("Add equipment", onClick = onAddItem)
+            if (items.isEmpty()) EmptyState("No equipment yet", "Add the club's bows, arrows and accessories so members can borrow them.")
             EquipmentState.entries.filter { s -> states.any { it == s } }.forEach { s ->
                 SectionHeader("${s.label} (${states.count { it == s }})")
                 items.filter { equipmentState(it, workspace) == s }.sortedBy { it.text("label") }.forEach { EquipmentCard(it, workspace) { onItem(it.text("id")) } }
