@@ -95,6 +95,22 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         catch(e:CancellationException){throw e}
         catch(e:Exception){mutable.value=mutable.value.copy(error="$message Refresh to load the updated records; do not submit it again.")}
     }
+    /** Loads a stored image for display, scaled down so a 20 MB photo can't exhaust memory. Doesn't block other actions. */
+    fun loadImage(path:String,maxPx:Int=1200,onReady:(android.graphics.Bitmap?)->Unit){
+        viewModelScope.launch {
+            val bitmap=runCatching{
+                val bytes=gateway.download(path)
+                withContext(Dispatchers.Default){
+                    val bounds=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true}
+                    android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
+                    var sample=1
+                    while(bounds.outWidth/(sample*2)>=maxPx||bounds.outHeight/(sample*2)>=maxPx)sample*=2
+                    android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,android.graphics.BitmapFactory.Options().apply{inSampleSize=sample})
+                }
+            }.getOrNull()
+            withContext(Dispatchers.Main){onReady(bitmap)}
+        }
+    }
     fun openDocument(path:String,onReady:(String)->Unit)=runAction {val url=gateway.signedUrl(path);withContext(Dispatchers.Main){onReady(url)}}
     private fun runAction(block:suspend ()->Unit){
         if(operation?.isActive==true)return

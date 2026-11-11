@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -194,6 +195,7 @@ fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onB
 fun EquipmentItemScreen(
     workspace: JsonObject, itemId: String, busy: Boolean, snackbar: SnackbarHostState, isMember: Boolean, isOfficer: Boolean,
     onBack: () -> Unit, onCommand: (String, JsonObject, () -> Unit) -> Unit, onEdit: (JsonObject) -> Unit, onBorrowing: (String) -> Unit,
+    vm: SystemViewModel? = null, onUpload: (android.net.Uri, Int, String, String) -> Unit = { _, _, _, _ -> },
 ) {
     val item = workspace.records("equipment").find { it.text("id") == itemId }
     if (item == null) { ScreenShell("Equipment", onBack, snackbar) { EmptyState("Item not found", "Refresh and try again.") }; return }
@@ -211,6 +213,7 @@ fun EquipmentItemScreen(
     val issues = borrowingIssues(item, hand, maxWeight, start, end)
     ScreenShell(item.text("label"), onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        ItemPhoto(workspace, itemId, isOfficer, busy, vm, onUpload)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusPill(state.label, state.tone())
             s?.instant("next_booking")?.let { StatusPill("Next booking ${fmtDay(it)}", Tone.NEUTRAL) }
@@ -402,4 +405,42 @@ private fun BorrowingTimeline(b: JsonObject) {
             }
         }
     } }
+}
+
+
+/** The item's photo (the newest "Photo" attached to it). The Equipment desk can add or replace it; members just see it. */
+@Composable
+private fun ItemPhoto(workspace: JsonObject, itemId: String, isOfficer: Boolean, busy: Boolean, vm: SystemViewModel?,
+                      onUpload: (android.net.Uri, Int, String, String) -> Unit) {
+    val photo = workspace.records("documents")
+        .filter { it.text("module") == "10" && it.text("record_id") == itemId && it.text("requirement") == "Photo" && it.text("superseded_by").isBlank() }
+        .maxByOrNull { it.text("created_at") }
+    val path = photo?.text("path")
+    var bitmap by remember(path) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var failed by remember(path) { mutableStateOf(false) }
+    LaunchedEffect(path) { if (path != null && vm != null) vm.loadImage(path) { b -> if (b == null) failed = true else bitmap = b.asImageBitmap() } }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onUpload(uri, 10, itemId, "Photo")
+    }
+    if (path == null && !isOfficer) return
+    RaisedCard {
+        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Box(Modifier.fillMaxWidth().height(220.dp).background(Club.mint), contentAlignment = Alignment.Center) {
+                val shown = bitmap
+                when {
+                    shown != null -> androidx.compose.foundation.Image(shown, contentDescription = "Photo of ${workspace.records("equipment").find { it.text("id") == itemId }?.text("label").orEmpty()}",
+                        modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    path != null && !failed -> CircularProgressIndicator(color = Club.forest)
+                    path != null -> Text("Couldn't load the photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ph.capstone.archeryclub.ui.ClubIcon("box", Modifier.size(36.dp), Club.forest)
+                        Text("No photo yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Club.forestDeep)
+                        Text("Members see it when they browse gear.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (isOfficer) TextButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png")) }, enabled = !busy,
+                modifier = Modifier.fillMaxWidth().padding(4.dp)) { Text(if (path == null) "Add photo" else "Replace photo", fontWeight = FontWeight.ExtraBold) }
+        }
+    }
 }

@@ -7,13 +7,14 @@ import java.time.Instant
 fun canAttachDocument(module:Int,record:String,workspace:JsonObject,now:Instant=Instant.now()):Boolean {
     val user=workspace.text("user_id")
     val permissions=(workspace["permissions"] as? JsonArray).orEmpty().map{it.jsonPrimitive.content}.toSet()
-    val table=mapOf(1 to "renewals",2 to "applications",9 to "candidates",11 to "training_records",12 to "financial_records",15 to "delegates")[module]?:return false
+    val table=mapOf(1 to "renewals",2 to "applications",9 to "candidates",10 to "equipment",11 to "training_records",12 to "financial_records",15 to "delegates")[module]?:return false
     val row=workspace.records(table).find{it.text("id")==record}
     fun notClosed(value:String)=runCatching{!now.isAfter(Instant.parse(value))}.getOrDefault(false)
     return when(module){
         1,2,12->row!=null&&row.text("user_id")==user&&row.text("status") in setOf("draft","incomplete","returned_for_correction")
         9->{val election=workspace.records("elections").find{it.text("id")==row?.text("election_id")}
             row!=null&&("elections" in permissions||(row.text("user_id")==user&&election?.text("status")=="announced"&&notClosed(election.text("candidacy_closes"))))}
+        10->row!=null&&"equipment" in permissions
         11->row!=null&&("training" in permissions||(row.text("user_id")==user&&row.text("validation") in setOf("personal","returned_for_correction")))
         15->{val eventId=row?.text("event_id")?:record
             val event=workspace.records("interclub_events").find{it.text("event_id")==eventId}?:return false

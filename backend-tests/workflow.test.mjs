@@ -664,3 +664,22 @@ test('Each club picks the desks a role opens; the last Administrator cannot lose
  assert.equal(await can('successor','training'),false);
  await denied(()=>rpc('admin','reset_role',['range_marshal'],'$1'),/no default/);
 });
+
+test('The Equipment desk attaches item photos; active members can see them, others cannot add them',async()=>{
+ await grant('officer','equipment_officer');
+ const eq=await command('officer','save_equipment',{label:'Photo Bow 01',category:'Bow',specifications:'Photo test',handedness:'right',draw_weight:20,bow_setup:'recurve',condition:'serviceable'});
+ const path=await upload('officer',10,eq.id,'Photo','image/jpeg');
+ // pick an active member who has no equipment role
+ const plain=[];
+ for(const n of ['other','applicant']){
+  const active=(await db.query("select 1 from app_private.memberships where user_id=$1 and status='Active'",[ids[n]])).rows.length;
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[n]]);
+  const equip=(await db.query("select app_private.can('equipment') as ok")).rows[0].ok;
+  plain.push({n,active,equip});
+ }
+ const reader=plain.find(p=>p.active&&!p.equip);
+ assert.ok(reader,'fixture: an active member without an equipment role');
+ await assert.rejects(()=>upload(reader.n,10,eq.id,'Photo','image/jpeg'),'a member cannot add photos');
+ const seen=await as(reader.n,async()=>(await db.query('select path from app_private.documents where module=10 and record_id=$1',[eq.id])).rows);
+ assert.equal(seen[0]?.path,path,'an active member sees the photo');
+});

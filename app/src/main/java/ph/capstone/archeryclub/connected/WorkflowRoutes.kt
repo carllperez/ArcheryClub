@@ -47,7 +47,7 @@ fun WorkflowRoute(
         } else MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "equipment_member" -> MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "item" -> EquipmentItemScreen(workspace, id, busy, snackbar, isMember, officerEquipment, onBack, onCommand,
-            onEdit = { onStart("save_equipment", it) }, onBorrowing = { onPush("borrowing:$it") })
+            onEdit = { onStart("save_equipment", it) }, onBorrowing = { onPush("borrowing:$it") }, vm = vm, onUpload = onUpload)
         "borrowing" -> BorrowingScreen(workspace, id, busy, snackbar, officerEquipment, onBack, onCommand,
             onResubmit = { onStart("request_borrowing", it) }, onItem = { onPush("item:$it") })
         "profile" -> ProfileScreen(workspace, busy, snackbar, onBack, onEdit = { onPush("profile_edit") },

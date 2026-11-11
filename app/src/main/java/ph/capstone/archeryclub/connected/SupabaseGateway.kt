@@ -67,6 +67,8 @@ class SupabaseGateway {
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })
     suspend fun rpc(name:String,data:JsonObject):JsonElement = Json.parseToJsonElement(client.postgrest.rpc(name,data).data)
     suspend fun signedUrl(path:String):String = client.storage.from("club-documents").createSignedUrl(path,5.minutes)
+    /** The file itself, for showing an image inside the app (Storage still checks the caller may read it). */
+    suspend fun download(path:String):ByteArray = client.storage.from("club-documents").downloadAuthenticated(path)
     suspend fun upload(context:Context,uri:Uri,module:Int,recordId:String,requirement:String) {
         val resolver=context.contentResolver
         var name="Document"
