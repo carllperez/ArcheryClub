@@ -262,7 +262,8 @@ private fun termSeed(): JsonObject {
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val setup = clubSetup(settings, strings(settings, "application_requirements"), strings(settings, "membership_categories"))
-    val terms = termViews(workspace, Instant.now())
+    val officers = officerViews(workspace, Instant.now())
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val log = workspace.records("audit_log").sortedByDescending { it.text("created_at") }.take(6)
     ph.capstone.archeryclub.ui.ScreenShell("Administration", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -293,18 +294,34 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             if ("finance" !in permissions) Text("The treasurer sets the membership fee.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
         DeskLabel("Officers and terms", "+ Assign role") { onStart("assign_role", termSeed()) }
-        if (terms.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
-        terms.forEach { t ->
-            val (label, tone) = when (t.state) {
-                TermState.EXPIRED -> "Expired ${fmtDay(t.ends)}" to Tone.DANGER
-                TermState.ENDING -> "Ends ${fmtDay(t.ends)}" to Tone.WARNING
-                TermState.ACTIVE -> "Until ${fmtDay(t.ends)}" to Tone.NEUTRAL
+        if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
+        // One row per person; tap to see each role's term and renew or retire it.
+        officers.forEach { o ->
+            val open = expanded == o.userId
+            val (label, tone) = when (o.worst) {
+                TermState.EXPIRED -> "Expired ${fmtDay(o.nearestEnd)}" to Tone.DANGER
+                TermState.ENDING -> "Ends ${fmtDay(o.nearestEnd)}" to Tone.WARNING
+                TermState.ACTIVE -> "${o.roleNames.size} role${if (o.roleNames.size == 1) "" else "s"}" to Tone.NEUTRAL
             }
-            DeskRow(t.name, t.role, leading = { Initials(t.name, 40) }, status = label to tone) {
-                if (t.state != TermState.ACTIVE) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CardButton("Retire", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("retire_role", t.assignment) }
-                    CardButton("Renew term", Modifier.weight(1f), primary = true, enabled = !busy) {
-                        onStart("assign_role", JsonObject(termSeed() + listOf("user_id", "role_id", "position").associateWith { k -> JsonPrimitive(t.assignment.text(k)) }))
+            DeskRow(o.name, o.roleNames.joinToString(" · ") + if (o.duplicates > 0) " · ${o.duplicates} duplicate${if (o.duplicates == 1) "" else "s"}" else "",
+                leading = { Initials(o.name, 40) }, status = label to tone, onClick = { expanded = if (open) null else o.userId }) {
+                if (open) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    o.roles.forEach { r ->
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.roleName + if (r.duplicate) " (duplicate)" else "", style = MaterialTheme.typography.titleSmall,
+                                    color = if (r.duplicate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                                Text(listOfNotNull(r.title.takeIf { it.isNotBlank() }?.let { "Title: $it" },
+                                    when (r.state) { TermState.EXPIRED -> "expired ${fmtDay(r.ends)}"; TermState.ENDING -> "ends ${fmtDay(r.ends)}"; TermState.ACTIVE -> "until ${fmtDay(r.ends)}" })
+                                    .joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                                    color = when (r.state) { TermState.EXPIRED -> Club.roseInk; TermState.ENDING -> Club.amberInk; else -> MaterialTheme.colorScheme.onSurfaceVariant })
+                            }
+                            TextButton(onClick = { onStart("retire_role", r.assignment) }, enabled = !busy) { Text("Retire", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
+                            if (r.state != TermState.ACTIVE && !r.duplicate) TextButton(onClick = {
+                                onStart("assign_role", JsonObject(termSeed() + listOf("user_id", "role_id", "position").associateWith { k -> JsonPrimitive(r.assignment.text(k)) }))
+                            }, enabled = !busy) { Text("Renew", fontWeight = FontWeight.ExtraBold) }
+                        }
                     }
                 }
             }

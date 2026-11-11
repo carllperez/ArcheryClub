@@ -81,7 +81,10 @@ test('M14 turnover revokes authority and keeps historical records',async()=>{
 });
 
 const future=hours=>new Date(Date.now()+hours*3600000).toISOString();
-async function grant(person,role){await command('admin','assign_role',{user_id:ids[person],role_id:role,position:role,ends_at:'2035-01-01',reason:'Integration fixture'});}
+async function grant(person,role){
+ // a person holds a role once (migration 025), so fixtures only add roles they lack
+ if((await db.query('select 1 from app_private.role_assignments where user_id=$1 and role_id=$2 and retired_at is null and ends_at>now()',[ids[person],role])).rows.length)return;
+ await command('admin','assign_role',{user_id:ids[person],role_id:role,position:role,ends_at:'2035-01-01',reason:'Integration fixture'});}
 async function row(table,id){return (await db.query(`select * from app_private.${table} where id=$1`,[id])).rows[0];}
 async function rpc(person,name,data,signature){return as(person,async()=> (await db.query(`select public.${name}(${signature}) as result`,data)).rows[0].result);}
 async function upload(person,module,record,requirement='Proof',mime='application/pdf'){
@@ -634,4 +637,11 @@ test('Treasurer sets where to pay; applicants can read it, members cannot change
  assert.equal(saved.gcash_number,'0917 000 0000');
  const seen=await as('applicant',async()=>(await db.query('select payment_details from app_private.settings')).rows[0].payment_details);
  assert.equal(seen.gcash_name,'DLSU Archery Club','the applicant\'s pay step can show it');
+});
+
+test('A role is held once; renewing is allowed only near the end of the term',async()=>{
+ await grant('successor','reports_officer');
+ await denied(()=>command('admin','assign_role',{user_id:ids.successor,role_id:'reports_officer',position:'Again',ends_at:'2036-01-01',reason:'Duplicate'}),/already Reports officer until/);
+ await db.query("update app_private.role_assignments set ends_at=now()+interval '10 days' where user_id=$1 and role_id='reports_officer'",[ids.successor]);
+ await command('admin','assign_role',{user_id:ids.successor,role_id:'reports_officer',position:'Reports officer',ends_at:'2036-01-01',reason:'Renewed term'});
 });

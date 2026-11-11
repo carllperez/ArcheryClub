@@ -248,6 +248,31 @@ fun termViews(workspace: JsonObject, now: Instant): List<TermView> {
     }.sortedWith(compareBy<TermView> { it.state.ordinal * -1 }.thenBy { it.ends })
 }
 
+/** One role a person holds: the real role name, the title typed when it was assigned (if different), and its term. */
+data class RoleLine(val assignment: JsonObject, val roleName: String, val title: String, val ends: Instant?, val state: TermState, val duplicate: Boolean)
+
+/** Everyone with an officer role, once each, with the roles they hold. */
+data class OfficerView(val userId: String, val name: String, val roles: List<RoleLine>) {
+    val worst: TermState get() = TermState.values()[roles.maxOf { it.state.ordinal }]
+    val nearestEnd: Instant? get() = roles.filter { it.state == worst }.mapNotNull { it.ends }.minOrNull()
+    val roleNames: List<String> get() = roles.map { it.roleName }.distinct()
+    val duplicates: Int get() = roles.count { it.duplicate }
+}
+
+fun officerViews(workspace: JsonObject, now: Instant): List<OfficerView> {
+    val roles = workspace.records("roles").associateBy { it.text("id") }
+    return termViews(workspace, now).groupBy { it.assignment.text("user_id") }.map { (userId, terms) ->
+        // The same role held more than once: the one ending last is the real term, the rest are duplicates.
+        val keep = terms.groupBy { it.assignment.text("role_id") }.mapValues { (_, same) -> same.maxByOrNull { it.ends ?: Instant.MAX }!!.assignment.text("id") }
+        val lines = terms.map { t ->
+            val roleName = roles[t.assignment.text("role_id")]?.text("name")?.ifBlank { null } ?: human(t.assignment.text("role_id"))
+            val title = t.assignment.text("position").takeUnless { it.isBlank() || it.equals(roleName, true) }.orEmpty()
+            RoleLine(t.assignment, roleName, title, t.ends, t.state, keep[t.assignment.text("role_id")] != t.assignment.text("id"))
+        }.sortedWith(compareBy<RoleLine> { it.duplicate }.thenBy { it.roleName })
+        OfficerView(userId, terms.first().name, lines)
+    }.sortedWith(compareByDescending<OfficerView> { it.worst.ordinal }.thenBy { it.name })
+}
+
 data class SetupItem(val title: String, val detail: String, val done: Boolean)
 fun clubSetup(settings: JsonObject?, applicationRequirements: List<String>, categories: List<String>): List<SetupItem> {
     val fee = settings?.amount("membership_fee") ?: 0.0

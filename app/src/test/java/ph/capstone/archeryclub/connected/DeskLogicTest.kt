@@ -163,4 +163,25 @@ class DeskLogicTest {
         assertEquals(PayAction.SEND, payAction("9046292514078", draft, true))
         assertNull(membershipFeeDue(ws("fee_assessments" to listOf(obj("purpose" to "Membership fee", "user_id" to "me", "amount" to "800", "payment_id" to "p"))), "me", today))
     }
+
+    @Test fun officersAreGroupedOncePerPersonWithRealRoleNames() {
+        val now = Instant.parse("2026-11-12T00:00:00Z")
+        val w = ws("roles" to listOf(obj("id" to "administrator", "name" to "Administrator"), obj("id" to "president", "name" to "President"), obj("id" to "treasurer", "name" to "Treasurer / Finance officer")),
+            "member_directory" to listOf(obj("user_id" to "c", "full_name" to "Carll"), obj("user_id" to "p", "full_name" to "Test Pres")),
+            "role_assignments" to listOf(
+                obj("id" to "1", "user_id" to "c", "role_id" to "administrator", "position" to "Development administrator", "ends_at" to "2027-10-09T00:00:00Z", "retired_at" to ""),
+                obj("id" to "2", "user_id" to "c", "role_id" to "administrator", "position" to "Admin", "ends_at" to "2026-12-31T00:00:00Z", "retired_at" to ""),
+                obj("id" to "3", "user_id" to "c", "role_id" to "president", "position" to "President", "ends_at" to "2027-06-30T00:00:00Z", "retired_at" to ""),
+                obj("id" to "4", "user_id" to "c", "role_id" to "treasurer", "position" to "Test Fin", "ends_at" to "2026-11-20T00:00:00Z", "retired_at" to ""),
+                obj("id" to "5", "user_id" to "p", "role_id" to "administrator", "position" to "President", "ends_at" to "2026-12-31T00:00:00Z", "retired_at" to "")))
+        val people = officerViews(w, now)
+        assertEquals(listOf("Carll", "Test Pres"), people.map { it.name })
+        val carll = people[0]
+        assertEquals(TermState.ENDING, carll.worst)
+        assertEquals(listOf("Administrator", "President", "Treasurer / Finance officer"), carll.roleNames)
+        assertEquals(1, carll.duplicates); assertEquals("2", carll.roles.last().assignment.text("id"))
+        assertEquals("", carll.roles.first { it.roleName == "President" }.title)
+        assertEquals("President", people[1].roles.single().title) // the typed title no longer hides the real role
+        assertEquals("Administrator", people[1].roles.single().roleName)
+    }
 }
