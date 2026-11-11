@@ -247,6 +247,17 @@ fun ReportsScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostSt
 
 // ---------------------------------------------------------------- Administration
 
+/** Officer terms run one academic year (Bylaws 4.5): start now, end June 30 of the academic year, in the form's local format. */
+private fun termSeed(): JsonObject {
+    val today = LocalDate.now()
+    val endYear = if (today.monthValue > 6) today.year + 1 else today.year
+    return buildJsonObject {
+        put("starts_at", java.time.LocalDateTime.now().withSecond(0).withNano(0).toString())
+        put("ends_at", "$endYear-06-30T23:59")
+        put("reason", "Appointed per the club bylaws (Art. 4)")
+    }
+}
+
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
@@ -281,7 +292,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             }
             if ("finance" !in permissions) Text("The treasurer sets the membership fee.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
-        DeskLabel("Officers and terms", "+ Assign role") { onStart("assign_role", buildJsonObject { put("starts_at", Instant.now().toString()) }) }
+        DeskLabel("Officers and terms", "+ Assign role") { onStart("assign_role", termSeed()) }
         if (terms.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
         terms.forEach { t ->
             val (label, tone) = when (t.state) {
@@ -293,7 +304,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
                 if (t.state != TermState.ACTIVE) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CardButton("Retire", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("retire_role", t.assignment) }
                     CardButton("Renew term", Modifier.weight(1f), primary = true, enabled = !busy) {
-                        onStart("assign_role", buildJsonObject { listOf("user_id", "role_id", "position").forEach { k -> put(k, t.assignment.text(k)) }; put("starts_at", Instant.now().toString()) })
+                        onStart("assign_role", JsonObject(termSeed() + listOf("user_id", "role_id", "position").associateWith { k -> JsonPrimitive(t.assignment.text(k)) }))
                     }
                 }
             }
