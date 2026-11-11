@@ -224,9 +224,16 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
     val seed = existing ?: last
     var date by rememberSaveable { mutableStateOf(existing?.text("training_date")?.take(10) ?: LocalDate.now().toString()) }
     var distance by rememberSaveable { mutableStateOf(seed?.text("distance")?.toDoubleOrNull()?.let(::plainNumber) ?: "18") }
-    var face by rememberSaveable { mutableStateOf(seed?.text("target_face")?.ifBlank { null } ?: "WA 40 cm") }
-    var bow by rememberSaveable { mutableStateOf(seed?.text("category")?.ifBlank { null } ?: "Recurve") }
-    var title by rememberSaveable { mutableStateOf(existing?.text("scoring_format") ?: "Practice") }
+    // The same fields, in the same order, as a scoring app's CSV export: Title, Date, Standard round,
+    // Indoor/Outdoor, Bow, Arrow, Distance, Target. Bow and arrow carry over from the last round.
+    val seedInfo = seed?.let(::roundInfo) ?: RoundInfo()
+    val existingInfo = existing?.let(::roundInfo)
+    var title by rememberSaveable { mutableStateOf(existingInfo?.title?.ifBlank { null } ?: "Practice ${LocalDate.now()}") }
+    var standard by rememberSaveable { mutableStateOf(existingInfo?.standardRound?.ifBlank { null } ?: "Practice") }
+    var environment by rememberSaveable { mutableStateOf(existingInfo?.environment?.ifBlank { null } ?: seedInfo.environment.ifBlank { "Indoor" }) }
+    var bow by rememberSaveable { mutableStateOf(seedInfo.bow.ifBlank { "Recurve" }) }
+    var arrowName by rememberSaveable { mutableStateOf(seedInfo.arrow) }
+    var face by rememberSaveable { mutableStateOf(seed?.text("target_face")?.ifBlank { null } ?: "WA Full (40cm)") }
     var notes by rememberSaveable { mutableStateOf(existing?.text("observations").orEmpty()) }
     var perEnd by rememberSaveable { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
     // Ends kept as "9,6,6;9,9" so they survive rotation.
@@ -247,16 +254,16 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
         encoded = encodeEnds(list)
     }
     val total = ends.flatten().sumOf { it.points }; val count = ends.flatten().size
-    val ready = count > 0 && distance.toDoubleOrNull() != null && face.isNotBlank() && bow.isNotBlank() && title.isNotBlank() &&
+    val ready = count > 0 && distance.toDoubleOrNull() != null && face.isNotBlank() && bow.isNotBlank() && title.isNotBlank() && standard.isNotBlank() &&
         runCatching { LocalDate.parse(date) }.isSuccess
     fun save(submit: Boolean) {
         vm?.save("save_round", buildJsonObject {
             put("p_action", "save_personal_training"); put("p_submit", submit)
             put("p_data", buildJsonObject {
                 existing?.let { put("id", it.text("id")); it.text("version").toLongOrNull()?.let { v -> put("version", v) } }
-                put("training_date", date); put("distance", distance); put("target_face", face.trim()); put("category", bow.trim())
-                put("scoring_format", title.trim()); put("observations", notes.trim()); put("score", total); put("maximum_score", count * 10)
-                put("arrows", arrowsJson(ends))
+                put("training_date", date); put("distance", distance); put("target_face", face.trim()); put("category", bowCategory(bow.trim()))
+                put("scoring_format", standard.trim()); put("observations", notes.trim()); put("score", total); put("maximum_score", count * 10)
+                put("arrows", arrowsJson(ends, RoundInfo(title.trim(), standard.trim(), environment, bow.trim(), arrowName.trim())))
             })
         }) { onBack() }
     }
@@ -273,18 +280,26 @@ fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar:
         RaisedCard(onClick = { editingSetup = !editingSetup }) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("$title · $distance m · $face · $bow", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("$standard · $environment · $distance m · $face · $bow", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Text(if (editingSetup) "Done" else "Change", color = Club.forest, fontWeight = FontWeight.ExtraBold)
                 }
                 if (editingSetup) {
+                    OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, placeholder = { Text("e.g. Final Year T1 Week 9") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     DateTimeField("Date", runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull(),
                         { date = it.atZone(ZoneId.systemDefault()).toLocalDate().toString() }, dateOnly = true)
-                    OutlinedTextField(title, { title = it.take(80) }, label = { Text("Round (e.g. Practice, WA 18 m)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(distance, { distance = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Distance (m)") }, singleLine = true, modifier = Modifier.weight(1f))
-                        OutlinedTextField(face, { face = it.take(60) }, label = { Text("Target face") }, singleLine = true, modifier = Modifier.weight(1.4f))
-                    }
-                    OutlinedTextField(bow, { bow = it.take(60) }, label = { Text("Bow") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Standard round", style = MaterialTheme.typography.labelLarge)
+                    ChoiceChips(listOf("Practice", "WA 18m", "WA 25m", "WA 70m", "WA 720").map { it to it }, standard) { standard = it }
+                    OutlinedTextField(standard, { standard = it.take(60) }, label = { Text("Or type a round") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Environment", style = MaterialTheme.typography.labelLarge)
+                    ChoiceChips(listOf("Indoor" to "Indoor", "Outdoor" to "Outdoor"), environment) { environment = it }
+                    OutlinedTextField(bow, { bow = it.take(60) }, label = { Text("Bow") }, placeholder = { Text("e.g. Fortified Recurve") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(arrowName, { arrowName = it.take(60) }, label = { Text("Arrow (optional)") }, placeholder = { Text("e.g. Super Carbon") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(distance, { distance = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Distance (m)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Target", style = MaterialTheme.typography.labelLarge)
+                    ChoiceChips(listOf("WA Full (40cm)", "WA Full (80cm)", "WA Full (122cm)", "WA 3-spot").map { it to it }, face) { face = it }
                     Text("Arrows per end", style = MaterialTheme.typography.labelLarge)
                     ChoiceChips(listOf("3" to "3 arrows", "6" to "6 arrows"), perEnd.toString()) { perEnd = it.toInt() }
                     OutlinedTextField(notes, { notes = it.take(600) }, label = { Text("Notes (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
@@ -336,7 +351,7 @@ fun EndScreen(workspace: JsonObject, routeId: String, snackbar: SnackbarHostStat
     var index by rememberSaveable(routeId) { mutableIntStateOf(start.coerceIn(0, (ends.size - 1).coerceAtLeast(0))) }
     if (card == null || ends.isEmpty()) { ScreenShell("End", onBack, snackbar) { EmptyState("No arrows on this round", "Only rounds scored arrow by arrow have ends to show.") }; return }
     val end = ends[index]; val st = roundStats(ends)
-    HeroScaffold(card.row.text("observations").substringBefore(" · ").ifBlank { card.row.text("scoring_format") }, onBack, snackbar, overlap = 44.dp,
+    HeroScaffold(roundInfo(card.row).title.ifBlank { card.row.text("observations").substringBefore(" · ").ifBlank { card.row.text("scoring_format") } }, onBack, snackbar, overlap = 44.dp,
         heroExtra = { HeroStats(listOf("${end.sumOf { it.points }}/${end.size * 10}" to "End ${index + 1} of ${ends.size}",
             "${st.total}/${st.max}" to "Round", (Math.round(st.average * 100) / 100.0).toString() to "Average")) },
         sticky = {

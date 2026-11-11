@@ -131,7 +131,10 @@ fun ScorecardScreen(
         RaisedCard {
             Column(Modifier.padding(16.dp)) {
                 KeyValue("Date", fmtDate(card.date)); KeyValue("Distance", row.text("distance").takeIf { it.isNotBlank() }?.let { "${plainNumber(it.toDoubleOrNull() ?: 0.0)} m" }.orEmpty())
-                KeyValue("Target face", row.text("target_face")); KeyValue("Format", row.text("scoring_format"))
+                val info = roundInfo(row)
+                KeyValue("Title", info.title); KeyValue("Environment", info.environment)
+                KeyValue("Bow", info.bow); KeyValue("Arrow", info.arrow)
+                KeyValue("Target face", row.text("target_face")); KeyValue("Standard round", row.text("scoring_format"))
                 KeyValue("Grouping", row.text("grouping")); KeyValue("Notes", row.text("observations"))
                 KeyValue("Recorded by", when (row.text("source")) { "personal" -> if (own) "You" else "The archer"; "csv" -> "Coach (CSV import)"; else -> "Coach" })
             }

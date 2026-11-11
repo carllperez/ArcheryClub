@@ -636,7 +636,7 @@ fun isArrowExport(csv: String): Boolean = runCatching {
 /** X counts 10, M (a miss) 0; anything else is its number. */
 fun arrowPoints(value: String): Int? = when (val v = value.trim().uppercase()) { "X" -> 10; "M", "" -> 0; else -> v.toIntOrNull() }
 
-private fun bowCategory(bow: String): String = listOf("Compound", "Recurve", "Barebow", "Longbow", "Traditional").firstOrNull { bow.contains(it, ignoreCase = true) } ?: bow.ifBlank { "Recurve" }
+fun bowCategory(bow: String): String = listOf("Compound", "Recurve", "Barebow", "Longbow", "Traditional").firstOrNull { bow.contains(it, ignoreCase = true) } ?: bow.ifBlank { "Recurve" }
 
 /** Turns an arrow export into one training round per session and round, for one archer the coach picks. */
 fun arrowImport(csv: String, userId: String, memberName: String): CoachImport {
@@ -678,7 +678,7 @@ fun arrowImport(csv: String, userId: String, memberName: String): CoachImport {
             "observations" to kotlinx.serialization.json.JsonPrimitive(notes),
             "arrows" to arrowsJson(list.groupBy { (r, _) -> at(r, iEnd) }.values.map { e ->
                 e.map { (r, _) -> Arrow(at(r, iPts).uppercase().ifBlank { "M" }, at(r, col("x")).toDoubleOrNull(), at(r, col("y")).toDoubleOrNull()) }
-            }),
+            }, RoundInfo(title, standard, at(first, iIndoor), at(first, iBow), at(first, col("arrow")))),
         )))
         preview.add("$memberName · $score/$max · ${list.size} arrows, ${ends.size} ends · $date")
     }
@@ -703,12 +703,27 @@ fun roundArrows(row: JsonObject): List<List<Arrow>> {
     }
 }
 
-fun arrowsJson(ends: List<List<Arrow>>): JsonObject = JsonObject(mapOf("ends" to kotlinx.serialization.json.JsonArray(ends.map { e ->
-    kotlinx.serialization.json.JsonArray(e.map { a -> JsonObject(buildMap {
-        put("p", kotlinx.serialization.json.JsonPrimitive(a.p))
-        a.x?.let { put("x", kotlinx.serialization.json.JsonPrimitive(it)) }; a.y?.let { put("y", kotlinx.serialization.json.JsonPrimitive(it)) }
-    }) })
-})))
+fun arrowsJson(ends: List<List<Arrow>>, info: RoundInfo? = null): JsonObject = JsonObject(buildMap {
+    put("ends", kotlinx.serialization.json.JsonArray(ends.map { e ->
+        kotlinx.serialization.json.JsonArray(e.map { a -> JsonObject(buildMap {
+            put("p", kotlinx.serialization.json.JsonPrimitive(a.p))
+            a.x?.let { put("x", kotlinx.serialization.json.JsonPrimitive(it)) }; a.y?.let { put("y", kotlinx.serialization.json.JsonPrimitive(it)) }
+        }) })
+    }))
+    info?.let { put("session", JsonObject(it.asMap().filterValues { v -> v.isNotBlank() }.mapValues { (_, v) -> kotlinx.serialization.json.JsonPrimitive(v) })) }
+})
+
+/** The session details a scoring app exports (Title, Standard round, Indoor/Outdoor, Bow, Arrow), kept with the arrows. */
+data class RoundInfo(val title: String = "", val standardRound: String = "", val environment: String = "", val bow: String = "", val arrow: String = "") {
+    fun asMap() = mapOf("title" to title, "standard_round" to standardRound, "environment" to environment, "bow" to bow, "arrow" to arrow)
+}
+
+/** A round's session details: from its arrows when saved arrow by arrow, otherwise from its ordinary fields. */
+fun roundInfo(row: JsonObject): RoundInfo {
+    val s = (row["arrows"] as? JsonObject)?.get("session") as? JsonObject
+    return RoundInfo(s?.text("title").orEmpty(), s?.text("standard_round")?.ifBlank { null } ?: row.text("scoring_format"),
+        s?.text("environment").orEmpty(), s?.text("bow")?.ifBlank { null } ?: row.text("category"), s?.text("arrow").orEmpty())
+}
 
 data class RoundStats(val total: Int, val max: Int, val endTotals: List<Int>, val endAverages: List<Double>,
                       val counts: List<Pair<String, Int>>, val hits: Int, val misses: Int, val centre: Pair<Double, Double>?, val plotted: Int) {
