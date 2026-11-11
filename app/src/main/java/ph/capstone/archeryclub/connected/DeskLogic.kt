@@ -197,6 +197,20 @@ fun payAction(typedReference: String, payment: JsonObject?, hasProof: Boolean): 
     }
 }
 
+/** What happens after submitting (option A: approve, then pay), so a waiting applicant sees the road ahead. */
+data class NextStep(val title: String, val detail: String, val current: Boolean)
+fun waitingSteps(view: ApplicationView, fee: Double): List<NextStep> {
+    val total = view.documents.size; val verified = total - view.unverified
+    val review = if (view.stage == ApplicationStage.UNDER_REVIEW && total > 0) "Checking your documents now: $verified of $total verified."
+        else "Your details and documents are locked while it's reviewed. You'll get a notice when there's a decision."
+    return listOf(
+        NextStep("The Secretary reviews your application", review, true),
+        if (fee > 0) NextStep("You pay the ${peso(fee)} membership fee", "Due within 2 weeks of approval (Bylaws 2.5.1). Where to pay appears here once you're approved.", false)
+        else NextStep("No membership fee", "Approval makes you a member right away.", false),
+        NextStep("You're an active member", "Practice sessions, club gear and the training log unlock.", false),
+    )
+}
+
 // ---------------------------------------------------------------- Elections (M9)
 
 fun electionStageLabel(status: String) = when (status) {

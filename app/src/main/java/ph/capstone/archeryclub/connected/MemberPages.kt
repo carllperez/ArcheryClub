@@ -199,7 +199,10 @@ fun ApplicantHome(
                 PayStep.PAY -> Pill("APPROVED · PAY TO ACTIVATE", Club.lime, Club.forestDeep)
                 PayStep.CHECKING -> Pill("PAYMENT SENT", Color.White, Club.forestDeep)
                 PayStep.RETURNED -> Pill("PAYMENT NEEDS FIXING", Club.roseSoft, Club.roseInk)
-                null -> Pill(if (membership != null) membership.text("status").uppercase() else "APPLICANT", Club.mint, Club.forestDeep)
+                null -> Pill(when {
+                    membership != null -> membership.text("status").uppercase()
+                    view.stage in setOf(ApplicationStage.SUBMITTED, ApplicationStage.UNDER_REVIEW) -> "WITH THE SECRETARY"
+                    else -> "APPLICANT" }, Club.mint, Club.forestDeep)
             }
         },
         heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) }) {
@@ -207,7 +210,9 @@ fun ApplicantHome(
         if (state.recovery) recovery()
         val feeDue = if (pendingPayment) membershipFeeDue(workspace, user, java.time.LocalDate.now()) else null
         // The pay step happens right here on Home: no separate Pay button or Payments screen for applicants.
+        val waiting = !pendingPayment && membership == null && view.stage in setOf(ApplicationStage.SUBMITTED, ApplicationStage.UNDER_REVIEW)
         if (feeDue != null && vm != null) MembershipFeeStep(workspace, feeDue, state.busy, vm)
+        else if (waiting) WaitingForReview(view, workspace.records("settings").firstOrNull()?.amount("membership_fee") ?: 0.0)
         else RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (pendingPayment) "PAYMENT" else "YOUR APPLICATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

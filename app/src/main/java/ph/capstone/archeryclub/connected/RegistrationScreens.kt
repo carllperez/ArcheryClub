@@ -142,7 +142,7 @@ fun ApplicationScreen(
                 SecondaryAction("Go to the payment step on Home", !busy, onClick = onPayFee)
             }
             membership != null -> NoticeCard("You're a member", "Your application was approved. Your profile, activities and equipment are now open to you.", Tone.POSITIVE)
-            view.stage == ApplicationStage.SUBMITTED -> NoticeCard("Submitted", "The membership officer has your application. Details and documents are locked while it's reviewed; you'll get a notice when there's a decision.", Tone.INFO)
+            view.stage == ApplicationStage.SUBMITTED -> NoticeCard("Submitted", "The Secretary has your application. Details and documents are locked while it's reviewed. Once you're approved, you'll pay the membership fee from your Home.", Tone.INFO)
             view.stage == ApplicationStage.UNDER_REVIEW -> NoticeCard("Being reviewed", "The membership officer is checking your documents. You'll get a notice when there's a decision.", Tone.INFO)
             view.stage == ApplicationStage.NEEDS_CHANGES -> NoticeCard("Changes requested", view.remark.ifBlank { "Update your details or documents, then submit again." }, Tone.WARNING)
             view.stage == ApplicationStage.REJECTED -> {

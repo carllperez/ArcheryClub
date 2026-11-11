@@ -184,4 +184,14 @@ class DeskLogicTest {
         assertEquals("President", people[1].roles.single().title) // the typed title no longer hides the real role
         assertEquals("Administrator", people[1].roles.single().roleName)
     }
+
+    @Test fun waitingApplicantsSeeWhatComesNext() {
+        val view = ApplicationView(obj("id" to "a", "status" to "under_review"), ApplicationStage.UNDER_REVIEW, emptyList(),
+            listOf(obj("verified_by" to "x"), obj("verified_by" to "")))
+        val steps = waitingSteps(view, 800.0)
+        assertEquals(3, steps.size); assertTrue(steps[0].current)
+        assertEquals("Checking your documents now: 1 of 2 verified.", steps[0].detail)
+        assertEquals("You pay the ₱800 membership fee", steps[1].title)
+        assertEquals("No membership fee", waitingSteps(view, 0.0)[1].title)
+    }
 }

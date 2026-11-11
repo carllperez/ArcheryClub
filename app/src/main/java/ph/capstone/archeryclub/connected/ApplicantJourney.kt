@@ -276,3 +276,35 @@ fun PaymentDetailsDialog(current: PaymentDetails, busy: Boolean, onSave: (JsonOb
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
+
+/** Submitted and waiting for the Secretary: who has it, since when, and the steps still ahead (approve, then pay). */
+@Composable
+fun WaitingForReview(view: ApplicationView, fee: Double) {
+    val submitted = view.application?.date("submitted_at")
+    RaisedCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconChip("clock", Tone.INFO, 46)
+                Column(Modifier.weight(1f)) {
+                    Text("With the Secretary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text(submitted?.let { "Submitted ${fmtDate(it)}" } ?: "Submitted", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            StepLabel("What happens next")
+            waitingSteps(view, fee).forEachIndexed { i, step ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(28.dp).clip(CircleShape).background(if (step.current) Club.lime else MaterialTheme.colorScheme.surfaceContainer),
+                        contentAlignment = Alignment.Center) {
+                        Text("${i + 1}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold,
+                            color = if (step.current) Club.forestDeep else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(step.title, style = MaterialTheme.typography.titleSmall,
+                            color = if (step.current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(step.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
