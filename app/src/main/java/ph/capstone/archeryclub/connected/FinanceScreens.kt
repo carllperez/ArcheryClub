@@ -98,9 +98,12 @@ fun PaymentsScreen(
     var sending by remember { mutableStateOf<JsonObject?>(null) }
     var paying by remember { mutableStateOf<Pair<JsonObject, JsonObject?>?>(null) } // (fee or payment, existing payment)
     fun editPayment(p: JsonObject) { if (p.text("kind") == "payment") paying = p to p else onStart("save_financial_request", p) }
-    HeroScaffold(if (owed > 0) peso(owed) else "All paid up", onBack, snackbar, overlap = 44.dp, busy = busy,
+    // A payment the Treasurer hasn't verified yet is not "paid up": say it is being checked.
+    val checking = open.filter { it.state == FeeState.CHECKING }
+    HeroScaffold(when { owed > 0 -> peso(owed); checking.isNotEmpty() -> "Being checked"; else -> "All paid up" }, onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("PAYMENTS", Color.White.copy(alpha = .16f), Color.White) },
         heroExtra = { Text(when { open.isEmpty() -> "No fees waiting for you."; overdue > 0 -> "$overdue overdue · pay as soon as you can"
+            owed <= 0 && checking.isNotEmpty() -> "The Treasurer is checking ${peso(checking.sumOf { it.amount })}. You'll get a notice."
             else -> "${open.size} fee${if (open.size == 1) "" else "s"} open · nothing overdue" }, color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
         open.forEach { f ->
             RaisedCard {

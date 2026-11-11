@@ -465,7 +465,7 @@ test('M7/M12 membership fee gates activation; documents are verified one by one;
  const notes=async()=>(await db.query("select kind,message,completed_at from app_private.notifications where user_id=$1 and kind in ('screening','membership','fee') order by notified_at",[ids.other])).rows;
  const approvalNotes=await notes();
  assert.equal(approvalNotes.length,1,'one notice for approval with a fee: '+JSON.stringify(approvalNotes));
- assert.match(approvalNotes[0].message,/^Approved! Pay the ₱500 membership fee by .+ to activate your membership\.$/);
+ assert.match(approvalNotes[0].message,/^Your application was approved\. Next, pay the ₱500 membership fee by .+ to activate your membership\.$/);
  await denied(()=>command('other','save_financial_request',{kind:'payment',purpose:'Membership fee',amount:'500'}),/reference number/);
  const pay=await command('other','save_financial_request',{kind:'payment',purpose:'Membership fee',amount:'500',reference:'9046 2925 14078'});
  assert.equal((await row('financial_records',pay.id)).reference,'9046292514078','spaces from the receipt are removed');
