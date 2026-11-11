@@ -173,12 +173,21 @@ fun TrainingDeskScreen(
         eyebrow = { Pill("COACH DESK", Club.lime, Club.forestDeep) },
         heroExtra = { HeroStats(listOf("${queue.size}" to "To validate", "${corrections.size}" to "Corrections", "$validatedThisMonth" to "Validated this month")) }) {
         // Two ways to add rounds: one at a time, or a whole session from a spreadsheet.
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }, enabled = !busy,
-                modifier = Modifier.weight(1f).height(48.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Encode a round", fontWeight = FontWeight.ExtraBold) }
-            OutlinedButton(onClick = { importing = !importing }, enabled = !busy, modifier = Modifier.weight(1f).height(48.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)) { Text(if (importing) "Close import" else "Import a session", fontWeight = FontWeight.ExtraBold) }
+        // A white card, so both buttons read the same whether they sit over the green hero or the page.
+        RaisedCard {
+            Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = { onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }, enabled = !busy,
+                    modifier = Modifier.weight(1f).height(48.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    Text("Add a round", fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                }
+                OutlinedButton(onClick = { importing = !importing }, enabled = !busy, modifier = Modifier.weight(1f).height(48.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), contentPadding = PaddingValues(horizontal = 12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.forest),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Club.forestDeep)) {
+                    Text(if (importing) "Close import" else "Import CSV", fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                }
+            }
         }
         if (importing && vm != null) CoachImportCard(workspace, busy, vm) { importing = false }
         DeskLabel("Waiting for you")
