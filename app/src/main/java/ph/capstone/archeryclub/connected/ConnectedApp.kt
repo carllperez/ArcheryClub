@@ -94,7 +94,7 @@ fun ConnectedApp(vm:SystemViewModel){
         "coordinator"->"interclub" in permissions||access.any{it.text("role")=="coordinator"}
         else->permission in permissions
     }
-    fun visible(n:Int)=when(n){1->workspace.records("memberships").any{it.text("user_id")==user};3,4,5,6->isMember;2->true;7->allowed("membership");8->allowed("activities");9->isMember||allowed("elections");10->allowed("equipment");11->allowed("training");12->true;13->allowed("reports");14->allowed("administration");15->allowed("partner");else->false}
+    fun visible(n:Int)=when(n){1->workspace.records("memberships").any{it.text("user_id")==user};3,4,5,6->isMember;2->workspace.records("applications").any{it.text("user_id")==user}||(!isMember&&permissions.isEmpty());7->allowed("membership");8->allowed("activities");9->isMember||allowed("elections");10->allowed("equipment");11->allowed("training");12->true;13->allowed("reports");14->allowed("administration");15->allowed("partner");else->false}
     fun push(r:String){stackVar=if(stackVar.isEmpty())r else "$stackVar|$r"}
     fun pop(){stackVar=stackVar.substringBeforeLast('|',"")}
     /** Modules that have a purpose-built workflow screen open it first; its "records" link reaches the generic view. */
