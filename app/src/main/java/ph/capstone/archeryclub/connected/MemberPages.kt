@@ -112,6 +112,26 @@ fun MemberProfilePage(
                 }
                 state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING) }
                 if (state.recovery) recovery()
+                val myRoles = myRoleLines(workspace, Instant.now())
+                if (myRoles.isNotEmpty()) RaisedCard {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(if (myRoles.size == 1) "YOUR ROLE" else "YOUR ROLES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val roleRows = workspace.records("roles").associateBy { it.text("id") }
+                        myRoles.forEach { r ->
+                            val desks = (roleRows[r.assignment.text("role_id")]?.get("permissions") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(r.roleName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                                    Text(r.ends?.let { "Until ${fmtDate(it.atZone(java.time.ZoneId.systemDefault()).toLocalDate())}" }.orEmpty(),
+                                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+                                        color = if (r.state == TermState.ENDING) Club.amberInk else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text(if (desks.isEmpty()) "Opens no desks" else "Opens: " + deskOrder(desks).joinToString(", ") { deskTitle(it) },
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
                 RaisedCard(onClick = { onRoute("profile") }) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,7 +151,7 @@ fun MemberProfilePage(
                     GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
                         trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
                     GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
-                    GroupRow("modules", "All club services", divider = false, onClick = { onPage("modules") })
+                    GroupRow("modules", if (myRoles.isNotEmpty()) "All club records" else "All club services", divider = false, onClick = { onPage("modules") })
                 }
                 SecondaryAction("Refresh records", !state.busy, onClick = onRefresh)
                 OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

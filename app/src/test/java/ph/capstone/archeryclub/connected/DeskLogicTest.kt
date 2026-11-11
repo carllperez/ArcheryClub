@@ -254,4 +254,71 @@ class DeskLogicTest {
         assertTrue(w.single().text.contains("approve fund releases"))
         assertTrue(roleWarnings(roles, "equipment_officer", setOf("equipment", "training", "finance")).isEmpty())
     }
+
+    // ---------------------------------------------------------------- Officer home
+
+    @Test fun deskTilesShowEveryDeskEvenWhenNothingWaits() {
+        val w = ws("borrowings" to listOf(obj("id" to "b1", "status" to "pending", "user_id" to "m1", "equipment_id" to "e1", "starts_at" to "2026-11-14T01:00:00Z", "ends_at" to "2026-11-14T05:00:00Z")),
+            "equipment" to listOf(obj("id" to "e1", "label" to "Recurve 24 lb")), "profiles" to listOf(obj("id" to "m1", "full_name" to "Ana Cruz")))
+        val tiles = deskTiles(w, setOf("training", "equipment"), rolesNow)
+        assertEquals(listOf("Equipment", "Coach desk"), tiles.map { it.title })
+        assertEquals(1, tiles[0].waiting)
+        assertEquals("1 borrowing requests", tiles[0].detail)
+        assertEquals(0, tiles[1].waiting)
+        assertEquals("Check training rounds", tiles[1].detail)
+        assertEquals("training_desk", tiles[1].route)
+        // Fund approval shares the finance desk: one tile, not two.
+        assertEquals(listOf("Finance desk"), deskTiles(ws(), setOf("finance", "president"), rolesNow).map { it.title })
+        val focus = officerFocus(w, setOf("training", "equipment"), rolesNow)!!
+        assertEquals("Ana Cruz", focus.title)
+        assertTrue(focus.detail.startsWith("Recurve 24 lb · from Nov 14"))
+        assertNull(officerFocus(ws(), setOf("equipment"), rolesNow))
+    }
+
+    @Test fun focusPicksTheApplicationWaitingLongest() {
+        val w = ws("applications" to listOf(
+            obj("id" to "a1", "user_id" to "x", "full_name" to "Late Applicant", "status" to "pending", "submitted_at" to "2026-11-11T00:00:00Z"),
+            obj("id" to "a2", "user_id" to "y", "full_name" to "Early Applicant", "status" to "under_review", "submitted_at" to "2026-11-09T00:00:00Z")))
+        val f = officerFocus(w, setOf("membership"), rolesNow)!!
+        assertEquals("Early Applicant", f.title)
+        assertEquals("Review application", f.action)
+        assertTrue(f.detail.contains("1 more"))
+    }
+
+    // ---------------------------------------------------------------- Club setup
+
+    private fun settings(vararg extra: Pair<String, JsonElement>) = JsonObject(mapOf<String, JsonElement>(
+        "club_name" to JsonPrimitive("DLSU Archery Club"), "membership_fee" to JsonPrimitive("800"), "rules_validated" to JsonPrimitive("false"),
+        "retention_policy" to JsonPrimitive("Awaiting club validation"),
+        "membership_categories" to JsonArray(listOf(JsonPrimitive("Undergraduate"))),
+        "application_requirements" to JsonArray(emptyList()), "renewal_requirements" to JsonArray(emptyList())) + extra)
+
+    @Test fun setupChecklistFlagsWhatIsMissingAndWhoOwnsIt() {
+        val lines = setupChecklist(settings()).associateBy { it.key }
+        assertTrue(!lines.getValue("application_requirements").done)
+        assertTrue(!lines.getValue("retention_policy").done)
+        assertTrue(!lines.getValue("payment_details").done)
+        assertEquals("Treasurer · Admin", lines.getValue("payment_details").ownerLabel)
+        assertEquals("Admin", lines.getValue("club_name").ownerLabel)
+        assertTrue(lines.getValue("membership_fee").canEdit(setOf("finance")))
+        assertTrue(!lines.getValue("club_name").canEdit(setOf("finance")))
+        val free = setupChecklist(settings("membership_fee" to JsonPrimitive("0"))).first { it.key == "payment_details" }
+        assertTrue(free.done)
+        val paid = setupChecklist(settings("payment_details" to JsonObject(mapOf("gcash_number" to JsonPrimitive("0917"))))).first { it.key == "payment_details" }
+        assertEquals("GCash 0917", paid.detail)
+    }
+
+    @Test fun configurePayloadKeepsEverythingElse() {
+        val s = settings("rules_validated" to JsonPrimitive("true"))
+        val p = configureClubPayload(s, mapOf("club_name" to JsonPrimitive("New name")))
+        assertEquals("New name", p.text("club_name"))
+        assertEquals("true", p.text("rules_validated")) // editing one part must not un-confirm the rules
+        assertEquals("Undergraduate", (p["membership_categories"] as JsonArray).map { (it as JsonPrimitive).content }.single())
+        assertEquals("Awaiting club validation", p.text("retention_policy"))
+    }
+
+    @Test fun suggestionsSkipWhatTheClubAlreadyHas() {
+        assertEquals(listOf("Graduate", "Alumni", "Faculty/Staff"), setupSuggestions("membership_categories", listOf("undergraduate")))
+        assertTrue(setupSuggestions("club_name", emptyList()).isEmpty())
+    }
 }

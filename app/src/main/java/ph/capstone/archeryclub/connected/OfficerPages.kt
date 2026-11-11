@@ -20,6 +20,8 @@ import java.time.LocalTime
 /* Officer home: what needs me today, what is happening now, and the club at a glance. */
 
 private fun queueIcon(route: String) = when {
+    route == "training_desk" -> "target"; route == "finance_desk" -> "money"; route == "elections" -> "vote"; route == "reports" -> "chart"
+    route == "interclub" -> "users"; route == "admin" -> "settings"
     route == "applications" -> "doc"; route == "name_corrections" -> "profile"; route == "module:7" || route == "records:7" -> "users"
     route == "equipment" -> "box"; route == "module:8" || route == "records:8" || route == "officer_activities" -> "calendar"
     route == "module:11" -> "target"; route == "module:12" -> "money"; route == "module:14" -> "settings"
@@ -41,85 +43,108 @@ fun roleLabel(permissions: Set<String>) = when {
 fun OfficerHome(
     workspace: JsonObject, permissions: Set<String>, fullName: String, state: SystemState, snackbar: SnackbarHostState,
     bottomBar: @Composable () -> Unit, onRoute: (String) -> Unit, onAnnouncement: () -> Unit, onRefresh: () -> Unit, recovery: @Composable () -> Unit,
+    isMember: Boolean = false, onPage: (String) -> Unit = {}, onModule: (Int) -> Unit = {},
 ) {
     val now = Instant.now()
-    val queues = officerQueues(workspace, permissions, now).filter { it.count > 0 }
-        .sortedByDescending { if (it.tone == Tone.DANGER) 1000 + it.count else it.count }
-    val total = queues.sumOf { it.count }
-    val members = workspace.records("member_directory").count { it.text("status") == "Active" }
+    val desks = deskTiles(workspace, permissions, now)
+    val focus = officerFocus(workspace, permissions, now)
+    val total = desks.sumOf { it.waiting }
+    val roles = myRoleLines(workspace, now)
+    val pill = roles.firstOrNull()?.let { r ->
+        r.roleName.substringBefore(" / ").uppercase() + if (roles.size > 1) " +${roles.size - 1}" else ""
+    } ?: roleLabel(permissions)
     val events = workspace.records("events").filter { it.text("published") == "true" && it.text("archived") != "true" }.map { activityView(it, workspace, now) }
     val upcoming = events.filter { it.end?.isAfter(now) == true }.sortedBy { it.start }
-    val past30 = events.filter { it.end?.isBefore(now) == true && it.end.isAfter(now.minusSeconds(30 * 86400L)) }
-    val rate30 = attendanceRate(past30.sumOf { it.present }, past30.sumOf { it.registered }, past30.sumOf { it.excused })
-    val week = upcoming.count { it.start?.isBefore(now.plusSeconds(7 * 86400L)) == true }
     HeroScaffold("${greetingFor(LocalTime.now().hour)}, ${firstName(fullName)}", snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
-        eyebrow = { Pill(roleLabel(permissions), Club.lime, Club.forestDeep) },
+        eyebrow = { Pill(pill, Club.lime, Club.forestDeep) },
         heroExtra = {
-            Text(if (total == 0) "You're all caught up" else "$total thing${if (total == 1) "" else "s"} need you today",
+            Text(if (total == 0) "Nothing waiting on your desks" else "$total thing${if (total == 1) "" else "s"} need${if (total == 1) "s" else ""} you today",
                 style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = .9f))
-            HeroStats(listOf("$members" to "Active members", "$week" to "This week", (rate30?.let { "$it%" } ?: "—") to "Attendance 30d"))
         }) {
         state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING); SecondaryAction("Try again", !state.busy, onRefresh) }
         if (state.recovery) recovery()
 
-        // The session that matters most right now: in progress, else the next one.
-        val focus = upcoming.firstOrNull { it.start?.isBefore(now) == true } ?: upcoming.firstOrNull()
-        if (focus != null && "activities" in permissions) {
-            val live = focus.start?.isBefore(now) == true
-            RaisedCard(onClick = { onRoute("activity:${focus.id}") }) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (live) "HAPPENING NOW" else "NEXT SESSION", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        Pill(if (live) "Live" else countdownLabel(focus.start), Club.amberSoft, Club.amberInk)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        DateBlock(focus.start)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(focus.event.text("title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("${fmtTime(focus.start)} · ${focus.event.text("venue")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (focus.capacity > 0) SlotBar(focus.registered, focus.capacity)
-                            Text(if (live) "${focus.present} of ${focus.registered} checked in" else "${focus.registered} of ${focus.capacity} registered",
-                                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                    PillButton(if (live) "Take attendance" else "Manage participants", { onRoute("activity:${focus.id}|roster:${focus.id}") })
+        // The one thing to do first, across every desk this person has.
+        focus?.let { f ->
+            RaisedCard(onClick = { onRoute(f.route) }) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(f.eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(f.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(f.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PillButton(f.action, { onRoute(f.route) })
                 }
             }
         }
 
-        if (queues.isEmpty()) EmptyState("You're all caught up", "Requests from members appear here as soon as they're submitted.")
-        else {
-            SectionHeader("Needs your action")
-            queues.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    pair.forEach { q -> QueueTile(q, Modifier.weight(1f).fillMaxHeight()) { onRoute(q.route) } }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+        // The session that matters most right now, for whoever runs activities.
+        val session = upcoming.firstOrNull { it.start?.isBefore(now) == true } ?: upcoming.firstOrNull()
+        if (session != null && "activities" in permissions) {
+            val live = session.start?.isBefore(now) == true
+            RaisedCard(onClick = { onRoute("activity:${session.id}") }) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (live) "HAPPENING NOW" else "NEXT SESSION", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Pill(if (live) "Live" else countdownLabel(session.start), Club.amberSoft, Club.amberInk)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        DateBlock(session.start)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(session.event.text("title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text("${fmtTime(session.start)} · ${session.event.text("venue")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (session.capacity > 0) SlotBar(session.registered, session.capacity)
+                            Text(if (live) "${session.present} of ${session.registered} checked in" else "${session.registered} of ${session.capacity} registered",
+                                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    PillButton(if (live) "Take attendance" else "Manage participants", { onRoute("activity:${session.id}|roster:${session.id}") })
                 }
             }
         }
-        if ("activities" in permissions) {
-            SectionHeader("Upcoming activities", "See all") { onRoute("officer_activities") }
-            if (upcoming.isEmpty()) EmptyState("No published activities", "Create one and publish it so members can register.", "Create activity") { onRoute("officer_activities") }
-            upcoming.drop(if (focus != null) 1 else 0).take(3).forEach { ActivityCard(it, { onRoute("activity:${it.id}") }, officer = true) }
-            SecondaryAction("Post an announcement", !state.busy, onAnnouncement)
+
+        SectionHeader("Your desks")
+        if (desks.isEmpty()) EmptyState("No desks yet", "An administrator can choose what your role opens in Roles & access.")
+        desks.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                pair.forEach { d -> DeskTileCard(d, Modifier.weight(1f).fillMaxHeight()) { onRoute(d.route) } }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        if ("activities" in permissions) SecondaryAction("Post an announcement", !state.busy, onAnnouncement)
+
+        // Officers are members too: their own sessions, training and dues stay one tap away.
+        if (isMember) {
+            SectionHeader("As a member")
+            val user = workspace.text("user_id")
+            landingEvents(workspace, registeredOnly = true).firstOrNull()?.let { e ->
+                val v = activityView(e, workspace, now)
+                HomeRow("calendar", e.text("title"), "${fmtDay(v.start)} · ${fmtTime(v.start)} · ${v.status.label}") { onRoute("activity:${e.text("id")}") }
+            } ?: HomeRow("calendar", "Activities", "Register for a session") { onPage("activities") }
+            HomeRow("target", "My training", scoreCards(workspace, user).firstOrNull()?.let { "Last round ${it.scoreLabel} · ${it.state.label}" } ?: "Log rounds, get coach feedback") { onModule(4) }
+            val owed = amountOwed(feeViews(workspace, user, java.time.LocalDate.now()))
+            if (owed > 0) HomeRow("money", "Payments", "${peso(owed)} due") { onModule(12) }
+            featuredElection(workspace.records("elections"), false)?.takeIf { it.text("status") in setOf("announced", "voting") }?.let { e ->
+                HomeRow("vote", e.text("title"), if (e.text("status") == "voting") "Voting open" else "Candidacy open") { onModule(9) }
+            }
         }
     }
 }
 
 @Composable
-private fun QueueTile(q: QueueItem, modifier: Modifier, onClick: () -> Unit) {
-    val danger = q.tone == Tone.DANGER
+private fun DeskTileCard(d: DeskTile, modifier: Modifier, onClick: () -> Unit) {
     RaisedCard(modifier, radius = 18.dp, onClick = onClick) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.size(38.dp).clip(CircleShape).background(if (danger) Club.roseSoft else Club.mint), contentAlignment = Alignment.Center) {
-                    ClubIcon(queueIcon(q.route), Modifier.size(19.dp), if (danger) Club.roseInk else Club.forest)
+                Box(Modifier.size(38.dp).clip(CircleShape).background(if (d.urgent) Club.roseSoft else Club.mint), contentAlignment = Alignment.Center) {
+                    ClubIcon(queueIcon(d.route), Modifier.size(19.dp), if (d.urgent) Club.roseInk else Club.forest)
                 }
                 Spacer(Modifier.weight(1f))
-                Text("${q.count}", style = MaterialTheme.typography.headlineSmall, color = if (danger) Club.roseInk else MaterialTheme.colorScheme.onSurface)
+                if (d.waiting > 0) Box(Modifier.size(24.dp).clip(CircleShape).background(Club.roseInk), contentAlignment = Alignment.Center) {
+                    Text("${d.waiting}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, color = androidx.compose.ui.graphics.Color.White)
+                }
             }
-            Text(q.label, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(d.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+            Text(d.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

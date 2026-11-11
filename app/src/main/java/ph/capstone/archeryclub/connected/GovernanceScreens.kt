@@ -259,39 +259,26 @@ private fun termSeed(): JsonObject {
 }
 
 @Composable
-fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onRecords: () -> Unit) {
+fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
-    val setup = clubSetup(settings, strings(settings, "application_requirements"), strings(settings, "membership_categories"))
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val log = workspace.records("audit_log").sortedByDescending { it.text("created_at") }.take(6)
     ph.capstone.archeryclub.ui.ScreenShell("Administration", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Club setup has its own screen; here, just how far along it is and what is still missing.
+        val lines = setupChecklist(settings)
+        val done = lines.count { it.done }
+        RaisedCard(onClick = onSetup) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("CLUB SETUP", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                val done = setup.count { it.done }
-                StatusPill("$done of ${setup.size} done", if (done == setup.size) Tone.POSITIVE else Tone.WARNING)
+                StatusPill("$done of ${lines.size} done", if (done == lines.size) Tone.POSITIVE else Tone.WARNING)
             }
-            setup.forEach { item ->
-                val action: (() -> Unit)? = when {
-                    item.title == "Membership fee" -> if ("finance" in permissions) ({ onStart("set_membership_fee", buildJsonObject { put("amount", settings?.text("membership_fee").orEmpty()) }) }) else null
-                    settings != null -> ({ onStart("configure_club", settings) })
-                    else -> null
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(if (item.done) Club.forest else Color.Transparent)
-                        .border(2.dp, if (item.done) Club.forest else Color(0xFFB26B00), CircleShape), contentAlignment = Alignment.Center) {
-                        if (item.done) ClubIcon("check", Modifier.size(14.dp), Color.White)
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, style = MaterialTheme.typography.titleSmall)
-                        Text(item.detail, style = MaterialTheme.typography.bodySmall, color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else Club.amberInk)
-                    }
-                    if (action != null) TextButton(onClick = action, enabled = !busy) { Text(if (item.done) "Edit" else "Set up", fontWeight = FontWeight.ExtraBold) }
-                }
+            lines.filter { !it.done }.take(3).forEach { l ->
+                Text("• ${l.title}: ${l.detail}", style = MaterialTheme.typography.bodySmall, color = Club.amberInk, fontWeight = FontWeight.Bold)
             }
-            if ("finance" !in permissions) Text("The treasurer sets the membership fee.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (done == lines.size) Text("Everything is set. Edit any part from Club setup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PillButton("Open club setup", onSetup)
         } }
         DeskLabel("Officers and terms", "+ Assign role") { onStart("assign_role", termSeed()) }
         if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")

@@ -111,8 +111,9 @@ fun ClubLanding(
     }
     // Until the membership is active, Home is the application: no Services tab (bylaws: club services are for members).
     val applicant=!staff&&!isMember&&!hasModule(15)
-    val tabs=if(memberHome)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
-        else if(applicant)listOf("home" to "Home","account" to "Profile")
+    // Officers who are members keep the member tabs; their desks live on Home. Officers without a membership get Home and Profile.
+    val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","gear" to "Gear","account" to "Profile")
+        else if(applicant||staff)listOf("home" to "Home","account" to "Profile")
         else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
         ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
@@ -132,21 +133,21 @@ fun ClubLanding(
         MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery)
         return
     }
-    if(memberHome&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
-    if(memberHome&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
+    if(isMember&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
+    if(isMember&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
     if(staff&&page=="home"){
-        OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery)
+        OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery,isMember,onPage,onModule)
         return
     }
     if(applicant&&page!="notices"){
         ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery,vm)
         return
     }
-    if(memberHome&&page=="account"){
+    if(isMember&&page=="account"){
         MemberProfilePage(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onScan,onRefresh,onSignOut,recovery)
         return
     }
-    ScreenShell(title,snackbar=snackbar,onBack=if(page=="notices" || (page=="modules"&&memberHome)){{onPage("home")}}else null,
+    ScreenShell(title,snackbar=snackbar,onBack=if(page=="notices" || (page=="modules"&&(isMember||staff))){{onPage("home")}}else null,
         actions={
             TextButton(onClick={onPage("account")},modifier=Modifier.padding(end=8.dp).semantics{contentDescription="Open account"}) {
                 Surface(shape=CircleShape,color=MaterialTheme.colorScheme.surfaceContainer) {
@@ -186,9 +187,9 @@ fun ClubLanding(
                 Column {
                     if(hasModule(1))QuietRow("My profile","Contact, emergency contact, archery details and membership"){onRoute("profile")}
                     if(isMember)QuietRow("Equipment","Browse the catalog and track your borrowings"){onPage("gear")}
-                    if(hasModule(2))QuietRow("My application","Submission and screening status"){onModule(2)}
+                    if(hasModule(2)&&membership==null)QuietRow("My application","Submission and screening status"){onModule(2)}
                     QuietRow("Notices","${notices.size} to review"){onPage("notices")}
-                    QuietRow("All modules","Browse your available services"){onPage("modules")}
+                    QuietRow(if(staff)"All club records" else "All modules",if(staff)"Every module, for anything not on your desks" else "Browse your available services"){onPage("modules")}
                     if(isMember||"equipment" in permissions)QuietRow("Scan club code","Attendance, activities and equipment"){onScan()}
                 }
                 val settings=workspace.records("settings").firstOrNull()

@@ -71,12 +71,22 @@ fun WorkflowRoute(
         "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
-        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }) { onGo("records:14") }
+        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "roles" -> if (allowed("administration")) RolesScreen(workspace, busy, snackbar, onBack) { onPush("role:$it") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "role" -> if (allowed("administration")) RoleEditScreen(workspace, id, busy, snackbar, vm, onBack)
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "club_setup" -> if (allowed("administration")) ClubSetupScreen(workspace, busy, snackbar, perms, onBack) { onPush(it) }
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "setup_list" -> if (allowed("administration")) SetupListScreen(workspace, id, busy, snackbar, onBack, onCommand)
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "setup_text" -> if (allowed("administration")) SetupTextScreen(workspace, id, busy, snackbar, onBack, onCommand)
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "setup_confirm" -> if (allowed("administration")) SetupConfirmScreen(workspace, busy, snackbar, onBack, onCommand)
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "setup_fees" -> if (allowed("administration") || allowed("finance")) SetupFeesScreen(workspace, busy, snackbar, perms, vm, onBack, onCommand)
+            else denied("Treasurer or administrators only", "Your current role can't change fees or payment details.")
         "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onStart) { onGo("records:15") }
         else -> ScreenShell("Not found", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }
     }
