@@ -68,6 +68,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
     var ref by rememberSaveable(payment?.text("id")) { mutableStateOf(payment?.text("reference").orEmpty()) }
     var tried by remember { mutableStateOf(false) }
     var pickAfterSave by rememberSaveable { mutableStateOf(false) }
+    var sendAfterSave by rememberSaveable { mutableStateOf(false) }
     var confirmSend by remember { mutableStateOf(false) }
     val current by rememberUpdatedState(payment)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -76,20 +77,22 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
     }
     // A screenshot needs a saved payment to attach to: save the reference, wait for the refresh, then open the picker.
     LaunchedEffect(payment?.text("id"), payment?.text("reference")) {
-        if (pickAfterSave && payment != null && payment.text("reference") == receiptReference(ref)) {
-            pickAfterSave = false; picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf"))
+        if (payment != null && payment.text("reference") == receiptReference(ref)) {
+            if (pickAfterSave) { pickAfterSave = false; picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
+            if (sendAfterSave) { sendAfterSave = false; confirmSend = true }
         }
     }
-    fun save(thenPick: Boolean) {
+    fun save(thenPick: Boolean, thenSend: Boolean = false) {
         val clean = receiptReference(ref) ?: run { tried = true; return }
-        pickAfterSave = thenPick
+        pickAfterSave = thenPick; sendAfterSave = thenSend
         vm.command("save_financial_request", buildJsonObject {
             payment?.let { p -> put("id", p.text("id")); p.text("version").toLongOrNull()?.let { put("version", it) } }
             put("kind", "payment"); put("purpose", fee.fee.text("purpose")); put("amount", fee.fee.text("amount")); put("reference", clean)
         })
     }
     val action = payAction(ref, payment, proof.isNotEmpty())
-    fun screenshot() { if (action == PayAction.SAVE_REFERENCE || payment == null) save(thenPick = true) else picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
+    // Replacing a screenshot never needs the reference saved again; a first upload needs a saved payment to attach to.
+    fun screenshot() { if (payment == null) save(thenPick = true) else picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
 
     if (step == PayStep.CHECKING) {
         RaisedCard {
@@ -156,18 +159,23 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                     Text(doc.text("name"), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f), maxLines = 1,
                         color = if (step == PayStep.RETURNED) Club.roseInk else Club.forestDeep)
                     TextButton(onClick = { openPrivate(vm, context, doc.text("path")) }) { Text("Open") }
-                    TextButton(onClick = { screenshot() }, enabled = !busy && receiptReference(ref) != null) { Text("Replace", fontWeight = FontWeight.ExtraBold) }
+                    TextButton(onClick = { screenshot() }, enabled = !busy) { Text("Replace", fontWeight = FontWeight.ExtraBold) }
                 } else {
                     CardButton("Upload screenshot", Modifier.fillMaxWidth(), primary = action == PayAction.UPLOAD_PROOF, enabled = !busy && receiptReference(ref) != null) { screenshot() }
-                    if (receiptReference(ref) == null) Text("Enter the reference number first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
+            // One button: a changed reference is saved on the way, then the send is confirmed.
+            val sendLabel = if (step == PayStep.RETURNED) "Resend for checking" else "Send for checking"
             when (action) {
-                PayAction.SAVE_REFERENCE -> if (payment != null) StickyLike("Save reference number", !busy) { save(thenPick = false) }
-                    else StickyLike("Send for checking", false) {}
-                PayAction.SEND -> StickyLike(if (step == PayStep.RETURNED) "Resend for checking" else "Send for checking", !busy) { confirmSend = true }
-                else -> StickyLike("Send for checking", false) {}
+                PayAction.SAVE_REFERENCE -> if (proof.isNotEmpty()) StickyLike(sendLabel, !busy) { save(thenPick = false, thenSend = true) }
+                    else StickyLike(sendLabel, false) {}
+                PayAction.SEND -> StickyLike(sendLabel, !busy) { confirmSend = true }
+                else -> StickyLike(sendLabel, false) {}
+            }
+            when {
+                receiptReference(ref) == null -> Text("Enter the reference number to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                proof.isEmpty() -> Text("Upload the screenshot to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

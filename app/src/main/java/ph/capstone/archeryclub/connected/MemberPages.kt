@@ -229,10 +229,7 @@ fun ApplicantHome(
                 }
             }
         }
-        RowGroup {
-            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft, divider = false,
-                trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
-        }
+        // Notices live in Profile (its tab shows the count), so Home keeps only the application.
         if (view.stage != ApplicationStage.NOT_STARTED && (pendingPayment || !view.stage.editable))
             TextButton(onClick = { onModule(2) }, modifier = Modifier.fillMaxWidth()) { Text("View what I submitted") }
     }
