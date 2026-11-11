@@ -194,4 +194,64 @@ class DeskLogicTest {
         assertEquals("You pay the ₱800 membership fee", steps[1].title)
         assertEquals("No membership fee", waitingSteps(view, 0.0)[1].title)
     }
+
+    // ---------------------------------------------------------------- Roles & access
+
+    private fun role(id: String, name: String, perms: List<String>, defaults: List<String>? = null) = JsonObject(buildMap {
+        put("id", JsonPrimitive(id)); put("name", JsonPrimitive(name))
+        put("permissions", JsonArray(perms.map { JsonPrimitive(it) }))
+        if (defaults != null) put("default_permissions", JsonArray(defaults.map { JsonPrimitive(it) }))
+    })
+
+    private val rolesNow = Instant.parse("2026-11-12T00:00:00Z")
+    private fun rolesWorkspace() = ws(
+        "roles" to listOf(role("equipment_officer", "Armorer", listOf("training", "equipment"), listOf("equipment")),
+            role("president", "President", listOf("president"), listOf("president")),
+            role("administrator", "Administrator", listOf("administration"), listOf("administration")),
+            role("range_marshal", "Range marshal", emptyList())),
+        "role_assignments" to listOf(
+            obj("id" to "1", "user_id" to "a", "role_id" to "equipment_officer", "starts_at" to "2026-01-01T00:00:00Z", "ends_at" to "2027-06-30T00:00:00Z"),
+            obj("id" to "2", "user_id" to "b", "role_id" to "equipment_officer", "starts_at" to "2026-01-01T00:00:00Z", "ends_at" to "2027-06-30T00:00:00Z"),
+            obj("id" to "3", "user_id" to "c", "role_id" to "equipment_officer", "starts_at" to "2026-01-01T00:00:00Z", "ends_at" to "2026-02-01T00:00:00Z"),
+            obj("id" to "4", "user_id" to "a", "role_id" to "president", "starts_at" to "2026-01-01T00:00:00Z", "ends_at" to "2027-06-30T00:00:00Z", "retired_at" to "2026-03-01T00:00:00Z"),
+            obj("id" to "5", "user_id" to "d", "role_id" to "administrator", "starts_at" to "2026-01-01T00:00:00Z", "ends_at" to "2027-06-30T00:00:00Z")),
+        "profiles" to listOf(obj("id" to "a", "full_name" to "Ana Cruz"), obj("id" to "b", "full_name" to "Ben Uy"), obj("id" to "d", "full_name" to "Dee Lim")))
+
+    @Test fun roleViewsCountOnlyCurrentHoldersAndKeepDeskOrder() {
+        val roles = roleViews(rolesWorkspace(), rolesNow)
+        val armorer = roles.first()
+        assertEquals("equipment_officer", armorer.id)
+        assertEquals(listOf("Ana Cruz", "Ben Uy"), armorer.holders)
+        assertEquals(listOf("equipment", "training"), armorer.permissions)
+        assertTrue(armorer.changedFromDefault)
+        assertEquals(emptyList<String>(), roles.first { it.id == "president" }.holders)
+        assertNull(roles.first { it.id == "range_marshal" }.defaults)
+    }
+
+    @Test fun roleIdsComeFromTheNameAndNeverClash() {
+        assertEquals("range_marshal", roleIdFrom("  Range Marshal! ", emptySet()))
+        assertEquals("range_marshal_2", roleIdFrom("Range marshal", setOf("range_marshal")))
+        assertEquals("role_2nd_coach", roleIdFrom("2nd coach", emptySet()))
+        assertEquals("role", roleIdFrom("!!", emptySet()))
+    }
+
+    @Test fun roleChangeListsAddedAndRemovedDesks() {
+        val c = roleChange(listOf("equipment"), setOf("training", "activities"))
+        assertEquals(listOf("activities", "training"), c.added)
+        assertEquals(listOf("equipment"), c.removed)
+        assertTrue(roleChange(listOf("equipment"), setOf("equipment")).none)
+    }
+
+    @Test fun warningsOnlyWhenADeskIsLeftWithNobody() {
+        val roles = roleViews(rolesWorkspace(), rolesNow)
+        val admin = roleWarnings(roles, "administrator", emptySet())
+        assertEquals(Severity.BLOCK, admin.single().severity)
+        // Nobody holds President right now, so removing Fund approval breaks nothing new.
+        assertTrue(roleWarnings(roles, "president", emptySet()).isEmpty())
+        val held = roleViews(rolesWorkspace(), rolesNow).map { if (it.id == "equipment_officer") it.copy(permissions = listOf("equipment", "president")) else it }
+        val w = roleWarnings(held, "equipment_officer", setOf("equipment"))
+        assertEquals(Severity.WARN, w.single().severity)
+        assertTrue(w.single().text.contains("approve fund releases"))
+        assertTrue(roleWarnings(roles, "equipment_officer", setOf("equipment", "training", "finance")).isEmpty())
+    }
 }

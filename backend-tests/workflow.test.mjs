@@ -645,3 +645,22 @@ test('A role is held once; renewing is allowed only near the end of the term',as
  await db.query("update app_private.role_assignments set ends_at=now()+interval '10 days' where user_id=$1 and role_id='reports_officer'",[ids.successor]);
  await command('admin','assign_role',{user_id:ids.successor,role_id:'reports_officer',position:'Reports officer',ends_at:'2036-01-01',reason:'Renewed term'});
 });
+
+test('Each club picks the desks a role opens; the last Administrator cannot lose Administration',async()=>{
+ const save=(who,id,name,perms,isNew)=>rpc(who,'save_role',[id,name,perms,isNew],'$1,$2,$3::text[],$4');
+ const can=async(person,p)=>{await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[person]]);return (await db.query('select app_private.can($1) as ok',[p])).rows[0].ok;};
+ await grant('successor','equipment_officer');
+ assert.equal(await can('successor','training'),false);
+ await denied(()=>save('applicant','equipment_officer','Armorer',['equipment','training'],false),/Permission/);
+ await save('admin','equipment_officer','Armorer',['equipment','training','activities','training'],false);
+ assert.equal(await can('successor','training'),true,'holders get the new desk right away');
+ assert.deepEqual((await db.query("select permissions from app_private.roles where id='equipment_officer'")).rows[0].permissions,['activities','equipment','training']);
+ await denied(()=>save('admin','range_marshal','armorer',['equipment'],true),/already exists/);
+ await denied(()=>save('admin','range_marshal','Range marshal',['catering'],true),/Unknown desk/);
+ await save('admin','range_marshal','Range marshal',['activities'],true);
+ await denied(()=>save('admin','administrator','Administrator',['reports'],false),/keep Administration/);
+ await rpc('admin','reset_role',['equipment_officer'],'$1');
+ assert.deepEqual((await db.query("select name,permissions from app_private.roles where id='equipment_officer'")).rows[0].permissions,['equipment']);
+ assert.equal(await can('successor','training'),false);
+ await denied(()=>rpc('admin','reset_role',['range_marshal'],'$1'),/no default/);
+});

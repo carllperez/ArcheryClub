@@ -320,3 +320,81 @@ fun partnerViews(workspace: JsonObject, eventId: String): List<PartnerView> {
     }.sortedBy { it.partner.text("name") }
 }
 fun delegateTone(status: String) = when (status) { "eligible", "checked_in" -> Tone.POSITIVE; "pending" -> Tone.WARNING; "incomplete", "rejected" -> Tone.DANGER; else -> Tone.NEUTRAL }
+
+// ---------------------------------------------------------------- Roles & access (M14)
+
+/** A desk a role can open: the server permission behind it and how officers know it. */
+data class Desk(val permission: String, val title: String, val detail: String)
+val DESKS = listOf(
+    Desk("membership", "Applications", "Review applicants and renewals"),
+    Desk("activities", "Events & attendance", "Post events, take attendance"),
+    Desk("elections", "Elections", "Run elections and terms"),
+    Desk("equipment", "Equipment", "Inventory and borrowing"),
+    Desk("training", "Coach desk", "Check training rounds"),
+    Desk("finance", "Finance desk", "Verify payments, set fees"),
+    Desk("president", "Fund approval", "Approve fund releases"),
+    Desk("reports", "Reports & goals", "Club goals and dashboards"),
+    Desk("interclub", "Partner clubs", "Interclub events"),
+    Desk("administration", "Administration", "Settings, roles, accounts"),
+)
+fun deskTitle(permission: String): String = DESKS.find { it.permission == permission }?.title ?: human(permission)
+/** Desks in the fixed DESKS order, so chips and summaries always read the same way. */
+fun deskOrder(permissions: Collection<String>): List<String> = DESKS.map { it.permission }.filter { it in permissions }
+
+private fun JsonObject.stringList(key: String): List<String>? =
+    (this[key] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+
+data class RoleView(val id: String, val name: String, val permissions: List<String>, val defaults: List<String>?, val holders: List<String>) {
+    val changedFromDefault get() = defaults != null && defaults.toSet() != permissions.toSet()
+}
+
+/** Every role with its desks and the people holding it right now (active, not retired), most-held first. */
+fun roleViews(workspace: JsonObject, now: Instant): List<RoleView> {
+    val live = workspace.records("role_assignments").filter { a ->
+        a.text("retired_at").isBlank() && (a.instant("starts_at")?.let { !it.isAfter(now) } ?: true) && (a.instant("ends_at")?.isAfter(now) ?: true)
+    }
+    return workspace.records("roles").map { r ->
+        val id = r.text("id")
+        RoleView(id, r.text("name").ifBlank { human(id) }, deskOrder(r.stringList("permissions").orEmpty()), r.stringList("default_permissions")?.let(::deskOrder),
+            live.filter { it.text("role_id") == id }.map { it.text("user_id") }.distinct().map { memberName(workspace, it) }.sorted())
+    }.sortedWith(compareByDescending<RoleView> { it.holders.size }.thenBy { it.name.lowercase() })
+}
+
+/** "Range marshal" -> "range_marshal"; never clashes with an existing id. */
+fun roleIdFrom(name: String, existing: Set<String>): String {
+    var base = name.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_').take(60)
+    if (base.isEmpty() || !base[0].isLetter()) base = "role_$base".trimEnd('_')
+    if (base.length < 2) base = "role"
+    var id = base; var n = 2
+    while (id in existing) id = "${base}_${n++}"
+    return id
+}
+
+data class RoleChange(val added: List<String>, val removed: List<String>) { val none get() = added.isEmpty() && removed.isEmpty() }
+fun roleChange(before: Collection<String>, after: Collection<String>) = RoleChange(deskOrder(after - before.toSet()), deskOrder(before - after.toSet()))
+
+/** What a save would break. BLOCK stops the save (the server refuses it too); WARN lets the club decide. */
+enum class Severity { WARN, BLOCK }
+data class RoleWarning(val text: String, val severity: Severity)
+
+private val CRITICAL = linkedMapOf(
+    "administration" to "Nobody would have Administration, so nobody could manage roles again. Give another role Administration first.",
+    "president" to "No role will be able to approve fund releases. The bylaws need the President and Treasurer to approve reimbursements, so requests will wait until a role has Fund approval again.",
+    "finance" to "No role will be able to verify payments, so applicants can't finish joining.",
+    "membership" to "No role will be able to review applications.",
+    "elections" to "No role will be able to run elections.",
+)
+
+/** Desks this change leaves with nobody to use them. Only desks someone currently holds count, so an unused desk never warns. */
+fun roleWarnings(roles: List<RoleView>, roleId: String, after: Collection<String>): List<RoleWarning> {
+    val role = roles.find { it.id == roleId } ?: return emptyList()
+    val removed = role.permissions - after.toSet()
+    return CRITICAL.filterKeys { it in removed }.mapNotNull { (p, text) ->
+        val stillHeld = roles.any { it.id != roleId && p in it.permissions && it.holders.isNotEmpty() }
+        when {
+            stillHeld || role.holders.isEmpty() -> null
+            p == "administration" -> RoleWarning(text, Severity.BLOCK)
+            else -> RoleWarning(text, Severity.WARN)
+        }
+    }
+}
