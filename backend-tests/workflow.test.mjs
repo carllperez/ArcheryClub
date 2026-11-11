@@ -732,3 +732,13 @@ test('Delete only what can safely go; official records stay',async()=>{
  await rpc('admin','delete_role',['temp_role'],'$1');
  await denied(()=>rpc('admin','delete_role',['president'],'$1'),/Built-in/);
 });
+
+test('A whole training goes to the coach at once',async()=>{
+ const save=(d)=>rpc('successor','save_round',['save_personal_training',JSON.stringify({training_date:'2026-11-12',distance:30,target_face:'WA Full (40cm)',category:'Recurve',scoring_format:'Practice',arrows:{ends:[[{p:d}]],session:{session_id:'s-demo',title:'Capstone App Demo'}}}),false],'$1,$2::jsonb,$3');
+ const a=await save('X'),b=await save('9');
+ await denied(()=>rpc('applicant','submit_training_session',[[a.id,b.id]],'$1::uuid[]'));
+ const out=await rpc('successor','submit_training_session',[[a.id,b.id]],'$1::uuid[]');
+ assert.equal(out.sent,2);
+ assert.equal((await row('training_records',a.id)).validation,'pending');assert.equal((await row('training_records',b.id)).validation,'pending');
+ assert.equal((await row('training_records',a.id)).arrows.session.session_id,'s-demo');
+});

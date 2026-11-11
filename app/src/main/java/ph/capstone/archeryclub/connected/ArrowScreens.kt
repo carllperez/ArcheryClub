@@ -4,7 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -76,35 +79,50 @@ fun EndsCard(ends: List<List<Arrow>>, onEnd: ((Int) -> Unit)? = null) {
     }
 }
 
-/** The target face with every arrow that has a position, and the group centre as a lime cross. */
+/** Rings and hits, shared by the face and the magnifying loupe. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFace(c: Offset, r: Float, placed: List<Arrow>) {
+    // Ten scoring rings from the outside in: white, white, black, black, blue, blue, red, red, gold, gold.
+    listOf(Color.White, Color.White, RingBlack, RingBlack, RingBlue, RingBlue, RingRed, RingRed, Gold, Gold).forEachIndexed { i, col ->
+        val rr = r * (10 - i) / 10f
+        drawCircle(col, rr, c)
+        drawCircle(if (col == RingBlack) Color(0xFF5A5F5C) else Color(0xFF9AA39D), rr, c, style = Stroke(1f))
+    }
+    drawCircle(Color(0xFF9AA39D), r * 0.05f, c, style = Stroke(1f))
+    placed.forEach { a ->
+        val p = Offset(c.x + r * a.x!!.toFloat(), c.y + r * a.y!!.toFloat())
+        val onDark = a.points in 3..6
+        drawCircle(if (onDark) Color.White else Ink, r * 0.035f, p)
+        drawCircle(Ink, r * 0.035f, p, style = Stroke(1f))
+    }
+}
+
+/** The target face with every arrow that has a position, and the group centre as a lime cross.
+ *  With [onTap], press and hold to place an arrow: a loupe magnifies the spot under the finger, and lifting drops it there. */
 @Composable
 fun TargetPlot(ends: List<List<Arrow>>, size: Dp, showSpread: Boolean = false, onTap: ((Double, Double) -> Unit)? = null) {
     val placed = ends.flatten().filter { it.x != null && it.y != null && it.p != "M" }
     val centre = roundStats(ends).centre
     val spread = if (showSpread) groupSpread(ends.flatten()) else null
-    // The tap handler is set up once; reading the latest callback keeps each tap adding to the current end.
+    // The gesture handler is set up once; reading the latest callback keeps each arrow going into the current end.
     val latestTap by rememberUpdatedState(onTap)
+    var finger by remember { mutableStateOf<Offset?>(null) }
     val tap = if (onTap == null) Modifier else Modifier.pointerInput(Unit) {
-        detectTapGestures { o ->
+        awaitEachGesture {
+            val down = awaitFirstDown()
+            var last = down.position; finger = last
+            while (true) {
+                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+                last = change.position; finger = last; change.consume()
+            }
+            finger = null
             val r = this.size.width.coerceAtMost(this.size.height) / 2f * 0.96f
-            latestTap?.invoke(((o.x - this.size.width / 2f) / r).toDouble(), ((o.y - this.size.height / 2f) / r).toDouble())
+            latestTap?.invoke(((last.x - this.size.width / 2f) / r).toDouble(), ((last.y - this.size.height / 2f) / r).toDouble())
         }
     }
     Canvas(Modifier.size(size).then(tap)) {
         val c = Offset(this.size.width / 2, this.size.height / 2); val r = this.size.minDimension / 2 * 0.96f
-        // Ten scoring rings from the outside in: white, white, black, black, blue, blue, red, red, gold, gold.
-        listOf(Color.White, Color.White, RingBlack, RingBlack, RingBlue, RingBlue, RingRed, RingRed, Gold, Gold).forEachIndexed { i, col ->
-            val rr = r * (10 - i) / 10f
-            drawCircle(col, rr, c)
-            drawCircle(if (col == RingBlack) Color(0xFF5A5F5C) else Color(0xFF9AA39D), rr, c, style = Stroke(1f))
-        }
-        drawCircle(Color(0xFF9AA39D), r * 0.05f, c, style = Stroke(1f))
-        placed.forEach { a ->
-            val p = Offset(c.x + r * a.x!!.toFloat(), c.y + r * a.y!!.toFloat())
-            val onDark = a.points in 3..6
-            drawCircle(if (onDark) Color.White else Ink, r * 0.035f, p)
-            drawCircle(Ink, r * 0.035f, p, style = Stroke(1f))
-        }
+        drawFace(c, r, placed)
         if (spread != null && centre != null) {
             val (sx, sy) = spread; val (mx, my) = centre
             val w = (2 * sx * r).toFloat().coerceAtLeast(r * 0.06f); val h = (2 * sy * r).toFloat().coerceAtLeast(r * 0.06f)
@@ -115,6 +133,19 @@ fun TargetPlot(ends: List<List<Arrow>>, size: Dp, showSpread: Boolean = false, o
             drawCircle(lime, r * 0.09f, p, style = Stroke(4f))
             drawLine(lime, Offset(p.x - r * 0.15f, p.y), Offset(p.x + r * 0.15f, p.y), 4f)
             drawLine(lime, Offset(p.x, p.y - r * 0.15f), Offset(p.x, p.y + r * 0.15f), 4f)
+        }
+        finger?.let { f ->
+            // The loupe sits above the finger (below it near the top edge) and shows the face 2.5x larger.
+            val lr = this.size.minDimension * 0.2f; val k = 2.5f
+            val lc = Offset(f.x.coerceIn(lr, this.size.width - lr), (f.y - lr * 1.6f).let { if (it < lr) f.y + lr * 1.6f else it })
+            clipPath(Path().apply { addOval(androidx.compose.ui.geometry.Rect(lc, lr)) }) {
+                drawCircle(Color.White, lr, lc)
+                withTransform({ translate(lc.x - f.x * k, lc.y - f.y * k); scale(k, k, Offset.Zero) }) { drawFace(c, r, placed) }
+                drawLine(Club.forestDeep, Offset(lc.x - lr * 0.3f, lc.y), Offset(lc.x + lr * 0.3f, lc.y), 2.5f)
+                drawLine(Club.forestDeep, Offset(lc.x, lc.y - lr * 0.3f), Offset(lc.x, lc.y + lr * 0.3f), 2.5f)
+            }
+            drawCircle(Club.forestDeep, lr, lc, style = Stroke(5f))
+            drawCircle(Club.forestDeep, r * 0.05f, f, style = Stroke(3f))
         }
     }
 }
@@ -188,12 +219,15 @@ fun RoundArrowsSection(ends: List<List<Arrow>>, coachView: Boolean, onEnd: (Int)
 
 @Composable
 fun ScoreStatsScreen(workspace: JsonObject, id: String, snackbar: SnackbarHostState, onBack: () -> Unit) {
-    val card = scoreCards(workspace).find { it.id == id }
-    val ends = card?.row?.let(::roundArrows).orEmpty()
-    ScreenShell("Statistics", onBack, snackbar) {
+    // "session:<id>" combines every round of a training.
+    val session = id.removePrefix("session:").takeIf { id.startsWith("session:") }?.let { trainingById(workspace, it) }
+    val card = session?.first ?: scoreCards(workspace).find { it.id == id }
+    val ends = session?.rounds?.flatMap { roundArrows(it.row) } ?: card?.row?.let(::roundArrows).orEmpty()
+    ScreenShell(if (session != null) "Training statistics" else "Statistics", onBack, snackbar) {
         if (card == null || ends.isEmpty()) { EmptyState("No arrows on this round", "Only rounds entered arrow by arrow or imported from a scoring app have statistics."); return@ScreenShell }
         val st = roundStats(ends)
-        Text("${card.scoreLabel} · ${fmtDate(card.date)} · ${card.conditions}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (session != null) "${plainNumber(session.total)} / ${plainNumber(session.max)} · ${fmtDate(session.date)} · ${session.rounds.size} round${if (session.rounds.size == 1) "" else "s"}"
+            else "${card.scoreLabel} · ${fmtDate(card.date)} · ${card.conditions}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("AVERAGE ARROW PER END", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             EndAverageChart(st.endAverages)
@@ -216,128 +250,186 @@ fun ScoreStatsScreen(workspace: JsonObject, id: String, snackbar: SnackbarHostSt
     }
 }
 
-/** A member scores a round arrow by arrow: X, 10..1, M on a keypad, ends filling as they go. */
+/** A member scores a round arrow by arrow. Route ids: "new" (free training), "std:WA 18m" (a standard round),
+ *  "add:<session id>" (another round in the same training) or a round id to edit it. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit, onTotalOnly: (JsonObject) -> Unit) {
+fun ScoreEntryScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit,
+                     onSaved: (String) -> Unit = { onBack() }, onTotalOnly: (JsonObject) -> Unit) {
+    val mine = scoreCards(workspace, workspace.text("user_id"))
     val existing = scoreCards(workspace).find { it.id == id }?.row
-    val last = scoreCards(workspace, workspace.text("user_id")).firstOrNull()?.row
-    val seed = existing ?: last
-    var date by rememberSaveable { mutableStateOf(existing?.text("training_date")?.take(10) ?: LocalDate.now().toString()) }
-    var distance by rememberSaveable { mutableStateOf(seed?.text("distance")?.toDoubleOrNull()?.let(::plainNumber) ?: "18") }
-    // The same fields, in the same order, as a scoring app's CSV export: Title, Date, Standard round,
-    // Indoor/Outdoor, Bow, Arrow, Distance, Target. Bow and arrow carry over from the last round.
+    val addTo = id.removePrefix("add:").takeIf { id.startsWith("add:") }?.let { trainingById(workspace, it) }
+    val preset = STANDARD_ROUNDS.find { it.name == id.removePrefix("std:") }?.takeIf { id.startsWith("std:") }
+    // Details come from the round being edited, else the training it joins, else the member's last round.
+    val seed = existing ?: addTo?.rounds?.last()?.row ?: mine.firstOrNull()?.row
     val seedInfo = seed?.let(::roundInfo) ?: RoundInfo()
-    val existingInfo = existing?.let(::roundInfo)
-    var title by rememberSaveable { mutableStateOf(existingInfo?.title?.ifBlank { null } ?: "Practice ${LocalDate.now()}") }
-    var standard by rememberSaveable { mutableStateOf(existingInfo?.standardRound?.ifBlank { null } ?: "Practice") }
-    var environment by rememberSaveable { mutableStateOf(existingInfo?.environment?.ifBlank { null } ?: seedInfo.environment.ifBlank { "Indoor" }) }
-    var bow by rememberSaveable { mutableStateOf(seedInfo.bow.ifBlank { "Recurve" }) }
-    var arrowName by rememberSaveable { mutableStateOf(seedInfo.arrow) }
-    var face by rememberSaveable { mutableStateOf(seed?.text("target_face")?.ifBlank { null } ?: "WA Full (40cm)") }
-    var notes by rememberSaveable { mutableStateOf(existing?.text("observations").orEmpty()) }
-    var perEnd by rememberSaveable { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
-    // Ends kept as "9,6,6;9,9" so they survive rotation.
-    var encoded by rememberSaveable { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
+    val sessionInfo = (existing ?: addTo?.first?.row)?.let(::roundInfo)
+    val sessionId = rememberSaveable(id) { sessionInfo?.sessionId?.ifBlank { null } ?: addTo?.sessionId ?: java.util.UUID.randomUUID().toString() }
+    var date by rememberSaveable(id) { mutableStateOf((existing ?: addTo?.first?.row)?.text("training_date")?.take(10) ?: LocalDate.now().toString()) }
+    var title by rememberSaveable(id) { mutableStateOf(sessionInfo?.title?.ifBlank { null } ?: preset?.name?.let { "$it · ${LocalDate.now()}" } ?: "Training ${LocalDate.now()}") }
+    var standard by rememberSaveable(id) { mutableStateOf(existing?.let { roundInfo(it).standardRound }?.ifBlank { null } ?: preset?.name ?: addTo?.info?.standardRound ?: "Free training") }
+    var plannedEnds by rememberSaveable(id) { mutableStateOf((existing?.let { roundInfo(it).plannedEnds } ?: preset?.ends ?: addTo?.info?.plannedEnds)?.toString().orEmpty()) }
+    var environment by rememberSaveable(id) { mutableStateOf(seedInfo.environment.ifBlank { if ((preset?.distance ?: 18) <= 25) "Indoor" else "Outdoor" }) }
+    var bow by rememberSaveable(id) { mutableStateOf(seedInfo.bow.ifBlank { "Recurve" }) }
+    var arrowName by rememberSaveable(id) { mutableStateOf(seedInfo.arrow) }
+    var distance by rememberSaveable(id) { mutableStateOf(preset?.distance?.toString() ?: seed?.text("distance")?.toDoubleOrNull()?.let(::plainNumber) ?: "18") }
+    var face by rememberSaveable(id) { mutableStateOf(preset?.face ?: seed?.text("target_face")?.ifBlank { null } ?: "WA Full (40cm)") }
+    var notes by rememberSaveable(id) { mutableStateOf(existing?.text("observations").orEmpty()) }
+    var perEnd by rememberSaveable(id) { mutableIntStateOf(existing?.let { roundArrows(it).firstOrNull()?.size } ?: preset?.perEnd ?: seed?.let { roundArrows(it).firstOrNull()?.size } ?: 6) }
+    // Ends kept as "9@0.1/0.2,M;8" so they survive rotation.
+    var encoded by rememberSaveable(id) { mutableStateOf(existing?.let { encodeEnds(roundArrows(it)) }.orEmpty()) }
     val ends = decodeEnds(encoded)
-    // Tap where the arrow hit (keeps positions, so statistics can show the group) or tap its score on a keypad.
-    var onTarget by rememberSaveable { mutableStateOf(true) }
-    var editingSetup by rememberSaveable { mutableStateOf(existing == null) }
+    var onTarget by rememberSaveable(id) { mutableStateOf(true) }
+    // New trainings open on their setup; another round in a training goes straight to scoring.
+    var editingSetup by rememberSaveable(id) { mutableStateOf(existing == null && addTo == null) }
+    // The end on screen; -1 means the end being shot.
+    var viewing by rememberSaveable(id) { mutableIntStateOf(-1) }
+    val planned = plannedEnds.toIntOrNull()
+    val endFull = ends.lastOrNull()?.let { it.size >= perEnd } ?: true
+    val finished = planned != null && ends.size >= planned && endFull
     fun add(a: Arrow) {
+        if (finished) return
         val list = ends.map { it.toMutableList() }.toMutableList()
         if (list.isEmpty() || list.last().size >= perEnd) list.add(mutableListOf())
         list.last().add(a)
-        encoded = encodeEnds(list)
+        encoded = encodeEnds(list); viewing = -1
     }
     fun undo() {
         val list = ends.map { it.toMutableList() }.toMutableList()
         if (list.isNotEmpty()) { list.last().removeAt(list.last().lastIndex); if (list.last().isEmpty()) list.removeAt(list.lastIndex) }
-        encoded = encodeEnds(list)
+        encoded = encodeEnds(list); viewing = -1
     }
-    val total = ends.flatten().sumOf { it.points }; val count = ends.flatten().size
+    val flat = ends.flatten(); val total = flat.sumOf { it.points }; val count = flat.size
     val ready = count > 0 && distance.toDoubleOrNull() != null && face.isNotBlank() && bow.isNotBlank() && title.isNotBlank() && standard.isNotBlank() &&
         runCatching { LocalDate.parse(date) }.isSuccess
-    fun save(submit: Boolean) {
+    fun save() {
         vm?.save("save_round", buildJsonObject {
-            put("p_action", "save_personal_training"); put("p_submit", submit)
+            put("p_action", "save_personal_training"); put("p_submit", false)
             put("p_data", buildJsonObject {
                 existing?.let { put("id", it.text("id")); it.text("version").toLongOrNull()?.let { v -> put("version", v) } }
                 put("training_date", date); put("distance", distance); put("target_face", face.trim()); put("category", bowCategory(bow.trim()))
                 put("scoring_format", standard.trim()); put("observations", notes.trim()); put("score", total); put("maximum_score", count * 10)
-                put("arrows", arrowsJson(ends, RoundInfo(title.trim(), standard.trim(), environment, bow.trim(), arrowName.trim())))
+                put("arrows", arrowsJson(ends.filter { it.isNotEmpty() }, RoundInfo(title.trim(), standard.trim(), environment, bow.trim(), arrowName.trim(), sessionId, planned)))
             })
-        }) { onBack() }
+        }) { onSaved(sessionId) }
     }
-    ScreenShell(if (existing == null) "Enter a round" else "Edit round", onBack, snackbar, stickyAction = {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { save(false) }, enabled = !busy && ready && vm != null, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp)) {
-                Text("Save", fontWeight = FontWeight.ExtraBold) }
-            Button(onClick = { save(true) }, enabled = !busy && ready && vm != null, modifier = Modifier.weight(1.6f).height(50.dp), shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Save and send to coach", fontWeight = FontWeight.ExtraBold, maxLines = 1) }
-        }
-    }) {
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        // The round's details, collapsed to one line once set so the keypad stays in reach.
-        RaisedCard(onClick = { editingSetup = !editingSetup }) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
-                        Text("$standard · $environment · $distance m · $face · $bow", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val roundNo = (addTo?.rounds?.size ?: 0) + 1
+    val endNo = if (viewing >= 0) viewing + 1 else if (ends.isEmpty() || (endFull && !finished)) ends.size + 1 else ends.size
+    val shown = if (viewing >= 0) ends.getOrNull(viewing).orEmpty() else ends.lastOrNull()?.takeIf { !endFull || finished }.orEmpty()
+    HeroScaffold(if (existing != null) "Edit round" else title, onBack, snackbar, overlap = 44.dp, busy = busy,
+        heroExtra = { HeroStats(listOf(
+            "${endNo}${planned?.let { "/$it" } ?: ""}" to "End",
+            "$total/${count * 10}" to "Round ${if (existing != null) "" else roundNo.toString() + " "}· ${distance} m",
+            (if (count == 0) "—" else (Math.round(total * 100.0 / count) / 100.0).toString()) to "Average")) },
+        sticky = {
+            OutlinedButton(onClick = { editingSetup = !editingSetup }, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp)) {
+                Text(if (editingSetup) "Score" else "Details", fontWeight = FontWeight.ExtraBold) }
+            Button(onClick = { save() }, enabled = !busy && ready && vm != null, modifier = Modifier.weight(1.6f).height(50.dp), shape = RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text(if (existing != null) "Save changes" else "Save round", fontWeight = FontWeight.ExtraBold, maxLines = 1) }
+        }) {
+        if (editingSetup) {
+            RaisedCard { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, placeholder = { Text("e.g. Final Year T1 Week 9") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                DateTimeField("Date", runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull(),
+                    { date = it.atZone(ZoneId.systemDefault()).toLocalDate().toString() }, dateOnly = true)
+                Text("Round", style = MaterialTheme.typography.labelLarge)
+                ChoiceChips(listOf("Free training" to "Free training") + STANDARD_ROUNDS.map { it.name to it.name }, standard) { pick ->
+                    standard = pick
+                    // A standard round sets its distance, face, arrows per end and number of ends.
+                    STANDARD_ROUNDS.find { it.name == pick }?.let { r -> distance = r.distance.toString(); face = r.face; perEnd = r.perEnd; plannedEnds = r.ends.toString() }
+                        ?: run { plannedEnds = "" }
+                }
+                Text(STANDARD_ROUNDS.find { it.name == standard }?.let { "${it.distance} m · ${it.face} · ${it.ends} ends of ${it.perEnd}" } ?: "Shoot as many ends as you like.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Environment", style = MaterialTheme.typography.labelLarge)
+                ChoiceChips(listOf("Indoor" to "Indoor", "Outdoor" to "Outdoor"), environment) { environment = it }
+                OutlinedTextField(bow, { bow = it.take(60) }, label = { Text("Bow") }, placeholder = { Text("e.g. Fortified Recurve") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(arrowName, { arrowName = it.take(60) }, label = { Text("Arrow (optional)") }, placeholder = { Text("e.g. Super Carbon") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Distance", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DISTANCES_M.forEach { d ->
+                        val on = distance == d.toString()
+                        Box(Modifier.width(64.dp).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Club.forestDeep else Club.mint)
+                            .clickable { distance = d.toString() }, contentAlignment = Alignment.Center) {
+                            Text("$d m", color = if (on) Color.White else Club.forestDeep, fontWeight = FontWeight.ExtraBold)
+                        }
                     }
-                    Text(if (editingSetup) "Done" else "Change", color = Club.forest, fontWeight = FontWeight.ExtraBold)
                 }
-                if (editingSetup) {
-                    OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, placeholder = { Text("e.g. Final Year T1 Week 9") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    DateTimeField("Date", runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull(),
-                        { date = it.atZone(ZoneId.systemDefault()).toLocalDate().toString() }, dateOnly = true)
-                    Text("Standard round", style = MaterialTheme.typography.labelLarge)
-                    ChoiceChips(listOf("Practice", "WA 18m", "WA 25m", "WA 70m", "WA 720").map { it to it }, standard) { standard = it }
-                    OutlinedTextField(standard, { standard = it.take(60) }, label = { Text("Or type a round") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("Environment", style = MaterialTheme.typography.labelLarge)
-                    ChoiceChips(listOf("Indoor" to "Indoor", "Outdoor" to "Outdoor"), environment) { environment = it }
-                    OutlinedTextField(bow, { bow = it.take(60) }, label = { Text("Bow") }, placeholder = { Text("e.g. Fortified Recurve") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(arrowName, { arrowName = it.take(60) }, label = { Text("Arrow (optional)") }, placeholder = { Text("e.g. Super Carbon") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(distance, { distance = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Distance (m)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("Target", style = MaterialTheme.typography.labelLarge)
-                    ChoiceChips(listOf("WA Full (40cm)", "WA Full (80cm)", "WA Full (122cm)", "WA 3-spot").map { it to it }, face) { face = it }
-                    Text("Arrows per end", style = MaterialTheme.typography.labelLarge)
-                    ChoiceChips(listOf("3" to "3 arrows", "6" to "6 arrows"), perEnd.toString()) { perEnd = it.toInt() }
-                    OutlinedTextField(notes, { notes = it.take(600) }, label = { Text("Notes (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(distance, { distance = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Or type a distance (m)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Target face", style = MaterialTheme.typography.labelLarge)
+                RowGroup {
+                    TARGET_FACES.forEachIndexed { i, (name, detail) ->
+                        val on = faceName(face) == name
+                        Row(Modifier.fillMaxWidth().clickable { face = "$name (${faceSize(face).ifBlank { "40cm" }})" }.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(name, fontWeight = FontWeight.ExtraBold)
+                                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            RadioButton(on, { face = "$name (${faceSize(face).ifBlank { "40cm" }})" })
+                        }
+                        if (i < TARGET_FACES.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                    }
                 }
+                ChoiceChips(FACE_SIZES.map { it to it }, faceSize(face)) { face = "${faceName(face).ifBlank { "WA Full" }} ($it)" }
+                Text("Arrows per end: $perEnd", style = MaterialTheme.typography.labelLarge)
+                Slider(perEnd.toFloat(), { perEnd = it.toInt().coerceIn(1, 12) }, valueRange = 1f..12f, steps = 10, enabled = count == 0,
+                    colors = SliderDefaults.colors(thumbColor = Club.forestDeep, activeTrackColor = Club.forest))
+                if (count > 0) Text("Arrows per end is fixed once scoring starts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(notes, { notes = it.take(600) }, label = { Text("Notes (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                Button(onClick = { editingSetup = false }, enabled = distance.toDoubleOrNull() != null && bow.isNotBlank() && title.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Start scoring", fontWeight = FontWeight.ExtraBold) }
+            } }
+            if (existing == null && addTo == null) TextButton(onClick = { onTotalOnly(newRoundSeed(workspace, mine.firstOrNull())) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Just enter the total instead") }
+            return@HeroScaffold
+        }
+        RaisedCard(onClick = { editingSetup = true }) {
+            Text("$standard · $environment · $distance m · $face · $bow", Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // This end's arrows, with dashed spaces for the ones still to shoot.
+        RaisedCard { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                shown.forEach { ArrowDot(it.p, 34.dp) }
+                if (viewing < 0) repeat((perEnd - shown.size).coerceAtLeast(0)) {
+                    Box(Modifier.size(34.dp).border(1.5.dp, Color(0xFFB5BFB8), CircleShape)) }
             }
-        }
-        if (ends.isNotEmpty()) EndsCard(ends)
-        val inEnd = ends.lastOrNull()?.size?.takeIf { it < perEnd } ?: 0
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Total $total / ${count * 10}" + (if (count > 0) " · end ${if (inEnd == 0) ends.size + 1 else ends.size}, arrow ${inEnd + 1} of $perEnd" else ""),
-                fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { undo() }, enabled = count > 0) { Text("Undo last", fontWeight = FontWeight.ExtraBold) }
-        }
+            Text("${shown.sumOf { it.points }}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+            IconButton(onClick = { undo() }, enabled = count > 0 && !busy) { Text("↶", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) }
+        } }
+        if (finished) NoticeCard("Round complete", "All ${planned} ends are in. Save the round, then add another or send the training to your coach.", Tone.POSITIVE)
         ChoiceChips(listOf("target" to "Tap the target", "keypad" to "Tap the score"), if (onTarget) "target" else "keypad") { onTarget = it == "target" }
         if (onTarget) {
-            // The end being shot is drawn on the face; a full end starts a fresh one on the next tap.
-            val current = ends.lastOrNull()?.takeIf { it.size < perEnd }.orEmpty()
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TargetPlot(listOf(current), 300.dp, showSpread = current.size > 1) { x, y -> if (!busy && count < 1440) add(Arrow(scoreAt(x, y), x, y)) }
+                TargetPlot(listOf(shown), 320.dp, showSpread = shown.size > 1,
+                    onTap = if (viewing >= 0 || finished) null else ({ x: Double, y: Double -> if (!busy && count < 1440) add(Arrow(scoreAt(x, y), x, y)) }))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = { add(Arrow("M")) }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text("Miss (off the face)") }
-            }
-            Text("Tap where each arrow hit. Arrows touching a line get the higher score.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { add(Arrow("M")) }, enabled = !busy && !finished && viewing < 0, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(999.dp)) { Text("Miss (off the face)") }
+            Text("Press and hold on the target: a magnifier shows exactly where the arrow is. Lift your finger to place it. Arrows touching a line get the higher score.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else ARROW_KEYS.chunked(4).forEach { rowKeys ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 rowKeys.forEach { k ->
                     val (bg, fg) = arrowColors(k)
                     Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(14.dp)).background(bg)
                         .let { if (bg == Color.White) it.border(1.5.dp, Color(0xFFC9D3C5), RoundedCornerShape(14.dp)) else it }
-                        .clickable(enabled = !busy && count < 1440) { add(Arrow(k)) }, contentAlignment = Alignment.Center) {
+                        .clickable(enabled = !busy && count < 1440 && !finished && viewing < 0) { add(Arrow(k)) }, contentAlignment = Alignment.Center) {
                         Text(k, color = fg, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
-        if (existing == null) TextButton(onClick = { onTotalOnly(newRoundSeed(workspace, scoreCards(workspace, workspace.text("user_id")).firstOrNull())) },
-            modifier = Modifier.fillMaxWidth()) { Text("Just enter the total instead") }
+        // Step back through finished ends to check them; scoring always continues on the newest end.
+        val lastDone = if (endFull) ends.lastIndex else ends.lastIndex - 1
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { viewing = if (viewing < 0) lastDone else viewing - 1 }, enabled = lastDone >= 0 && viewing != 0,
+                modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text("Previous end") }
+            OutlinedButton(onClick = { viewing = if (viewing in 0 until lastDone) viewing + 1 else -1 }, enabled = viewing >= 0,
+                modifier = Modifier.weight(1f), shape = RoundedCornerShape(999.dp)) { Text(if (viewing >= 0 && viewing >= lastDone) "Back to scoring" else "Next end") }
+        }
+        if (ends.isNotEmpty()) EndsCard(ends.filter { it.isNotEmpty() }) { viewing = if (it <= lastDone) it else -1 }
     }
 }
 

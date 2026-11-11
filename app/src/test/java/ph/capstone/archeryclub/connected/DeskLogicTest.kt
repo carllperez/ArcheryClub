@@ -402,4 +402,34 @@ class DeskLogicTest {
         assertEquals(ends, decodeEnds(encodeEnds(ends)))
         assertTrue(groupSpread(listOf(Arrow("9", 0.0, 0.0), Arrow("9", 0.2, 0.0)))!!.first > 0.09)
     }
+
+    @Test fun roundsGroupIntoTrainings() {
+        fun round(id: String, sid: String, validation: String, score: String, at: String) = JsonObject(mapOf(
+            "id" to JsonPrimitive(id), "user_id" to JsonPrimitive("me"), "training_date" to JsonPrimitive("2026-11-12"), "score" to JsonPrimitive(score),
+            "maximum_score" to JsonPrimitive(if (id == "r1") "180" else "120"), "validation" to JsonPrimitive(validation), "encoded_at" to JsonPrimitive(at),
+            "arrows" to arrowsJson(listOf(listOf(Arrow("X"))), RoundInfo(title = "Capstone App Demo", sessionId = sid))))
+        val w = ws("training_records" to listOf(round("r2", "s1", "personal", "51", "2026-11-12T05:10:00Z"), round("r1", "s1", "pending", "180", "2026-11-12T05:00:00Z"),
+            obj("id" to "old", "user_id" to "me", "training_date" to "2026-10-24", "score" to "111", "maximum_score" to "180", "validation" to "validated")))
+        val t = trainings(w, "me")
+        assertEquals(listOf("s1", "old"), t.map { it.sessionId })
+        assertEquals(listOf("r1", "r2"), t[0].rounds.map { it.id })
+        assertEquals("231", plainNumber(t[0].total)); assertEquals("300", plainNumber(t[0].max))
+        assertEquals("Capstone App Demo", t[0].title)
+        assertEquals(ScoreState.PENDING, t[0].state)
+        assertEquals(listOf("r2"), t[0].toSend.map { it.id })
+        assertEquals("NOVEMBER 2026", monthHeading(t[0].date))
+        assertEquals("WA Full", faceName("WA Full (40cm)")); assertEquals("40cm", faceSize("WA Full (40cm)"))
+        assertEquals(60, STANDARD_ROUNDS.first().arrows)
+    }
+
+    @Test fun scoreboardKeepsRunningTotals() {
+        val lines = boardLines(listOf(listOf(Arrow("9"), Arrow("X"), Arrow("M")), listOf(Arrow("8"), Arrow("10"), Arrow("7"))))
+        assertEquals("X,9,M", lines[0].arrows.joinToString(","))
+        assertEquals(listOf(19, 25), lines.map { it.total }); assertEquals(listOf(19, 44), lines.map { it.running })
+        val row = JsonObject(mapOf("id" to JsonPrimitive("r1"), "user_id" to JsonPrimitive("me"), "training_date" to JsonPrimitive("2026-11-12"),
+            "score" to JsonPrimitive("44"), "maximum_score" to JsonPrimitive("60"), "validation" to JsonPrimitive("personal"),
+            "arrows" to arrowsJson(listOf(listOf(Arrow("9"), Arrow("X"), Arrow("M"))), RoundInfo(title = "A <b> & C", sessionId = "s"))))
+        val html = scoreboardHtml(TrainingView("s", listOf(scoreCard(row))), "Juan")
+        assertTrue(html.contains("A &lt;b&gt; &amp; C")); assertTrue(html.contains("Archer: Juan")); assertTrue(html.contains("<td>19</td>"))
+    }
 }

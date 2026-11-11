@@ -61,12 +61,17 @@ fun WorkflowRoute(
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
             else ScreenShell("Application", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
-        "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("scorecard:$it") }, onTap = { onPush("score_entry") }) { onStart("save_personal_training", it) }
+        "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("training_session:$it") },
+            onNew = if (isMember) ({ r: String -> onPush("score_entry:$r") }) else null) { onStart("save_personal_training", it) }
+        "training_session" -> TrainingOverviewScreen(workspace, id, busy, snackbar, vm, onBack, onPush)
+        "scoreboard" -> ScoreboardScreen(workspace, id, snackbar, onBack)
         "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument, onRoute = onPush,
             onDelete = if (vm != null) ({ reason: String -> vm.save("delete_record", deleteArgs("training_round", id, reason)) { onBack() } }) else null)
         "scorestats" -> ScoreStatsScreen(workspace, id, snackbar, onBack)
         "end" -> EndScreen(workspace, id, snackbar, onBack, onPush)
-        "score_entry" -> if (isMember) ScoreEntryScreen(workspace, id, busy, snackbar, vm, onBack) { onBack(); onStart("save_personal_training", it) }
+        // After saving, the training page replaces the scoring screen (or is returned to, when a round was added from it).
+        "score_entry" -> if (isMember) ScoreEntryScreen(workspace, id, busy, snackbar, vm, onBack,
+            onSaved = { sid -> onBack(); if (id == "new" || id.startsWith("std:")) onPush("training_session:$sid") }) { onBack(); onStart("save_personal_training", it) }
             else denied("Members only", "Only active members log their own rounds.")
         "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart) { onGo("records:11") }
             else denied("Coaches only", "Your current role can't validate scorecards.")

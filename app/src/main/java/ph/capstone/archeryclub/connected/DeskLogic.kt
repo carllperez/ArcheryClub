@@ -714,15 +714,18 @@ fun arrowsJson(ends: List<List<Arrow>>, info: RoundInfo? = null): JsonObject = J
 })
 
 /** The session details a scoring app exports (Title, Standard round, Indoor/Outdoor, Bow, Arrow), kept with the arrows. */
-data class RoundInfo(val title: String = "", val standardRound: String = "", val environment: String = "", val bow: String = "", val arrow: String = "") {
-    fun asMap() = mapOf("title" to title, "standard_round" to standardRound, "environment" to environment, "bow" to bow, "arrow" to arrow)
+data class RoundInfo(val title: String = "", val standardRound: String = "", val environment: String = "", val bow: String = "", val arrow: String = "",
+                     val sessionId: String = "", val plannedEnds: Int? = null) {
+    fun asMap() = mapOf("title" to title, "standard_round" to standardRound, "environment" to environment, "bow" to bow, "arrow" to arrow,
+        "session_id" to sessionId, "planned_ends" to (plannedEnds?.toString() ?: ""))
 }
 
 /** A round's session details: from its arrows when saved arrow by arrow, otherwise from its ordinary fields. */
 fun roundInfo(row: JsonObject): RoundInfo {
     val s = (row["arrows"] as? JsonObject)?.get("session") as? JsonObject
     return RoundInfo(s?.text("title").orEmpty(), s?.text("standard_round")?.ifBlank { null } ?: row.text("scoring_format"),
-        s?.text("environment").orEmpty(), s?.text("bow")?.ifBlank { null } ?: row.text("category"), s?.text("arrow").orEmpty())
+        s?.text("environment").orEmpty(), s?.text("bow")?.ifBlank { null } ?: row.text("category"), s?.text("arrow").orEmpty(),
+        s?.text("session_id").orEmpty(), s?.text("planned_ends")?.toIntOrNull())
 }
 
 data class RoundStats(val total: Int, val max: Int, val endTotals: List<Int>, val endAverages: List<Double>,
@@ -787,4 +790,101 @@ fun decodeEnds(text: String): List<List<Arrow>> = text.split(';').filter { it.is
         val p = s.substringBefore('@'); val pos = s.substringAfter('@', "")
         Arrow(p, pos.substringBefore('/').toDoubleOrNull(), pos.substringAfter('/', "").toDoubleOrNull())
     }
+}
+
+
+// ---------------------------------------------------------------- Training sessions (several rounds under one title)
+
+/** A WA round's fixed set-up, filled in when "Standard round" is chosen. */
+data class StandardRound(val name: String, val distance: Int, val face: String, val perEnd: Int, val ends: Int) {
+    val arrows get() = perEnd * ends
+}
+val STANDARD_ROUNDS = listOf(
+    StandardRound("WA 18m", 18, "WA Full (40cm)", 3, 20), StandardRound("WA 25m", 25, "WA Full (60cm)", 3, 20),
+    StandardRound("WA 50m", 50, "WA Full (80cm)", 6, 12), StandardRound("WA 70m", 70, "WA Full (122cm)", 6, 12),
+)
+val DISTANCES_M = listOf(5, 10, 15, 18, 20, 25, 30, 40, 50, 60, 70, 90)
+val TARGET_FACES = listOf("WA Full" to "Recurve and barebow, X to 1", "WA 6 Ring" to "Compound and outdoor", "WA 5 Ring" to "Indoor compound",
+    "WA Vertical 3 Spot" to "Indoor, three faces", "Vegas 3 Spot" to "Indoor, three faces")
+val FACE_SIZES = listOf("40cm", "60cm", "80cm", "122cm")
+fun faceName(face: String) = face.substringBefore(" (").trim()
+fun faceSize(face: String) = face.substringAfter("(", "").substringBefore(")").trim()
+
+/** One training: its rounds in the order they were shot, with the combined score and where it stands with the coach. */
+data class TrainingView(val sessionId: String, val rounds: List<ScoreCard>) {
+    val first get() = rounds.first()
+    val info get() = roundInfo(first.row)
+    val title get() = info.title.ifBlank { first.row.text("scoring_format").ifBlank { "Training" } }
+    val date get() = first.date
+    val total get() = rounds.sumOf { it.score }
+    val max get() = rounds.sumOf { it.max }
+    /** Needs fixing beats with-coach beats personal; validated only when every round is. */
+    val state get() = when {
+        rounds.any { it.state == ScoreState.RETURNED } -> ScoreState.RETURNED
+        rounds.any { it.state == ScoreState.PENDING } -> ScoreState.PENDING
+        rounds.all { it.state == ScoreState.VALIDATED } -> ScoreState.VALIDATED
+        else -> ScoreState.PERSONAL
+    }
+    val toSend get() = rounds.filter { it.state in setOf(ScoreState.PERSONAL, ScoreState.RETURNED) }
+}
+
+/** A person's trainings, newest first. Rounds saved together share a session id; older rounds stand alone. */
+fun trainings(workspace: JsonObject, userId: String): List<TrainingView> =
+    scoreCards(workspace, userId).groupBy { roundInfo(it.row).sessionId.ifBlank { it.id } }
+        .map { (sid, rounds) -> TrainingView(sid, rounds.sortedBy { it.row.text("encoded_at") }) }
+        .sortedWith(compareByDescending<TrainingView> { it.date }.thenByDescending { it.rounds.last().row.text("encoded_at") })
+
+fun trainingById(workspace: JsonObject, sessionId: String): TrainingView? =
+    scoreCards(workspace).filter { roundInfo(it.row).sessionId.ifBlank { it.id } == sessionId }.takeIf { it.isNotEmpty() }
+        ?.let { TrainingView(sessionId, it.sortedBy { r -> r.row.text("encoded_at") }) }
+
+/** "NOVEMBER 2026" headings for the list. */
+fun monthHeading(d: LocalDate?): String = d?.let { "${it.month.name} ${it.year}" } ?: "UNDATED"
+
+/** One line of a printed scoreboard: the end's arrows best first, its total and the running total. */
+data class BoardLine(val end: Int, val arrows: List<String>, val total: Int, val running: Int)
+
+fun boardLines(ends: List<List<Arrow>>): List<BoardLine> {
+    var run = 0
+    return ends.mapIndexed { i, e ->
+        val t = e.sumOf { it.points }; run += t
+        BoardLine(i + 1, e.sortedWith(compareByDescending<Arrow> { it.points }.thenBy { if (it.p == "X") 0 else 1 }).map { it.p }, t, run)
+    }
+}
+
+private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+/** The training as a printable page: details, each round's ends with running totals, counts, and signature lines. */
+fun scoreboardHtml(t: TrainingView, archer: String, coach: String = ""): String = buildString {
+    val info = t.info; val all = t.rounds.flatMap { roundArrows(it.row) }; val st = roundStats(all)
+    append("<!doctype html><html><head><meta charset='utf-8'><style>")
+    append("body{font-family:sans-serif;font-size:11pt;color:#16201b;margin:24px}h1{font-size:18pt;margin:0 0 4px}h2{font-size:12pt;margin:18px 0 6px}")
+    append("table{border-collapse:collapse;width:100%}td,th{border:1px solid #9aa39d;padding:4px 6px;text-align:center}th{background:#e7f1ea}")
+    append(".d td{text-align:left}.sig{display:flex;gap:40px;margin-top:40px}.sig div{flex:1;border-top:1px solid #16201b;padding-top:4px;font-size:9pt}")
+    append("</style></head><body>")
+    append("<h1>${esc(t.title)}</h1><div>DLSU Archery Club · Training scoreboard</div>")
+    append("<h2>Details</h2><table class='d'>")
+    listOf("Archer" to archer, "Date" to (t.date?.toString() ?: "—"), "Round" to info.standardRound.ifBlank { "Free training" },
+        "Environment" to info.environment, "Bow" to info.bow, "Arrow" to info.arrow,
+        "Total" to "${plainNumber(t.total)} / ${plainNumber(t.max)}").filter { it.second.isNotBlank() }
+        .forEach { (k, v) -> append("<tr><th style='width:30%'>${esc(k)}</th><td>${esc(v)}</td></tr>") }
+    append("</table>")
+    t.rounds.forEachIndexed { i, r ->
+        val ends = roundArrows(r.row); val per = ends.maxOfOrNull { it.size } ?: 0
+        append("<h2>Round ${i + 1} · ${esc(r.conditions)}</h2>")
+        if (ends.isEmpty()) { append("<p>Total only: ${esc(r.scoreLabel)}</p>"); return@forEachIndexed }
+        append("<table><tr><th>End</th>"); (1..per).forEach { append("<th>$it</th>") }; append("<th>End</th><th>Total</th></tr>")
+        boardLines(ends).forEach { l ->
+            append("<tr><td>${l.end}</td>"); (0 until per).forEach { append("<td>${l.arrows.getOrNull(it) ?: ""}</td>") }
+            append("<td><b>${l.total}</b></td><td>${l.running}</td></tr>")
+        }
+        append("</table>")
+    }
+    if (all.isNotEmpty()) {
+        append("<h2>Summary</h2><table><tr>"); st.counts.forEach { append("<th>${it.first}</th>") }; append("<th>Hits</th><th>Average</th></tr><tr>")
+        st.counts.forEach { append("<td>${it.second}</td>") }
+        append("<td>${st.hits}</td><td>${Math.round(st.average * 100) / 100.0}</td></tr></table>")
+    }
+    append("<div class='sig'><div>Archer: ${esc(archer)}</div><div>Coach${if (coach.isBlank()) "" else ": " + esc(coach)}</div></div>")
+    append("</body></html>")
 }

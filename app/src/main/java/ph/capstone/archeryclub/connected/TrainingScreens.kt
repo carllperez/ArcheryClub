@@ -36,21 +36,28 @@ fun newRoundSeed(workspace: JsonObject, last: ScoreCard?): JsonObject = buildJso
     prev?.text("level")?.takeIf { it.isNotBlank() }?.let { put("level", it) }
 }
 
+/** My training: trainings grouped by month. A training holds the rounds shot in one session. */
 @Composable
-fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit, onTap: (() -> Unit)? = null, onLog: (JsonObject) -> Unit) {
-    val cards = scoreCards(workspace, workspace.text("user_id"))
+fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit,
+                   onNew: ((String) -> Unit)? = null, onLog: (JsonObject) -> Unit) {
+    val user = workspace.text("user_id")
+    val cards = scoreCards(workspace, user)
+    val list = trainings(workspace, user)
     val stats = trainingStats(cards, LocalDate.now())
     val trend = trendPercents(cards)
     var filter by rememberSaveable { mutableStateOf("all") }
-    val shown = filterCards(cards, filter)
-    HeroScaffold("My scorecards", onBack, snackbar, overlap = 44.dp, busy = busy,
+    var choosing by remember { mutableStateOf(false) }
+    val shown = list.filter { t -> when (filter) {
+        "validated" -> t.state == ScoreState.VALIDATED; "coach" -> t.state == ScoreState.PENDING
+        "personal" -> t.state == ScoreState.PERSONAL; "fix" -> t.state == ScoreState.RETURNED; else -> true } }
+    HeroScaffold("My training", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("TRAINING", Color.White.copy(alpha = .16f), Color.White) },
         heroExtra = {
             HeroStats(listOf((stats.best?.let { plainNumber(it.score) } ?: "—") to (stats.best?.row?.text("distance")?.let { "Best at ${plainNumber(it.toDoubleOrNull() ?: 0.0)} m" } ?: "Best round"),
                 "${stats.roundsThisMonth}" to "Rounds this month",
                 (stats.monthDelta?.let { (if (it >= 0) "+" else "") + it + "%" } ?: "—") to "vs last month"))
         },
-        sticky = { StickyButton("Log a round", !busy, Modifier.weight(1f)) { onTap?.invoke() ?: onLog(newRoundSeed(workspace, cards.firstOrNull())) } }) {
+        sticky = { StickyButton("New training", !busy, Modifier.weight(1f)) { if (onNew != null) choosing = true else onLog(newRoundSeed(workspace, cards.firstOrNull())) } }) {
         RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -64,17 +71,38 @@ fun TrainingScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostS
                 } else Text("Log two rounds and your progress line appears here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        val fix = cards.count { it.state == ScoreState.RETURNED }
+        val fix = list.count { it.state == ScoreState.RETURNED }
         ChoiceChips(listOf("all" to "All", "validated" to "Validated", "coach" to "With coach", "personal" to "Personal") +
             (if (fix > 0) listOf("fix" to "Needs fix · $fix") else emptyList()), filter) { filter = it }
-        if (cards.isEmpty()) EmptyState("No rounds yet", "Log a practice round to start your record. Send it to a coach to make it official.")
-        else if (shown.isEmpty()) EmptyState("Nothing here", "No rounds match this filter.")
-        shown.forEach { c ->
-            DeskRow(c.scoreLabel, listOf(c.conditions, c.row.text("event_id").let { e -> workspace.records("events").find { it.text("id") == e }?.text("title").orEmpty() })
-                .filter { it.isNotBlank() }.joinToString(" · "), leading = { DayChip(c.date, c.state.tone) }, status = c.state.label to c.state.tone, onClick = { onOpen(c.id) })
+        if (list.isEmpty()) EmptyState("No trainings yet", "Start a training and score it arrow by arrow. Send it to a coach to make it official.")
+        else if (shown.isEmpty()) EmptyState("Nothing here", "No trainings match this filter.")
+        shown.groupBy { monthHeading(it.date) }.forEach { (month, items) ->
+            DeskLabel(month)
+            items.forEach { t ->
+                DeskRow(t.title, listOf(fmtDate(t.date), "${t.rounds.size} round${if (t.rounds.size == 1) "" else "s"}",
+                    "${plainNumber(t.total)}/${plainNumber(t.max)}").joinToString(" · "),
+                    leading = { DayChip(t.date, t.state.tone) }, status = t.state.label to t.state.tone, onClick = { onOpen(t.sessionId) })
+            }
         }
-        Text("Personal rounds are visible only to you until you send them to a coach.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Personal trainings are visible only to you until you send them to a coach.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (choosing && onNew != null) AlertDialog(onDismissRequest = { choosing = false },
+        title = { Text("New training") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                (listOf(Triple("new", "Free training", "Your own distance, face and arrows per end.")) +
+                    STANDARD_ROUNDS.map { Triple("std:${it.name}", it.name, "${it.distance} m · ${it.face} · ${it.ends} ends of ${it.perEnd}") }).forEach { (route, name, detail) ->
+                    RaisedCard(radius = 14.dp, onClick = { choosing = false; onNew(route) }) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            Text(name, fontWeight = FontWeight.ExtraBold)
+                            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                TextButton(onClick = { choosing = false; onLog(newRoundSeed(workspace, cards.firstOrNull())) }) { Text("Just enter a total instead") }
+            }
+        },
+        confirmButton = {}, dismissButton = { TextButton(onClick = { choosing = false }) { Text("Cancel") } })
 }
 
 @Composable
