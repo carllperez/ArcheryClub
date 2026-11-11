@@ -228,6 +228,10 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var result by remember { mutableStateOf<CoachImport?>(null) }
     var fileName by remember { mutableStateOf("") }
+    // An arrow-by-arrow export from a scoring app has no member column: the coach picks the archer.
+    var arrowText by remember { mutableStateOf<String?>(null) }
+    var archer by remember { mutableStateOf("") }
+    val active = workspace.records("member_directory").filter { it.text("status") == "Active" }.sortedBy { it.text("full_name") }
     val example = workspace.records("member_directory").firstOrNull { it.text("status") == "Active" }?.text("full_name").orEmpty().ifBlank { "Juan Dela Cruz" }
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
@@ -238,8 +242,11 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
                 require(count <= 1_000_000) { "Choose a CSV smaller than 1 MB." }
                 String(buffer, 0, count)
             } ?: error("This file could not be read.")
-            coachImport(text, workspace)
-        }.onSuccess { result = it }.onFailure { vm.error(it.message ?: "Check the CSV and try again.") }
+            text
+        }.onSuccess { text ->
+            if (isArrowExport(text)) { arrowText = text; archer = ""; result = null }
+            else { arrowText = null; result = coachImport(text, workspace) }
+        }.onFailure { vm.error(it.message ?: "Check the CSV and try again.") }
     }
     RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Import a session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
@@ -247,15 +254,26 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Columns: member, date, distance, target_face, bow, round, score, max_score. Optional: notes, feedback.",
             style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+        Text("An arrow-by-arrow export from a scoring app works too: choose it, then pick the archer. Each session becomes one round, with the end totals in its notes.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(coachCsvTemplate(example, LocalDate.now()))); vm.notify("Template copied. Paste it into a spreadsheet.") },
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)) { Text("Copy template") }
-            Button(onClick = { picker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain")) }, enabled = !busy,
+            Button(onClick = { picker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "application/octet-stream")) }, enabled = !busy,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Choose CSV") }
         }
-        result?.let { r ->
+        arrowText?.let { text ->
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
             if (fileName.isNotBlank()) Text(fileName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Scoring-app export. Whose arrows are these?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+            SelectField("Archer", archer, listOf("" to "Choose a member") + active.map { it.text("user_id") to it.text("full_name") }) { id ->
+                archer = id
+                result = if (id.isBlank()) null else arrowImport(text, id, active.first { it.text("user_id") == id }.text("full_name"))
+            }
+        }
+        result?.let { r ->
+            if (arrowText == null) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            if (fileName.isNotBlank() && arrowText == null) Text(fileName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (r.problems.isNotEmpty()) NoticeCard("Fix ${r.problems.size} thing${if (r.problems.size == 1) "" else "s"} in the file", r.problems.take(5).joinToString("\n") + if (r.problems.size > 5) "\n…and ${r.problems.size - 5} more" else "", Tone.DANGER)
             if (r.rows.isNotEmpty()) {
                 Text("${r.rows.size} round${if (r.rows.size == 1) "" else "s"} ready", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
@@ -263,7 +281,7 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
                 if (r.preview.size > 8) Text("…and ${r.preview.size - 8} more", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Imported rounds count as checked by you.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Button(onClick = { vm.command("import_training", buildJsonObject { put("rows", JsonArray(r.rows)) }) { result = null; onDone() } },
+            Button(onClick = { vm.command("import_training", buildJsonObject { put("rows", JsonArray(r.rows)) }) { result = null; arrowText = null; onDone() } },
                 enabled = !busy && r.rows.isNotEmpty() && r.problems.isEmpty(), modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) {
                 Text(if (r.problems.isEmpty()) "Import ${r.rows.size} round${if (r.rows.size == 1) "" else "s"}" else "Fix the file, then choose it again", fontWeight = FontWeight.ExtraBold)
