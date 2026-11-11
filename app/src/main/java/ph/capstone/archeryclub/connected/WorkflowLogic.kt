@@ -208,7 +208,7 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
         add(QueueItem("Documents to verify", workspace.records("documents").count { it.text("module") == "2" && it.text("record_id") in pendingApps && it.text("verified_by").isBlank() && it.text("superseded_by").isBlank() }, "applications", Tone.WARNING))
         add(QueueItem("Name corrections", workspace.records("name_corrections").count { it.text("user_id") != user && it.text("status") == "pending" }, "name_corrections", Tone.WARNING))
         add(QueueItem("Applications to review", workspace.records("applications").count { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }, "applications", Tone.WARNING))
-        add(QueueItem("Renewals to review", workspace.records("renewals").count { it.text("user_id") != user && it.text("status") == "pending" }, "module:7", Tone.WARNING))
+        add(QueueItem("Renewals to review", workspace.records("renewals").count { it.text("user_id") != user && it.text("status") == "pending" }, "records:7", Tone.WARNING))
     }
     if ("equipment" in permissions) {
         val b = workspace.records("borrowings")
@@ -217,12 +217,21 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
         add(QueueItem("Overdue returns", b.count { isOverdue(it, now) }, "equipment", Tone.DANGER))
     }
     if ("activities" in permissions) {
-        add(QueueItem("Attendance corrections", workspace.records("corrections").count { it.text("module") == "8" && it.text("status") == "pending" }, "module:8", Tone.WARNING))
+        add(QueueItem("Attendance corrections", workspace.records("corrections").count { it.text("module") == "8" && it.text("status") == "pending" }, "records:8", Tone.WARNING))
         add(QueueItem("Draft activities", workspace.records("events").count { it.text("published") != "true" && it.text("archived") != "true" }, "officer_activities", Tone.NEUTRAL))
     }
     if ("training" in permissions) add(QueueItem("Scorecards to validate", workspace.records("training_records").count { it.text("validation") == "pending" }, "module:11", Tone.WARNING))
     if ("finance" in permissions || "president" in permissions)
         add(QueueItem("Financial submissions", workspace.records("financial_records").count { it.text("user_id") != user && it.text("status") == "pending_verification" }, "module:12", Tone.WARNING))
+    if ("finance" in permissions) add(QueueItem("Payments to match to fees", paymentsToLink(workspace).size, "module:12", Tone.DANGER))
+    if ("elections" in permissions) {
+        val open = workspace.records("elections").filter { it.text("status") in setOf("announced", "voting") }.map { it.text("id") }.toSet()
+        add(QueueItem("Candidates to confirm", workspace.records("candidates").count { it.text("election_id") in open && it.text("confirmed") != "true" }, "module:9", Tone.WARNING))
+    }
+    if ("interclub" in permissions) {
+        add(QueueItem("Delegates to review", workspace.records("delegates").count { it.text("status") == "pending" }, "module:15", Tone.WARNING))
+        add(QueueItem("Partner concerns", workspace.records("interclub_concerns").count { it.text("status") == "open" }, "module:15", Tone.WARNING))
+    }
 }
 
 

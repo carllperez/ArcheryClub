@@ -97,13 +97,21 @@ fun ConnectedApp(vm:SystemViewModel){
     fun visible(n:Int)=when(n){1->workspace.records("memberships").any{it.text("user_id")==user};3,4,5,6->isMember;2->true;7->allowed("membership");8->allowed("activities");9->isMember||allowed("elections");10->allowed("equipment");11->allowed("training");12->true;13->allowed("reports");14->allowed("administration");15->allowed("partner");else->false}
     fun push(r:String){stackVar=if(stackVar.isEmpty())r else "$stackVar|$r"}
     fun pop(){stackVar=stackVar.substringBeforeLast('|',"")}
-    fun go(r:String){
-        if(r.startsWith("module:")){stackVar="";moduleVar=r.removePrefix("module:").toInt();selectedVar=null;returnToLanding=false} else push(r)
-    }
     /** Modules that have a purpose-built workflow screen open it first; its "records" link reaches the generic view. */
     fun dedicated(n:Int):String?=when(n){
         1->"profile";2->"application";7->"applications";3->if(isMember)"activities" else null;5->if(isMember)"equipment_member" else null
-        8->"officer_activities";10->"equipment";else->null
+        8->"officer_activities";10->"equipment";4->if(isMember)"training" else null;11->"training_desk"
+        12->if(allowed("finance")||allowed("president"))"finance_desk" else "payments"
+        9->"elections";13->"reports";14->"admin";15->"interclub";else->null
+    }
+    /** "module:N" opens the module's purpose-built screen when it has one; "records:N" always opens its full record view. */
+    fun go(r:String){
+        fun records(n:Int){stackVar="";moduleVar=n;selectedVar=null;returnToLanding=false}
+        when{
+            r.startsWith("records:")->records(r.removePrefix("records:").toInt())
+            r.startsWith("module:")->r.removePrefix("module:").toInt().let{n->dedicated(n)?.let(::push)?:records(n)}
+            else->push(r)
+        }
     }
     fun openModule(n:Int){val r=dedicated(n);if(r!=null){moduleVar=0;selectedVar=null;stackVar=r}else{moduleVar=n;selectedVar=null;returnToLanding=false}}
     fun start(action:String,row:JsonObject=buildJsonObject{}){
@@ -120,6 +128,10 @@ fun ConnectedApp(vm:SystemViewModel){
         val record=notice.text("record_id")
         if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){stackVar="activity:$record";return}
         if(destination in setOf(5,10)&&workspace.records("borrowings").any{it.text("id")==record}){stackVar="borrowing:$record";return}
+        workspace.records("training_records").find{it.text("id")==record}?.let{stackVar="scorecard:$record";return}
+        workspace.records("financial_records").find{it.text("id")==record}?.let{stackVar="finance:$record";return}
+        if(workspace.records("fee_assessments").any{it.text("id")==record}){stackVar="payments";return}
+        if(workspace.records("elections").any{it.text("id")==record}){stackVar="election:$record";return}
         workspace.records("name_corrections").find{it.text("id")==record}?.let{stackVar=if(it.text("user_id")==user)"profile" else "name_corrections";return}
         workspace.records("applications").find{it.text("id")==record}?.let{
             val target=if(it.text("user_id")==user)"application" else if(allowed("membership"))"application_review:$record" else null
@@ -160,7 +172,7 @@ fun ConnectedApp(vm:SystemViewModel){
             return
         }
         if(routeStack.isNotEmpty()){
-            WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,
+            WorkflowRoute(route,workspace,state.busy,snackbar,isMember,::allowed,vm=vm,
                 onBack=::pop,onPush=::push,onGo=::go,onStart=::start,
                 onCommand={action,data,done->vm.command(action,data,done)},
                 onUpload={uri,m,record,requirement->vm.upload(context,uri,m,record,requirement)},

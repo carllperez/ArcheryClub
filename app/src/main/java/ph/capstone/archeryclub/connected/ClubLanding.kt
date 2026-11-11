@@ -147,7 +147,7 @@ fun ClubLanding(
                 var calendar by rememberSaveable{mutableStateOf(false)}
                 TextButton(onClick={calendar=!calendar}){Text(if(calendar)"Hide calendar" else "View calendar")}
                 if(calendar)RecordCalendar(memberActivities(workspace).map{it.event},workspace){onRoute("activity:${it.text("id")}")}
-                QuietRow("Announcements and attendance records","Club notices, registration history and corrections"){onRoute("module:3")}
+                QuietRow("Announcements and attendance records","Club notices, registration history and corrections"){onRoute("records:3")}
             }
             "gear"->MemberEquipmentContent(workspace,{onRoute("item:$it")}){onRoute("borrowing:$it")}
             "modules"->{
@@ -257,6 +257,12 @@ private fun MemberHome(
                     HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
                     HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
                 }
+                featuredElection(workspace.records("elections"),false)?.takeIf{it.text("status") in setOf("announced","voting")}?.let{e->
+                    HomeRow("vote",e.text("title"),if(e.text("status")=="voting")"Voting open · closes ${fmtDay(e.instant("voting_closes"))}" else "Candidacy open · closes ${fmtDay(e.instant("candidacy_closes"))}"){onModule(9)}
+                }
+                val owed=amountOwed(feeViews(workspace,user,java.time.LocalDate.now()))
+                if(owed>0)HomeRow("money","Payments","${peso(owed)} due"){onModule(12)}
+                HomeRow("target","My Training",scoreCards(workspace,user).firstOrNull()?.let{"Last round ${it.scoreLabel} · ${it.state.label}"}?:"Log rounds, get coach feedback"){onModule(4)}
                 HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
                 if(tasks.isNotEmpty())HomeRow("tasks","Your tasks","${tasks.size} to follow up"){onModule(6)}

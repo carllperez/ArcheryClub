@@ -16,15 +16,18 @@ fun WorkflowRoute(
     onCommand: (String, JsonObject, () -> Unit) -> Unit,
     onUpload: (android.net.Uri, Int, String, String) -> Unit = { _, _, _, _ -> },
     onOpenDocument: (String) -> Unit = {},
+    vm: SystemViewModel? = null,
 ) {
     val key = route.substringBefore(':'); val id = route.substringAfter(':', "")
     val officerActivities = allowed("activities")
     val officerEquipment = allowed("equipment")
+    val perms = listOf("finance", "president", "training", "elections", "administration", "interclub", "reports").filter(allowed).toSet()
+    @Composable fun denied(title: String, body: String) = ScreenShell(title, onBack, snackbar) { EmptyState(title, body) }
     when (key) {
         "activities" -> ScreenShell("Activities", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
             MemberActivitiesContent(workspace) { onPush("activity:$it") }
-            TextButton(onClick = { onGo("module:3") }) { Text("Announcements and attendance records") }
+            TextButton(onClick = { onGo("records:3") }) { Text("Announcements and attendance records") }
         }
         "activity" -> ActivityDetailScreen(workspace, id, busy, snackbar, isMember, officerActivities, onBack, onCommand,
             onRoster = { onPush("roster:$id") }, onEdit = { onStart("save_event", it) },
@@ -34,13 +37,13 @@ fun WorkflowRoute(
         "officer_activities" -> ScreenShell("Manage activities", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
             OfficerActivitiesContent(workspace, { onPush("activity:$it") }) { onStart("save_event", buildJsonObject {}) }
-            TextButton(onClick = { onGo("module:8") }) { Text("Announcements, corrections and all records") }
+            TextButton(onClick = { onGo("records:8") }) { Text("Announcements, corrections and all records") }
         }
         "equipment" -> if (officerEquipment) ScreenShell("Equipment", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
             OfficerEquipmentContent(workspace, { onPush("item:$it") }, { onPush("borrowing:$it") }) { onStart("save_equipment", buildJsonObject {}) }
             if (isMember) TextButton(onClick = { onPush("equipment_member") }) { Text("Borrow equipment for myself") }
-            TextButton(onClick = { onGo("module:10") }) { Text("All inventory records and calendar") }
+            TextButton(onClick = { onGo("records:10") }) { Text("All inventory records and calendar") }
         } else MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "equipment_member" -> MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "item" -> EquipmentItemScreen(workspace, id, busy, snackbar, isMember, officerEquipment, onBack, onCommand,
@@ -48,14 +51,29 @@ fun WorkflowRoute(
         "borrowing" -> BorrowingScreen(workspace, id, busy, snackbar, officerEquipment, onBack, onCommand,
             onResubmit = { onStart("request_borrowing", it) }, onItem = { onPush("item:$it") })
         "profile" -> ProfileScreen(workspace, busy, snackbar, onBack, onEdit = { onPush("profile_edit") },
-            onRenewal = { onGo("module:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
+            onRenewal = { onGo("records:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
         "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack, onSave = { payload -> onCommand("save_profile", payload, onBack) }, onCommand = onCommand)
         "name_corrections" -> NameCorrectionsScreen(workspace, busy, snackbar, onBack, onCommand)
         "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, onCommand, onUpload, onOpenDocument, onPayFee = { onGo("module:12") })
-        "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }) { onGo("module:7") }
+        "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }) { onGo("records:7") }
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
             else ScreenShell("Application", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
+        "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("scorecard:$it") }) { onStart("save_personal_training", it) }
+        "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument)
+        "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart) { onGo("records:11") }
+            else denied("Coaches only", "Your current role can't validate scorecards.")
+        "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
+        "finance" -> FinanceRecordScreen(workspace, id, busy, snackbar, perms, onBack, onCommand, onStart, onUpload, onOpenDocument)
+        "finance_desk" -> if ("finance" in perms || "president" in perms)
+            FinanceDeskScreen(workspace, busy, snackbar, perms, onBack, { onPush("finance:$it") }, onCommand, onStart, { onGo("records:12") }) { onPush("payments") }
+            else PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
+        "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
+        "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
+            else denied("Reports officers only", "Your current role can't open club reports.")
+        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart) { onGo("records:14") }
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onStart) { onGo("records:15") }
         else -> ScreenShell("Not found", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }
     }
 }
@@ -67,6 +85,6 @@ private fun MemberEquipment(workspace: JsonObject, busy: Boolean, snackbar: Snac
         heroExtra = { Text(gearMatchLine(profile), color = androidx.compose.ui.graphics.Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodySmall) }) {
         Spacer(Modifier.height(4.dp))
         MemberEquipmentContent(workspace, { onPush("item:$it") }) { onPush("borrowing:$it") }
-        TextButton(onClick = { onGo("module:5") }) { Text("Reimbursements and other member requests") }
+        TextButton(onClick = { onPush("payments") }) { Text("Payments and reimbursements") }
     }
 }

@@ -36,9 +36,9 @@ import java.util.Locale
 
 /* Shared building blocks for the workflow screens: one visual language for status, counts and actions. */
 
-private data class ToneColors(val container: Color, val content: Color)
+data class ToneColors(val container: Color, val content: Color)
 
-@Composable private fun toneColors(tone: Tone): ToneColors {
+@Composable fun toneColors(tone: Tone): ToneColors {
     val dark = MaterialTheme.colorScheme.background.red < .5f
     return when (tone) {
         Tone.POSITIVE -> if (dark) ToneColors(Color(0xFF23402E), Club.mint) else ToneColors(Club.mint, Club.forestDeep)

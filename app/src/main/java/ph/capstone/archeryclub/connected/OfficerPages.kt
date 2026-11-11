@@ -20,9 +20,10 @@ import java.time.LocalTime
 /* Officer home: what needs me today, what is happening now, and the club at a glance. */
 
 private fun queueIcon(route: String) = when {
-    route == "applications" -> "doc"; route == "name_corrections" -> "profile"; route == "module:7" -> "users"
-    route == "equipment" -> "box"; route == "module:8" || route == "officer_activities" -> "calendar"
-    route == "module:11" -> "target"; route == "module:12" -> "money"; route == "module:14" -> "settings"; else -> "bell"
+    route == "applications" -> "doc"; route == "name_corrections" -> "profile"; route == "module:7" || route == "records:7" -> "users"
+    route == "equipment" -> "box"; route == "module:8" || route == "records:8" || route == "officer_activities" -> "calendar"
+    route == "module:11" -> "target"; route == "module:12" -> "money"; route == "module:14" -> "settings"
+    route == "module:9" -> "vote"; route == "module:15" -> "users"; else -> "bell"
 }
 
 fun roleLabel(permissions: Set<String>) = when {

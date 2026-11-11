@@ -40,7 +40,7 @@ fun MemberActivitiesPage(
         var calendar by rememberSaveable { mutableStateOf(false) }
         RowGroup {
             GroupRow("calendar", if (calendar) "Hide calendar" else "Calendar view", onClick = { calendar = !calendar })
-            GroupRow("bell", "Announcements and attendance records", divider = false, onClick = { onModule(3) })
+            GroupRow("bell", "Announcements and attendance records", divider = false, onClick = { onRoute("records:3") })
         }
         if (calendar) RaisedCard { Column(Modifier.padding(12.dp)) {
             RecordCalendar(memberActivities(workspace).map { it.event }, workspace) { onRoute("activity:${it.text("id")}") }
@@ -123,8 +123,11 @@ fun MemberProfilePage(
                     }
                 }
                 RowGroup {
-                    GroupRow("money", "Membership & fees", membership?.text("status").orEmpty(), onClick = { onModule(12) })
-                    GroupRow("target", "Participation history", onClick = { onPage("activities") })
+                    val owed = amountOwed(feeViews(workspace, workspace.text("user_id"), java.time.LocalDate.now()))
+                    GroupRow("money", "Payments & fees", if (owed > 0) "${peso(owed)} due" else membership?.text("status").orEmpty(), onClick = { onModule(12) })
+                    GroupRow("target", "My training", "Scorecards and coach feedback", onClick = { onModule(4) })
+                    GroupRow("calendar", "Participation history", onClick = { onPage("activities") })
+                    GroupRow("vote", "Elections", onClick = { onModule(9) })
                     GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
                         trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
                     GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
