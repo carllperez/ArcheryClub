@@ -82,6 +82,7 @@ fun ScorecardScreen(
     workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, coach: Boolean, vm: SystemViewModel?,
     onBack: () -> Unit, onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onOpenDocument: (String) -> Unit,
     onRoute: (String) -> Unit = {},
+    onDelete: ((String) -> Unit)? = null,
 ) {
     val card = scoreCards(workspace).find { it.id == id }
     if (card == null) { ScreenShell("Scorecard", onBack, snackbar) { EmptyState("Scorecard not found", "It may have been removed. Go back and refresh.") }; return }
@@ -135,6 +136,11 @@ fun ScorecardScreen(
                 KeyValue("Recorded by", when (row.text("source")) { "personal" -> if (own) "You" else "The archer"; "csv" -> "Coach (CSV import)"; else -> "Coach" })
             }
         }
+        // Your own unofficial rounds can go; a coach can remove any round, giving a reason once it's official.
+        if (onDelete != null && ((own && card.state in setOf(ScoreState.PERSONAL, ScoreState.RETURNED)) || coach))
+            DeleteRecordButton("Delete this round", "Delete this round?",
+                if (card.state == ScoreState.VALIDATED) "It's an official record. It's removed from ${if (own) "your" else "the archer's"} history; the activity log keeps a copy and your reason."
+                else "It's removed for good. This can't be undone.", busy, needReason = card.state == ScoreState.VALIDATED && !(own && !coach), onDelete = onDelete)
         if (row.text("feedback").isNotBlank() && card.state != ScoreState.RETURNED) RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

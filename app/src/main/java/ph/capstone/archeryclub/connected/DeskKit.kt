@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -145,4 +145,23 @@ fun AttachedFiles(workspace: JsonObject, recordId: String, onOpen: (String) -> U
             TextButton(onClick = { onOpen(d.text("path")) }) { Text("Open") }
         }
     }
+}
+
+/** A quiet red "Delete …" that always asks first. [needReason] adds a required reason (for official records). */
+@Composable
+fun DeleteRecordButton(label: String, question: String, explain: String, busy: Boolean, needReason: Boolean = false, onDelete: (String) -> Unit) {
+    var asking by remember { mutableStateOf(false) }
+    var reason by remember { mutableStateOf("") }
+    TextButton(onClick = { asking = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+        Text(label, color = ph.capstone.archeryclub.ui.Club.roseInk, fontWeight = FontWeight.ExtraBold)
+    }
+    if (asking) AlertDialog(onDismissRequest = { asking = false },
+        title = { Text(question) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(explain, style = MaterialTheme.typography.bodyMedium)
+            if (needReason) OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Why? (kept in the activity log)") }, modifier = Modifier.fillMaxWidth())
+        } },
+        confirmButton = { TextButton(onClick = { asking = false; onDelete(reason.trim()) }, enabled = !busy && (!needReason || reason.isNotBlank())) {
+            Text("Delete", color = ph.capstone.archeryclub.ui.Club.roseInk, fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = { asking = false }) { Text("Keep it") } })
 }

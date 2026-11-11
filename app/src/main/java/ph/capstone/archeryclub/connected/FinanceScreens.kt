@@ -184,6 +184,7 @@ fun FinanceRecordScreen(
     workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit,
     onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit,
     onUpload: (android.net.Uri, Int, String, String) -> Unit, onOpenDocument: (String) -> Unit,
+    onDelete: (() -> Unit)? = null,
 ) {
     val r = workspace.records("financial_records").find { it.text("id") == id }
     if (r == null) { ScreenShell("Payment", onBack, snackbar) { EmptyState("Record not found", "Go back and refresh.") }; return }
@@ -209,6 +210,8 @@ fun FinanceRecordScreen(
             KeyValue("Reference", r.text("reference")); KeyValue("Submitted", fmtDate(r.date("created_at")))
             KeyValue("Verified", r.date("verified_at")?.let(::fmtDate).orEmpty()); KeyValue("Remark", r.text("remark"))
         } }
+        if (own && r.text("status") == "draft" && onDelete != null)
+            DeleteRecordButton("Delete this draft", "Delete this draft?", "It was never sent, so nobody has checked it. Any receipt you attached goes with it.", busy) { onDelete() }
         if (r.text("kind") != "payment") {
             DeskLabel("Approvals before release")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

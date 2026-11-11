@@ -196,6 +196,7 @@ fun EquipmentItemScreen(
     workspace: JsonObject, itemId: String, busy: Boolean, snackbar: SnackbarHostState, isMember: Boolean, isOfficer: Boolean,
     onBack: () -> Unit, onCommand: (String, JsonObject, () -> Unit) -> Unit, onEdit: (JsonObject) -> Unit, onBorrowing: (String) -> Unit,
     vm: SystemViewModel? = null, onUpload: (android.net.Uri, Int, String, String) -> Unit = { _, _, _, _ -> },
+    onDelete: (() -> Unit)? = null,
 ) {
     val item = workspace.records("equipment").find { it.text("id") == itemId }
     if (item == null) { ScreenShell("Equipment", onBack, snackbar) { EmptyState("Item not found", "Refresh and try again.") }; return }
@@ -226,6 +227,12 @@ fun EquipmentItemScreen(
             KeyValue("Specifications", item.text("specifications"))
             if (isOfficer) KeyValue("Notes", item.text("notes"))
         } }
+        if (isOfficer && onDelete != null) {
+            if (workspace.records("borrowings").none { it.text("equipment_id") == itemId })
+                DeleteRecordButton("Delete this item", "Delete ${item.text("label")}?", "It has never been borrowed, so it can go. Its photo goes with it.", busy) { onDelete() }
+            else Text("This item has a borrowing history, so it stays on record. To take it out of use, edit it and set its condition to Retired.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         val blocked = hasOverdueItem(workspace)
         if (isMember && state.borrowable && blocked) {
             NoticeCard("Return your overdue item first", "You have equipment past its return time. New requests open again once the officer records the return.", Tone.DANGER)

@@ -131,7 +131,7 @@ fun MemberActivitiesContent(workspace: JsonObject, onOpen: (String) -> Unit) {
 fun ActivityDetailScreen(
     workspace: JsonObject, eventId: String, busy: Boolean, snackbar: SnackbarHostState, isMember: Boolean, isOfficer: Boolean,
     onBack: () -> Unit, onCommand: (String, JsonObject, () -> Unit) -> Unit, onRoster: () -> Unit, onEdit: (JsonObject) -> Unit,
-    onAnnounce: (JsonObject) -> Unit, onBorrow: () -> Unit = {},
+    onAnnounce: (JsonObject) -> Unit, onBorrow: () -> Unit = {}, onDelete: (() -> Unit)? = null,
 ) {
     val event = workspace.records("events").find { it.text("id") == eventId }
     if (event == null) {
@@ -147,6 +147,13 @@ fun ActivityDetailScreen(
             StatusPill(v.status.label.uppercase(), v.status.tone())
             if (isOfficer && event.text("published") != "true") StatusPill("DRAFT", Tone.NEUTRAL)
         }) {
+        if (isOfficer && event.text("published") != "true" && onDelete != null) RaisedCard {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text("Draft: members can't see it yet. Publish it, or delete it if it isn't needed.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                DeleteRecordButton("Delete draft", "Delete this draft?", "It was never published, so nobody registered. This can't be undone.", busy) { onDelete() }
+            }
+        }
         RaisedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 InfoLine("calendar", fmtRange(v.start, v.end), countdownLabel(v.start).takeIf { it.isNotBlank() && v.end?.isAfter(Instant.now()) == true }.orEmpty())

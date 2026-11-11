@@ -704,3 +704,31 @@ test('Rounds keep their arrows; the server works the score out from them',async(
  await denied(()=>rpc('officer','import_rounds',[JSON.stringify(rows)],'$1::jsonb'),/already imported/);
  await denied(()=>rpc('successor','import_rounds',[JSON.stringify(rows)],'$1::jsonb'),/Permission/);
 });
+
+test('Delete only what can safely go; official records stay',async()=>{
+ const del=(who,kind,id,reason='')=>rpc(who,'delete_record',[kind,id,reason],'$1,$2::uuid,$3');
+ // a member's own personal round
+ const mine=await rpc('successor','save_round',['save_personal_training',JSON.stringify({training_date:'2026-11-07',distance:18,target_face:'WA 40 cm',category:'Recurve',scoring_format:'Practice',arrows:{ends:[[{p:'9'}]]}}),false],'$1,$2::jsonb,$3');
+ await denied(()=>del('applicant','training_round',mine.id),/Only your own/);
+ await del('successor','training_round',mine.id);
+ assert.equal(await row('training_records',mine.id),undefined);
+ assert.ok((await db.query("select 1 from app_private.audit_log where action='delete_training_round' and record_id=$1",[mine.id])).rows.length);
+ // a validated round needs a coach and a reason
+ const sent=await rpc('successor','save_round',['save_personal_training',JSON.stringify({training_date:'2026-11-08',distance:18,target_face:'WA 40 cm',category:'Recurve',scoring_format:'Practice',arrows:{ends:[[{p:'8'}]]}}),true],'$1,$2::jsonb,$3');
+ await denied(()=>del('successor','training_round',sent.id),/Only your own/);
+ await grant('officer','training_officer');
+ await command('officer','validate_training',{id:sent.id,version:(await row('training_records',sent.id)).version,validation:'validated',feedback:'ok'});
+ await denied(()=>del('officer','training_round',sent.id),/Say why/);
+ await del('officer','training_round',sent.id,'Duplicate import');
+ // equipment: never borrowed goes; borrowed stays
+ await grant('officer','equipment_officer');
+ const eq=await command('officer','save_equipment',{label:'Delete Me Bow',category:'Bow',specifications:'x',handedness:'right',draw_weight:20,bow_setup:'recurve',condition:'serviceable'});
+ await denied(()=>del('applicant','equipment',eq.id),/Permission/);
+ await del('officer','equipment',eq.id);
+ const used=(await db.query('select equipment_id from app_private.borrowings limit 1')).rows[0];
+ if(used)await denied(()=>del('officer','equipment',used.equipment_id),/Retired/);
+ // custom roles nobody held
+ await rpc('admin','save_role',['temp_role','Temp role',['reports'],true],'$1,$2,$3::text[],$4');
+ await rpc('admin','delete_role',['temp_role'],'$1');
+ await denied(()=>rpc('admin','delete_role',['president'],'$1'),/Built-in/);
+});

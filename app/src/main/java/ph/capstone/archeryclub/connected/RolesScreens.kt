@@ -123,6 +123,11 @@ fun RoleEditScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: S
                 Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodySmall, color = Club.forestDeep)
         }
         warnings.forEach { NoticeCard(if (it.severity == Severity.BLOCK) "Can't save this" else "Check before saving", it.text, if (it.severity == Severity.BLOCK) Tone.DANGER else Tone.WARNING) }
+        // Only roles the club made and nobody holds; the server also refuses any role someone has held before.
+        if (role != null && role.defaults == null && role.holders.isEmpty())
+            DeleteRecordButton("Delete this role", "Delete ${role.name}?", "Nobody holds it. If someone held it before, it stays for the record and you can turn off its desks instead.", busy) {
+                vm.save("delete_role", buildJsonObject { put("p_role_id", role.id) }) { onBack() }
+            }
     }
 
     if (confirming && role != null) {

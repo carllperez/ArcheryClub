@@ -32,7 +32,8 @@ fun WorkflowRoute(
         "activity" -> ActivityDetailScreen(workspace, id, busy, snackbar, isMember, officerActivities, onBack, onCommand,
             onRoster = { onPush("roster:$id") }, onEdit = { onStart("save_event", it) },
             onAnnounce = { onStart("publish_announcement", buildJsonObject { put("event_id", it.text("id")) }) },
-            onBorrow = { onPush("equipment_member") })
+            onBorrow = { onPush("equipment_member") },
+            onDelete = if (vm != null) ({ vm.save("delete_record", deleteArgs("event_draft", id)) { onBack() } }) else null)
         "roster" -> RosterScreen(workspace, id, busy, snackbar, onBack, onCommand) { onStart("open_attendance", it) }
         "officer_activities" -> ScreenShell("Manage activities", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
@@ -47,7 +48,8 @@ fun WorkflowRoute(
         } else MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "equipment_member" -> MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "item" -> EquipmentItemScreen(workspace, id, busy, snackbar, isMember, officerEquipment, onBack, onCommand,
-            onEdit = { onStart("save_equipment", it) }, onBorrowing = { onPush("borrowing:$it") }, vm = vm, onUpload = onUpload)
+            onEdit = { onStart("save_equipment", it) }, onBorrowing = { onPush("borrowing:$it") }, vm = vm, onUpload = onUpload,
+            onDelete = if (vm != null) ({ vm.save("delete_record", deleteArgs("equipment", id)) { onBack() } }) else null)
         "borrowing" -> BorrowingScreen(workspace, id, busy, snackbar, officerEquipment, onBack, onCommand,
             onResubmit = { onStart("request_borrowing", it) }, onItem = { onPush("item:$it") })
         "profile" -> ProfileScreen(workspace, busy, snackbar, onBack, onEdit = { onPush("profile_edit") },
@@ -60,14 +62,16 @@ fun WorkflowRoute(
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
             else ScreenShell("Application", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "training" -> TrainingScreen(workspace, busy, snackbar, onBack, { onPush("scorecard:$it") }, onTap = { onPush("score_entry") }) { onStart("save_personal_training", it) }
-        "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument, onRoute = onPush)
+        "scorecard" -> ScorecardScreen(workspace, id, busy, snackbar, allowed("training"), vm, onBack, onCommand, onStart, onOpenDocument, onRoute = onPush,
+            onDelete = if (vm != null) ({ reason: String -> vm.save("delete_record", deleteArgs("training_round", id, reason)) { onBack() } }) else null)
         "scorestats" -> ScoreStatsScreen(workspace, id, snackbar, onBack)
         "score_entry" -> if (isMember) ScoreEntryScreen(workspace, id, busy, snackbar, vm, onBack) { onBack(); onStart("save_personal_training", it) }
             else denied("Members only", "Only active members log their own rounds.")
         "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart) { onGo("records:11") }
             else denied("Coaches only", "Your current role can't validate scorecards.")
         "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
-        "finance" -> FinanceRecordScreen(workspace, id, busy, snackbar, perms, onBack, onCommand, onStart, onUpload, onOpenDocument)
+        "finance" -> FinanceRecordScreen(workspace, id, busy, snackbar, perms, onBack, onCommand, onStart, onUpload, onOpenDocument,
+            onDelete = if (vm != null) ({ vm.save("delete_record", deleteArgs("payment_draft", id)) { onBack() } }) else null)
         "finance_desk" -> if ("finance" in perms || "president" in perms)
             FinanceDeskScreen(workspace, busy, snackbar, perms, onBack, { onPush("finance:$it") }, onCommand, onStart, { onGo("records:12") }, vm) { onPush("payments") }
             else PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
@@ -105,3 +109,5 @@ private fun MemberEquipment(workspace: JsonObject, busy: Boolean, snackbar: Snac
         TextButton(onClick = { onPush("payments") }) { Text("Payments and reimbursements") }
     }
 }
+
+private fun deleteArgs(kind: String, id: String, reason: String = "") = buildJsonObject { put("p_kind", kind); put("p_id", id); put("p_reason", reason) }
