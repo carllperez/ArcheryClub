@@ -139,4 +139,10 @@ class DeskLogicTest {
         assertEquals(1 to "module:9", q["Candidates to confirm"]); assertEquals(1 to "module:15", q["Delegates to review"])
         assertEquals(1 to "module:15", q["Partner concerns"]); assertEquals(1 to "module:12", q["Payments to match to fees"])
     }
+
+    @Test fun receiptReferencesMatchTheServerRule() {
+        assertEquals("9046292514078", receiptReference(" 9046 2925 14078 "))
+        assertEquals("OR-12345", receiptReference("or-12345"))
+        assertNull(receiptReference("12345")); assertNull(receiptReference("")); assertNull(receiptReference("ref #1234567"))
+    }
 }

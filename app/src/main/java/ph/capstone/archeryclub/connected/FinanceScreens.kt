@@ -14,6 +14,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.ScreenShell
@@ -42,13 +44,43 @@ private fun SendSteps(workspace: JsonObject, record: JsonObject, busy: Boolean, 
         if (record.text("status") in setOf("incomplete", "returned_for_correction") && record.text("remark").isNotBlank())
             NoticeCard("The treasurer sent this back", record.text("remark"), Tone.DANGER)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CardButton(if (reference) "Edit details" else "Add reference no.", Modifier.weight(1f), enabled = !busy, onClick = onEdit)
+            CardButton(if (record.text("kind") == "payment") "Edit reference no." else if (reference) "Edit details" else "Add reference no.", Modifier.weight(1f), enabled = !busy, onClick = onEdit)
             CardButton(if (proof) "Replace proof" else "Upload proof", Modifier.weight(1f), primary = !proof, enabled = !busy, onClick = onProof)
         }
         if (proof) CardButton("Send for checking", Modifier.fillMaxWidth(), primary = reference, enabled = !busy && reference, onClick = onSend)
         Text(when { !reference -> "Add the reference number from your receipt or transfer."; !proof -> "Upload a photo or screenshot of your receipt."; else -> "Ready. The treasurer will check it and you'll get a notice." },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** "I've paid": the purpose and amount come from the fee; the member types the reference number printed on the receipt. */
+@Composable
+private fun ReceiptReferenceDialog(purpose: String, amount: String, existing: JsonObject?, busy: Boolean, onSave: (JsonObject) -> Unit, onDismiss: () -> Unit) {
+    var ref by rememberSaveable { mutableStateOf(existing?.text("reference").orEmpty()) }
+    var tried by remember { mutableStateOf(false) }
+    val clean = receiptReference(ref)
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Receipt reference number") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("$purpose · ${peso(amount.toDoubleOrNull() ?: 0.0)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Copy the Ref No. from your GCash or bank receipt. The treasurer checks it against the club's account, and each receipt can be used only once.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(ref, { ref = it }, label = { Text("Reference number") }, singleLine = true, isError = tried && clean == null,
+                    supportingText = { Text(if (tried && clean == null) "Use 6 to 30 letters or numbers, e.g. 9046292514078" else "e.g. 9046292514078") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                tried = true
+                clean?.let { r -> onSave(buildJsonObject {
+                    existing?.let { e -> put("id", e.text("id")); e.text("version").toLongOrNull()?.let { v -> put("version", v) } }
+                    put("kind", "payment"); put("purpose", purpose); put("amount", amount); put("reference", r)
+                }) }
+            }) { Text("Save", fontWeight = FontWeight.ExtraBold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable
@@ -64,6 +96,8 @@ fun PaymentsScreen(
     val history = workspace.records("financial_records").filter { it.text("user_id") == user }.sortedByDescending { it.text("created_at") }
     val pickProof = rememberProofPicker(onUpload)
     var sending by remember { mutableStateOf<JsonObject?>(null) }
+    var paying by remember { mutableStateOf<Pair<JsonObject, JsonObject?>?>(null) } // (fee or payment, existing payment)
+    fun editPayment(p: JsonObject) { if (p.text("kind") == "payment") paying = p to p else onStart("save_financial_request", p) }
     HeroScaffold(if (owed > 0) peso(owed) else "All paid up", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("PAYMENTS", Color.White.copy(alpha = .16f), Color.White) },
         heroExtra = { Text(when { open.isEmpty() -> "No fees waiting for you."; overdue > 0 -> "$overdue overdue · pay as soon as you can"
@@ -83,14 +117,12 @@ fun PaymentsScreen(
                         FeeState.DUE, FeeState.OVERDUE -> {
                             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("HOW TO PAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("1. Pay the treasurer the way the club announced.\n2. Enter the reference number and upload the receipt.\n3. The treasurer checks it and you get a notice.", style = MaterialTheme.typography.bodySmall)
+                                Text("1. Pay the club through GCash or the bank, as announced.\n2. Enter the Ref No. printed on your receipt and upload a screenshot of it.\n3. The treasurer checks both against the club's account and you get a notice.", style = MaterialTheme.typography.bodySmall)
                             }
-                            CardButton("I've paid · add the details", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
-                                onStart("save_financial_request", buildJsonObject { put("kind", "payment"); put("purpose", f.fee.text("purpose")); put("amount", f.fee.text("amount")) })
-                            }
+                            CardButton("I've paid · enter the receipt's reference no.", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { paying = f.fee to null }
                         }
                         FeeState.DRAFT, FeeState.RETURNED -> f.payment?.let { p ->
-                            SendSteps(workspace, p, busy, onEdit = { onStart("save_financial_request", p) }, onProof = { pickProof(p.text("id")) }, onSend = { sending = p })
+                            SendSteps(workspace, p, busy, onEdit = { editPayment(p) }, onProof = { pickProof(p.text("id")) }, onSend = { sending = p })
                         }
                         FeeState.CHECKING -> Text("The treasurer is checking your payment${f.payment?.text("reference")?.takeIf { it.isNotBlank() }?.let { " (ref $it)" }.orEmpty()}. You'll get a notice.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -115,7 +147,7 @@ fun PaymentsScreen(
                     }
                     financeStatus(r.text("status")).let { (l, t) -> StatusPill(l, t) }
                 }
-                SendSteps(workspace, r, busy, onEdit = { onStart("save_financial_request", r) }, onProof = { pickProof(r.text("id")) }, onSend = { sending = r })
+                SendSteps(workspace, r, busy, onEdit = { editPayment(r) }, onProof = { pickProof(r.text("id")) }, onSend = { sending = r })
             } }
         }
         if (history.isNotEmpty()) {
@@ -136,6 +168,10 @@ fun PaymentsScreen(
             }
         }
     }
+    paying?.let { (source, existing) ->
+        ReceiptReferenceDialog(source.text("purpose"), source.text("amount"), existing, busy,
+            onSave = { data -> onCommand("save_financial_request", data) { paying = null } }, onDismiss = { paying = null })
+    }
     sending?.let { r -> ConfirmDialog("Send for checking?", "${kindLabel(r.text("kind"))} of ${peso(r.amount())} for \"${r.text("purpose")}\". You can't change it while the treasurer checks it.",
         "Send", onConfirm = { sending = null; onCommand("submit_financial_request", versionOf(r)) {} }, onDismiss = { sending = null }) }
 }
@@ -154,6 +190,7 @@ fun FinanceRecordScreen(
     val pickProof = rememberProofPicker(onUpload)
     var sending by remember { mutableStateOf(false) }
     var verifying by remember { mutableStateOf(false) }
+    var editingRef by remember { mutableStateOf(false) }
     val finance = "finance" in permissions; val president = "president" in permissions
     val pending = r.text("status") == "pending_verification"
     val (label, tone) = financeStatus(r.text("status"))
@@ -189,7 +226,7 @@ fun FinanceRecordScreen(
         if (!hasProof(workspace, id)) Text("No receipt uploaded yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         AttachedFiles(workspace, id, onOpenDocument)
         if (own && r.text("status") in setOf("draft", "incomplete", "returned_for_correction")) RaisedCard {
-            Column(Modifier.padding(16.dp)) { SendSteps(workspace, r, busy, onEdit = { onStart("save_financial_request", r) }, onProof = { pickProof(id) }, onSend = { sending = true }) }
+            Column(Modifier.padding(16.dp)) { SendSteps(workspace, r, busy, onEdit = { if (r.text("kind") == "payment") editingRef = true else onStart("save_financial_request", r) }, onProof = { pickProof(id) }, onSend = { sending = true }) }
         }
         if (finance && r.text("kind") == "payment" && r.text("status") == "verified") {
             val fees = workspace.records("fee_assessments")
@@ -206,6 +243,8 @@ fun FinanceRecordScreen(
     if (sending) ConfirmDialog("Send for checking?", "You can't change it while the treasurer checks it.", "Send",
         onConfirm = { sending = false; onCommand("submit_financial_request", versionOf(r)) {} }, onDismiss = { sending = false })
     if (verifying) VerifyDialog(workspace, r, onCommand) { verifying = false }
+    if (editingRef) ReceiptReferenceDialog(r.text("purpose"), r.text("amount"), r, busy,
+        onSave = { data -> onCommand("save_financial_request", data) { editingRef = false } }, onDismiss = { editingRef = false })
 }
 
 /** Verify a payment in one step; a verified payment is then matched to the fee it pays, which activates a pending membership. */

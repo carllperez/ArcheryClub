@@ -158,6 +158,9 @@ fun paymentsToLink(workspace: JsonObject): List<Pair<JsonObject, JsonObject>> {
         .mapNotNull { p -> matchingFee(p, fees)?.let { p to it } }
 }
 
+/** A receipt reference as the server stores it (spaces removed, upper case), or null when it can't be one. */
+fun receiptReference(input: String): String? = input.replace(Regex("\\s"), "").uppercase().takeIf { Regex("^[A-Z0-9-]{6,30}$").matches(it) }
+
 // ---------------------------------------------------------------- Elections (M9)
 
 fun electionStageLabel(status: String) = when (status) {
