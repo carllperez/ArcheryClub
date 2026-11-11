@@ -101,7 +101,7 @@ fun ClubLanding(
     val staff=permissions.isNotEmpty()
     val memberHome=isMember&&!staff
     val hasModule:(Int)->Boolean={n->modules.any{it.text("number")==n.toString()}}
-    val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()}.sortedByDescending{it.text("notified_at")}
+    val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()&&it.text("completed_at").isBlank()}.sortedByDescending{it.text("notified_at")}
     val title=when(page){
         "activities"->"Activities";"modules"->"All modules";"account"->"Your account";"notices"->"Notices"
         else->if(staff)"Club workspace" else if(memberHome){

@@ -339,6 +339,7 @@ test('M6/M12 review notices track resubmissions and fee completion independently
  await command('applicant','submit_financial_request',{id:f.id,version:1});
  const getNotice=async()=> (await db.query("select * from app_private.notifications where record_id=$1 and user_id=$2 and kind='review'",[f.id,ids.officer])).rows[0];
  const notice=await getNotice();
+ assert.match(notice.message,/^Check .+'s payment · Membership fee test$/);
  await command('officer','acknowledge_notification',{id:notice.id});
  assert.notEqual((await getNotice()).acknowledged_at,null);
  assert.equal((await getNotice()).completed_at,null);
