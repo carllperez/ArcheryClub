@@ -172,11 +172,15 @@ fun TrainingDeskScreen(
     HeroScaffold("Scorecards", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("COACH DESK", Club.lime, Club.forestDeep) },
         heroExtra = { HeroStats(listOf("${queue.size}" to "To validate", "${corrections.size}" to "Corrections", "$validatedThisMonth" to "Validated this month")) }) {
-        TileRow {
-            HomeTile("upload", "CSV", "Import a session", Modifier.weight(1f).fillMaxHeight()) { importing = !importing }
-            HomeTile("target", "+", "Encode a round", Modifier.weight(1f).fillMaxHeight()) { onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }
+        // Two ways to add rounds: one at a time, or a whole session from a spreadsheet.
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = { onStart("save_training", buildJsonObject { put("training_date", today.toString()) }) }, enabled = !busy,
+                modifier = Modifier.weight(1f).height(48.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Encode a round", fontWeight = FontWeight.ExtraBold) }
+            OutlinedButton(onClick = { importing = !importing }, enabled = !busy, modifier = Modifier.weight(1f).height(48.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)) { Text(if (importing) "Close import" else "Import a session", fontWeight = FontWeight.ExtraBold) }
         }
-        if (importing && vm != null) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { TrainingImport(vm) } }
+        if (importing && vm != null) CoachImportCard(workspace, busy, vm) { importing = false }
         DeskLabel("Waiting for you")
         if (queue.isEmpty()) EmptyState("All caught up", "Rounds that archers send for checking appear here.")
         queue.forEach { c ->
@@ -205,4 +209,56 @@ fun TrainingDeskScreen(
                 leading = { DayChip(c.date, Tone.POSITIVE) }, onClick = { onOpen(c.id) }) }
         } else TextButton(onClick = onRecords, modifier = Modifier.fillMaxWidth()) { Text("All training records") }
     }
+}
+
+
+/** Import a whole session from a spreadsheet: plain column names, members by name, a preview, then one tap. */
+@Composable
+private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemViewModel, onDone: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var result by remember { mutableStateOf<CoachImport?>(null) }
+    var fileName by remember { mutableStateOf("") }
+    val example = workspace.records("member_directory").firstOrNull { it.text("status") == "Active" }?.text("full_name").orEmpty().ifBlank { "Juan Dela Cruz" }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) fileName = it.getString(0) }
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { r ->
+                val buffer = CharArray(1_000_001); var count = 0
+                while (count < buffer.size) { val n = r.read(buffer, count, buffer.size - count); if (n < 0) break; count += n }
+                require(count <= 1_000_000) { "Choose a CSV smaller than 1 MB." }
+                String(buffer, 0, count)
+            } ?: error("This file could not be read.")
+            coachImport(text, workspace)
+        }.onSuccess { result = it }.onFailure { vm.error(it.message ?: "Check the CSV and try again.") }
+    }
+    RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Import a session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+        Text("Make a spreadsheet with one row per archer, save it as CSV, then choose it here. Use the member's name as it appears in the app.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Columns: member, date, distance, target_face, bow, round, score, max_score. Optional: notes, feedback.",
+            style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(coachCsvTemplate(example, LocalDate.now()))); vm.notify("Template copied. Paste it into a spreadsheet.") },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)) { Text("Copy template") }
+            Button(onClick = { picker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain")) }, enabled = !busy,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Choose CSV") }
+        }
+        result?.let { r ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            if (fileName.isNotBlank()) Text(fileName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (r.problems.isNotEmpty()) NoticeCard("Fix ${r.problems.size} thing${if (r.problems.size == 1) "" else "s"} in the file", r.problems.take(5).joinToString("\n") + if (r.problems.size > 5) "\n…and ${r.problems.size - 5} more" else "", Tone.DANGER)
+            if (r.rows.isNotEmpty()) {
+                Text("${r.rows.size} round${if (r.rows.size == 1) "" else "s"} ready", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                r.preview.take(8).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                if (r.preview.size > 8) Text("…and ${r.preview.size - 8} more", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Imported rounds count as checked by you.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Button(onClick = { vm.command("import_training", buildJsonObject { put("rows", JsonArray(r.rows)) }) { result = null; onDone() } },
+                enabled = !busy && r.rows.isNotEmpty() && r.problems.isEmpty(), modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) {
+                Text(if (r.problems.isEmpty()) "Import ${r.rows.size} round${if (r.rows.size == 1) "" else "s"}" else "Fix the file, then choose it again", fontWeight = FontWeight.ExtraBold)
+            }
+        }
+    } }
 }

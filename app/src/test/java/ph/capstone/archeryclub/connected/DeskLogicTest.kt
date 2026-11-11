@@ -321,4 +321,28 @@ class DeskLogicTest {
         assertEquals(listOf("Graduate", "Alumni", "Faculty/Staff"), setupSuggestions("membership_categories", listOf("undergraduate")))
         assertTrue(setupSuggestions("club_name", emptyList()).isEmpty())
     }
+
+    // ---------------------------------------------------------------- Coach CSV import
+
+    private fun coachWs() = ws("member_directory" to listOf(obj("user_id" to "u1", "full_name" to "Ana Cruz", "status" to "Active"),
+        obj("user_id" to "u2", "full_name" to "Ben Uy", "status" to "Active"), obj("user_id" to "u3", "full_name" to "Old Member", "status" to "Inactive")))
+
+    @Test fun coachImportMatchesMembersByNameAndBuildsServerRows() {
+        val csv = "Member,Date,Distance,Target face,Bow,Round,Score,Max score,Notes\nana cruz,2026-11-12,18 m,80 cm,Recurve,WA 360,286,360,\"Windy, gusts\"\n"
+        val r = coachImport(csv, coachWs())
+        assertTrue(r.problems.isEmpty())
+        val row = r.rows.single()
+        assertEquals("u1", row.text("user_id"))
+        assertEquals("18", row.text("distance"))
+        assertEquals("Windy, gusts", row.text("observations"))
+        assertEquals("csv:u1:2026-11-12:WA 360:286", row.text("import_key"))
+        assertEquals("Ana Cruz · 286/360 · WA 360 · 2026-11-12", r.preview.single())
+    }
+
+    @Test fun coachImportExplainsWhatToFix() {
+        assertEquals("Add the missing column: max_score.", coachImport("member,date,distance,target_face,bow,round,score\nAna Cruz,2026-11-12,18,80 cm,Recurve,WA 360,286\n", coachWs()).problems.single())
+        val r = coachImport("member,date,distance,target_face,bow,round,score,max_score\nOld Member,2026-11-12,18,80 cm,Recurve,WA 360,286,360\nBen Uy,12/11/2026,18,80 cm,Recurve,WA 360,286,360\nBen Uy,2026-11-12,18,80 cm,Recurve,WA 360,400,360\n", coachWs())
+        assertEquals(listOf("Row 2: \"Old Member\" is not an active member.", "Row 3: date must look like 2026-11-12.", "Row 4: score must be between 0 and the max score."), r.problems)
+        assertTrue(coachCsvTemplate("Ana Cruz", LocalDate.parse("2026-11-12")).lines()[1].startsWith("Ana Cruz,2026-11-12,18,80 cm"))
+    }
 }

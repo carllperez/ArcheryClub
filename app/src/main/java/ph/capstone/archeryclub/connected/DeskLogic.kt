@@ -524,3 +524,99 @@ fun configureClubPayload(settings: JsonObject?, changes: Map<String, kotlinx.ser
     )
     return JsonObject(base + changes)
 }
+
+// ---------------------------------------------------------------- Coach CSV import (M11)
+
+/** RFC 4180 rows: quoted fields may hold commas, line breaks and doubled quotes. */
+fun csvRecords(csv: String): List<List<String>> {
+    val records = mutableListOf<List<String>>(); var row = mutableListOf<String>(); val field = StringBuilder()
+    var quoted = false; var closed = false; var i = 0
+    fun cell() { row.add(field.toString()); field.clear(); closed = false }
+    while (i < csv.length) {
+        val c = csv[i]
+        if (quoted) { if (c == '"') { if (i + 1 < csv.length && csv[i + 1] == '"') { field.append('"'); i++ } else { quoted = false; closed = true } } else field.append(c) }
+        else when (c) {
+            '"' -> { require(field.isEmpty() && !closed) { "Invalid CSV quoting." }; quoted = true }
+            ',' -> cell()
+            '\r', '\n' -> { cell(); records.add(row); row = mutableListOf(); if (c == '\r' && i + 1 < csv.length && csv[i + 1] == '\n') i++ }
+            else -> { require(!closed) { "Unexpected text after a quoted CSV field." }; field.append(c) }
+        }
+        i++
+    }
+    require(!quoted) { "A quoted field in the CSV is never closed." }
+    if (field.isNotEmpty() || row.isNotEmpty() || closed) { cell(); records.add(row) }
+    return records.filter { r -> r.any { it.isNotBlank() } }
+}
+
+/** The columns a coach fills in, in plain words. Older technical names are still accepted. */
+private val COACH_COLUMNS = linkedMapOf(
+    "member" to listOf("member", "name", "archer", "user_id"),
+    "date" to listOf("date", "training_date"),
+    "distance" to listOf("distance", "distance_m"),
+    "target_face" to listOf("target_face", "target", "face"),
+    "bow" to listOf("bow", "category", "bow_type"),
+    "round" to listOf("round", "scoring_format", "format"),
+    "score" to listOf("score"),
+    "max_score" to listOf("max_score", "maximum_score", "max"),
+    "notes" to listOf("notes", "observations"),
+    "feedback" to listOf("feedback"),
+    "grouping" to listOf("grouping"),
+    "level" to listOf("level"),
+    "import_key" to listOf("import_key"),
+)
+private val COACH_REQUIRED = listOf("member", "date", "distance", "target_face", "bow", "round", "score", "max_score")
+
+fun coachCsvTemplate(exampleName: String, today: LocalDate): String =
+    "member,date,distance,target_face,bow,round,score,max_score,notes\n" +
+        "${exampleName.replace(",", " ")},$today,18,80 cm,Recurve,WA 360,286,360,Windy on the right side\n"
+
+/** One parsed CSV: the rows ready to send to import_training, one line per row for the preview, and anything to fix first. */
+data class CoachImport(val rows: List<JsonObject>, val preview: List<String>, val problems: List<String>)
+
+fun coachImport(csv: String, workspace: JsonObject): CoachImport {
+    val records = csvRecords(csv)
+    if (records.size < 2) return CoachImport(emptyList(), emptyList(), listOf("The file has no rounds under the header row."))
+    if (records.size > 501) return CoachImport(emptyList(), emptyList(), listOf("Import up to 500 rounds at a time."))
+    val headers = records.first().map { it.trim().removePrefix("﻿").lowercase().replace(Regex("[\\s-]+"), "_") }
+    val index = COACH_COLUMNS.mapValues { (_, aliases) -> headers.indexOfFirst { it in aliases } }
+    val missing = COACH_REQUIRED.filter { index.getValue(it) < 0 }
+    if (missing.isNotEmpty()) return CoachImport(emptyList(), emptyList(), listOf("Add the missing column${if (missing.size == 1) "" else "s"}: ${missing.joinToString(", ")}."))
+    val members = workspace.records("member_directory").filter { it.text("status") == "Active" }
+    val rows = mutableListOf<JsonObject>(); val preview = mutableListOf<String>(); val problems = mutableListOf<String>()
+    records.drop(1).forEachIndexed { n, values ->
+        val line = n + 2
+        fun v(key: String) = index.getValue(key).let { if (it in values.indices) values[it].trim() else "" }
+        val who = v("member")
+        val matches = members.filter { it.text("user_id") == who || it.text("full_name").equals(who, ignoreCase = true) }
+        val score = v("score").toDoubleOrNull(); val max = v("max_score").toDoubleOrNull(); val distance = v("distance").removeSuffix("m").trim().toDoubleOrNull()
+        val date = runCatching { LocalDate.parse(v("date")) }.getOrNull()
+        val issue = when {
+            who.isBlank() -> "no member"
+            matches.isEmpty() -> "\"$who\" is not an active member"
+            matches.size > 1 -> "more than one member is called \"$who\""
+            date == null -> "date must look like 2026-11-12"
+            distance == null || distance <= 0 -> "distance must be a number of metres"
+            score == null || max == null || max <= 0 -> "score and max score must be numbers"
+            score < 0 || score > max -> "score must be between 0 and the max score"
+            COACH_REQUIRED.any { v(it).isBlank() } -> "fill in " + COACH_REQUIRED.filter { v(it).isBlank() }.joinToString(", ")
+            else -> null
+        }
+        if (issue != null) { problems.add("Row $line: $issue."); return@forEachIndexed }
+        val userId = matches.single().text("user_id")
+        val key = v("import_key").ifBlank { "csv:$userId:$date:${v("round")}:${plainNumber(score!!)}" }
+        rows.add(JsonObject(buildMap {
+            put("import_key", kotlinx.serialization.json.JsonPrimitive(key)); put("user_id", kotlinx.serialization.json.JsonPrimitive(userId))
+            put("training_date", kotlinx.serialization.json.JsonPrimitive(date.toString())); put("distance", kotlinx.serialization.json.JsonPrimitive(plainNumber(distance!!)))
+            put("target_face", kotlinx.serialization.json.JsonPrimitive(v("target_face"))); put("category", kotlinx.serialization.json.JsonPrimitive(v("bow")))
+            put("scoring_format", kotlinx.serialization.json.JsonPrimitive(v("round"))); put("score", kotlinx.serialization.json.JsonPrimitive(plainNumber(score!!)))
+            put("maximum_score", kotlinx.serialization.json.JsonPrimitive(plainNumber(max!!)))
+            listOf("notes" to "observations", "feedback" to "feedback", "grouping" to "grouping", "level" to "level").forEach { (from, to) ->
+                v(from).takeIf { it.isNotBlank() }?.let { put(to, kotlinx.serialization.json.JsonPrimitive(it)) }
+            }
+        }))
+        preview.add("${matches.single().text("full_name")} · ${plainNumber(score!!)}/${plainNumber(max!!)} · ${v("round")} · $date")
+    }
+    val dupes = rows.groupBy { it.text("import_key") }.filter { it.value.size > 1 }.keys
+    if (dupes.isNotEmpty()) problems.add("${dupes.size} round${if (dupes.size == 1) " appears" else "s appear"} twice in the file.")
+    return CoachImport(rows, preview, problems)
+}

@@ -40,6 +40,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     } }
     fun clearMessage(){mutable.value=mutable.value.copy(message=null,error=null)}
     fun error(message:String){mutable.value=mutable.value.copy(error=message)}
+    fun notify(message:String){mutable.value=mutable.value.copy(message=message)}
     fun auth(action:String,email:String,password:String,code:String="")=runAction {
         require(BuildConfig.EMAIL_ENABLED || action !in setOf("recover","verify","verify_invite")){"Email services are not enabled yet. Use an existing account."}
         require(BuildConfig.EMAIL_ENABLED || BuildConfig.SIGNUP_ENABLED || action!="signup"){"Account sign-up is not enabled yet. Ask a club officer."}
