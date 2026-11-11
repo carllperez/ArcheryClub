@@ -565,6 +565,7 @@ test('Registration story: sign-up → application → correction with a replaced
   await denied(()=>command('newcomer','register_event',{event_id:eventId}),/membership/);
   // application: details, then the required file, then submit
   let a=await command('newcomer','save_application',{full_name:'New Comer',phone:'09171234567',student_number:'12345678',confirmed:false});
+  assert.equal((await db.query('select full_name from app_private.profiles where id=$1',[nid])).rows[0].full_name,'New Comer','officers see the applicant by name before approval');
   await denied(()=>command('newcomer','submit_application',{version:a.version,full_name:'New Comer',confirmed:true}),/Missing requirement: School ID/);
   await upload('newcomer',2,a.id,'School ID');
   await denied(()=>command('newcomer','submit_application',{version:a.version,full_name:'New Comer'}),/Confirm/);
