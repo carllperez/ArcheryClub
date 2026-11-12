@@ -1,6 +1,8 @@
 package ph.capstone.archeryclub.connected
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -69,8 +71,20 @@ fun OfficerHome(
         // something waits), then the same member tiles a member sees. Officers who aren't members keep the desk grid.
         if (isMember) {
             val main = desks.firstOrNull()
-            desks.filter { it == main || it.waiting > 0 }.forEach { d ->
-                DeskJobCard(d, officerFocus(workspace, setOf(d.permission), now)) { onRoute(it) }
+            // Swipe through the desk jobs and, last, the officer's own next session, like the member's Home card.
+            val jobs = desks.filter { it == main || it.waiting > 0 }
+            val mine = landingEvents(workspace, registeredOnly = true).firstOrNull()
+            val sessionCard = mine?.let { e -> activityView(e, workspace, now).let { v -> SessionCardData(e.text("title"), v.start, e.text("venue"), v.status.label) } }
+            val pager = rememberPagerState { jobs.size + 1 }
+            HorizontalPager(pager, pageSpacing = 12.dp, verticalAlignment = Alignment.Top) { i ->
+                if (i < jobs.size) DeskJobCard(jobs[i], officerFocus(workspace, setOf(jobs[i].permission), now)) { onRoute(it) }
+                else NextSessionCard(sessionCard, onOpen = { mine?.let { onRoute("activity:${it.text("id")}") } }, onBrowse = { onPage("activities") })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                repeat(jobs.size + 1) { i ->
+                    Box(Modifier.padding(horizontal = 3.dp).size(if (pager.currentPage == i) 18.dp else 7.dp, 7.dp).clip(CircleShape)
+                        .background(if (pager.currentPage == i) Club.forest else Club.mint))
+                }
             }
             val quiet = desks.filter { it != main && it.waiting == 0 }
             if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
