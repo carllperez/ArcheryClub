@@ -802,13 +802,14 @@ test('M2 application details: college, program and year are saved, required to s
  await as('newbie',()=>db.exec('select public.initialize_account()'));
  const base={full_name:'Nina Newbie',phone:'09171234567',student_number:'12345678',experience:''};
  await denied(()=>rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,emergency_contact_name:'Mom'})],'$1,$2::jsonb'),/both/);
- const a=await rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,college:'CCS',program:'BS Information Technology',year_level:'2nd year',
+ const a=await rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,sex:'Female',college:'CCS',program:'BS Information Technology',year_level:'2nd year',
   emergency_contact_name:'Maria Newbie',emergency_contact_phone:'09181234567'})],'$1,$2::jsonb');
- assert.equal(a.college,'CCS'); assert.equal(a.year_level,'2nd year'); assert.equal(a.full_name,'Nina Newbie');
- await denied(()=>rpc('newbie','save_application_details',['submit_application',JSON.stringify({...base,version:a.version,confirmed:true})],'$1,$2::jsonb'),/college, program and year/);
+ assert.equal(a.college,'CCS'); assert.equal(a.sex,'Female');
+ await denied(()=>rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,sex:'X'})],'$1,$2::jsonb'),/Male or Female/); assert.equal(a.year_level,'2nd year'); assert.equal(a.full_name,'Nina Newbie');
+ await denied(()=>rpc('newbie','save_application_details',['submit_application',JSON.stringify({...base,version:a.version,confirmed:true})],'$1,$2::jsonb'),/sex, college, program and year/);
  await denied(()=>rpc('newbie','save_application_details',['review_application',JSON.stringify({})],'$1,$2::jsonb'),/Unknown/);
  await db.exec('reset role');
  await db.query("update app_private.applications set status='approved' where user_id=$1",[ids.newbie]);
- const p=(await db.query('select college,program,year_level,emergency_contact_name from app_private.profiles where id=$1',[ids.newbie])).rows[0];
- assert.deepEqual(p,{college:'CCS',program:'BS Information Technology',year_level:'2nd year',emergency_contact_name:'Maria Newbie'});
+ const p=(await db.query('select sex,college,program,year_level,emergency_contact_name from app_private.profiles where id=$1',[ids.newbie])).rows[0];
+ assert.deepEqual(p,{sex:'Female',college:'CCS',program:'BS Information Technology',year_level:'2nd year',emergency_contact_name:'Maria Newbie'});
 });

@@ -92,10 +92,11 @@ fun applicationView(workspace: JsonObject, application: JsonObject? = workspace.
     return ApplicationView(application, applicationStage(application?.text("status").orEmpty()), reqs, docs.filter { it.text("requirement") !in names })
 }
 
-const val APPLICATION_FIELDS = "full_name,phone,student_number,college,program,year_level,emergency_contact_name,emergency_contact_phone,experience"
+const val APPLICATION_FIELDS = "full_name,phone,student_number,sex,college,program,year_level,emergency_contact_name,emergency_contact_phone,experience"
 /** DLSU colleges, by the short names students use. */
 val COLLEGES = listOf("CCS", "GCOE", "COS", "CLA", "RVR-COB", "SOE", "BAGCED", "TDCOL", "Other")
-val YEAR_LEVELS = listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Graduate")
+val YEAR_LEVELS = listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Graduate", "Alumni")
+val SEXES = listOf("Male", "Female")
 
 /** Mirrors the server: name required (≤160); optional fields are length-limited and the phone must look like one. */
 fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
@@ -116,6 +117,7 @@ fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
 fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean): List<String> = buildList {
     if (!view.stage.editable) { add("This application is being checked."); return@buildList }
     applicationErrors(values).values.forEach { add(it) }
+    if (values["sex"].orEmpty().isBlank()) add("Pick your sex.")
     if (values["college"].orEmpty().isBlank()) add("Pick your college.")
     if (values["program"].orEmpty().isBlank()) add("Enter your program.")
     if (values["year_level"].orEmpty().isBlank()) add("Pick your year level.")

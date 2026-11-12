@@ -92,7 +92,7 @@ fun ApplicationScreen(
     val membership = workspace.records("memberships").find { it.text("user_id") == user }
     val profile = workspace.records("profiles").find { it.text("id") == user }
     val initial = remember(app?.text("version")) {
-        APPLICATION_FIELDS.split(",").associateWith { k -> app?.text(k).orEmpty().ifBlank { if (k in setOf("full_name", "phone", "college", "program", "year_level", "emergency_contact_name", "emergency_contact_phone")) profile?.text(k).orEmpty() else "" } }
+        APPLICATION_FIELDS.split(",").associateWith { k -> app?.text(k).orEmpty().ifBlank { if (k in setOf("full_name", "phone", "sex", "college", "program", "year_level", "emergency_contact_name", "emergency_contact_phone")) profile?.text(k).orEmpty() else "" } }
     }
     val values = rememberSaveable(app?.text("version"), saver = mapSaver(save = { it.toMap() }, restore = { s -> mutableStateMapOf<String, String>().apply { s.forEach { (k, v) -> put(k, v as String) } } })) {
         mutableStateMapOf<String, String>().apply { putAll(initial) }
@@ -172,6 +172,9 @@ fun ApplicationScreen(
             field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
             field("phone", "Mobile number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
             field("student_number", "Student number", KeyboardType.Number)
+            Text("Sex", style = MaterialTheme.typography.labelLarge)
+            ChoiceChips(SEXES.map { it to it }, values["sex"].orEmpty()) { if (editable && !busy) values["sex"] = it }
+            if (attempted && values["sex"].orEmpty().isBlank()) Text("Pick your sex.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             Text("College", style = MaterialTheme.typography.labelLarge)
             ChoiceChips(COLLEGES.map { it to it }, values["college"].orEmpty()) { if (editable && !busy) values["college"] = it }
             if (attempted && values["college"].orEmpty().isBlank()) Text("Pick your college.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -306,6 +309,7 @@ fun ApplicationReviewScreen(
             KeyValue("Full name", app.text("full_name"))
             KeyValue("Mobile", app.text("phone"))
             KeyValue("Student no.", app.text("student_number"))
+            KeyValue("Sex", app.text("sex"))
             KeyValue("College", app.text("college"))
             KeyValue("Program", app.text("program"))
             KeyValue("Year level", app.text("year_level"))
