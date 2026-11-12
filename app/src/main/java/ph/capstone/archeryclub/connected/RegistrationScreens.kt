@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.DiscardDialog
 import ph.capstone.archeryclub.ui.ScreenShell
@@ -126,14 +127,18 @@ fun ApplicationScreen(
         },
         heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) },
         sticky = if (canSubmit) ({
-            Column(Modifier.weight(1f)) {
-                Text(if (blockers.isEmpty()) "Ready to send" else "${blockers.size} thing${if (blockers.size == 1) "" else "s"} left",
-                    style = MaterialTheme.typography.titleSmall)
-                Text(blockers.firstOrNull() ?: "The club is notified right away", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
-            StickyButton(if (view.stage == ApplicationStage.NEEDS_CHANGES) "Send again for verification" else "Send membership for verification", !busy && blockers.isEmpty()) {
-                attempted = true; submitDialog = true
+            // The button text is long, so the status line sits above it instead of beside it.
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(if (blockers.isEmpty()) "Ready to send" else "${blockers.size} thing${if (blockers.size == 1) "" else "s"} left",
+                        style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text("· " + (blockers.firstOrNull() ?: "The club is notified right away"), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                }
+                StickyButton(if (view.stage == ApplicationStage.NEEDS_CHANGES) "Send again for verification" else "Send membership for verification",
+                    !busy && blockers.isEmpty(), Modifier.fillMaxWidth()) {
+                    attempted = true; submitDialog = true
+                }
             }
         }) else null) {
         Spacer(Modifier.height(4.dp))
