@@ -132,6 +132,20 @@ fun applicationsToReview(workspace: JsonObject): List<ApplicationView> {
         .map { applicationView(workspace, it) }
 }
 
+/** Applications that already have a decision (approved, sent back, not accepted), newest first, for the Decided tab. */
+fun decidedApplications(workspace: JsonObject): List<ApplicationView> {
+    val me = workspace.text("user_id")
+    return workspace.records("applications")
+        .filter { it.text("user_id") != me && applicationStage(it.text("status")) in setOf(ApplicationStage.APPROVED, ApplicationStage.REJECTED, ApplicationStage.NEEDS_CHANGES) }
+        .sortedByDescending { it.text("updated_at").ifBlank { it.text("submitted_at") } }
+        .map { applicationView(workspace, it) }
+}
+
+/** The decision as the Decided list shows it: "Returned" reads better there than "Changes requested". */
+fun decisionLabel(stage: ApplicationStage): String = when (stage) {
+    ApplicationStage.APPROVED -> "Approved"; ApplicationStage.REJECTED -> "Not accepted"; ApplicationStage.NEEDS_CHANGES -> "Returned"; else -> stage.label
+}
+
 /** Ordered milestones shown to the applicant. */
 data class Milestone(val title: String, val done: Boolean, val current: Boolean)
 

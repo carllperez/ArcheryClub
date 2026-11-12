@@ -84,6 +84,8 @@ class RegistrationLogicTest {
             )))
         }
         assertEquals(listOf("b", "a"), applicationsToReview(w).map { it.id })
+        assertEquals(listOf("d"), decidedApplications(w).map { it.id })
+        assertEquals("Not accepted", decisionLabel(ApplicationStage.REJECTED)); assertEquals("Returned", decisionLabel(applicationStage("incomplete")))
     }
 
     @Test fun milestonesPointAtTheNextStep() {

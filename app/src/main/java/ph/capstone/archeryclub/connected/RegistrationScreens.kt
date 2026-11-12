@@ -16,6 +16,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import ph.capstone.archeryclub.ui.Club
@@ -56,6 +57,12 @@ private fun Milestones(items: List<Milestone>) {
     }
 }
 
+/** Red until the officer checks the file, so unchecked documents stand out. */
+@Composable
+private fun VerifyButton(text: String, busy: Boolean, onClick: () -> Unit) =
+    Button(onClick = onClick, enabled = !busy, shape = RoundedCornerShape(999.dp), contentPadding = PaddingValues(horizontal = 16.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Club.roseInk, contentColor = Color.White)) { Text(text, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
+
 @Composable
 private fun RequirementRow(req: RequirementView, canUpload: Boolean, busy: Boolean, onOpen: (String) -> Unit, onUpload: () -> Unit,
                            canVerify: Boolean = false, onVerify: (JsonObject) -> Unit = {}) {
@@ -66,9 +73,7 @@ private fun RequirementRow(req: RequirementView, canUpload: Boolean, busy: Boole
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 req.latest?.let { d -> TextButton(onClick = { onOpen(d.text("path")) }, enabled = !busy) { Text("Open") } }
                 if (canUpload) TextButton(onClick = onUpload, enabled = !busy) { Text(if (req.documents.isEmpty()) "Upload" else "Replace") }
-                if (canVerify) req.documents.filter { it.text("verified_by").isBlank() }.forEach { d ->
-                    TextButton(onClick = { onVerify(d) }, enabled = !busy) { Text(if (req.documents.size > 1) "Verify ${d.text("name").take(18)}" else "Mark verified") }
-                }
+                if (canVerify) req.documents.filter { it.text("verified_by").isBlank() }.forEach { d -> VerifyButton(if (req.documents.size > 1) "Verify ${d.text("name").take(14)}" else "Verify", busy) { onVerify(d) } }
             }
         })
 }
@@ -221,6 +226,23 @@ fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: Snac
     ScreenShell("Applications", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         val queue = applicationsToReview(workspace)
+        val decided = decidedApplications(workspace)
+        val me = workspace.text("user_id")
+        // Decided applications stay here so the officer can look back at what she approved or sent back.
+        var tab by rememberSaveable { mutableStateOf("review") }
+        ChoiceChips(listOf("review" to "To review · ${queue.size}", "decided" to "Decided · ${decided.size}"), tab) { tab = it }
+        if (tab == "decided") {
+            if (decided.isEmpty()) EmptyState("Nothing decided yet", "Applications you approve, return or don't accept are kept here.")
+            decided.forEach { v ->
+                val a = v.application!!
+                val by = a.text("reviewed_by").let { r -> if (r == me) "by you" else workspace.records("member_directory").find { it.text("user_id") == r }?.text("full_name")?.let { "by $it" }.orEmpty() }
+                WorkCard(a.text("full_name").ifBlank { "Applicant" }, listOf("${decisionLabel(v.stage)} ${fmtDay(a.instant("updated_at"))} $by".trim()),
+                    leading = { Initials(a.text("full_name").ifBlank { "Applicant" }, 44) },
+                    status = { StatusPill(decisionLabel(v.stage), v.stage.tone) }, onClick = { onOpen(v.id) })
+            }
+            Text("Decided applications are read-only. Opening one shows the documents and the note sent.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
         val ready = queue.count { it.missing.isEmpty() && it.unverified == 0 }
         TileRow {
             StatTile("${queue.size}", "Waiting", Modifier.weight(1f).fillMaxHeight(), if (queue.isEmpty()) Tone.NEUTRAL else Tone.WARNING)
@@ -240,6 +262,7 @@ fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: Snac
                     if (v.missing.isNotEmpty()) StatusPill("${v.missing.size} missing", Tone.DANGER)
                 },
                 onClick = { onOpen(v.id) })
+        }
         }
         TextButton(onClick = onRecords) { Text("Renewals, memberships and all records") }
     }
@@ -275,6 +298,10 @@ fun ApplicationReviewScreen(
             KeyValue("Student no.", app.text("student_number"))
             KeyValue("Experience", app.text("experience"))
             KeyValue("Submitted", fmtDateTime(app.instant("submitted_at")))
+            if (!view.stage.decidable && view.stage !in setOf(ApplicationStage.DRAFT, ApplicationStage.NOT_STARTED)) {
+                val by = app.text("reviewed_by").let { r -> if (r == me) "you" else workspace.records("member_directory").find { it.text("user_id") == r }?.text("full_name").orEmpty().ifBlank { "an officer" } }
+                KeyValue("Decision", "${decisionLabel(view.stage)} · ${fmtDateTime(app.instant("updated_at"))} · by $by")
+            }
             if (view.remark.isNotBlank()) KeyValue("Last remark", view.remark)
         } }
 
@@ -289,18 +316,26 @@ fun ApplicationReviewScreen(
                 status = { if (d.text("verified_by").isBlank()) StatusPill("Waiting for verification", Tone.WARNING) else StatusPill("Verified", Tone.POSITIVE) },
                 footer = { Row {
                     TextButton(onClick = { onOpenDocument(d.text("path")) }) { Text("Open") }
-                    if (!own && d.text("verified_by").isBlank()) TextButton(onClick = { onCommand("verify_document", buildJsonObject { put("id", d.text("id")) }) {} }, enabled = !busy) { Text("Mark verified") }
+                    if (!own && d.text("verified_by").isBlank()) VerifyButton("Verify", busy) { onCommand("verify_document", buildJsonObject { put("id", d.text("id")) }) {} }
                 } })
         }
 
         if (!own && view.stage.decidable) {
             SectionHeader("Decision")
             if (blockers.isNotEmpty()) NoticeCard("Not ready to approve", blockers.joinToString("\n"), Tone.WARNING)
-            PrimaryAction("Approve", !busy && blockers.isEmpty()) { decision = "approved" }
-            SecondaryAction("Return for correction", !busy) { decision = "returned_for_correction" }
-            if (view.missing.isNotEmpty()) SecondaryAction("Mark incomplete", !busy) { decision = "incomplete" }
+            Button(onClick = { decision = "approved" }, enabled = !busy && blockers.isEmpty(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Club.forest, contentColor = Color.White)) { Text("Approve", fontWeight = FontWeight.ExtraBold) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // One "send back" button: files still missing is recorded as incomplete, anything else as returned for correction.
+                Button(onClick = { decision = if (view.missing.isNotEmpty()) "incomplete" else "returned_for_correction" }, enabled = !busy,
+                    modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Club.amberSoft, contentColor = Club.amberInk)) { Text("Return to fix", fontWeight = FontWeight.ExtraBold) }
+                OutlinedButton(onClick = { decision = "rejected" }, enabled = !busy, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(999.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.roseSoft)) { Text("Not accepted", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
+            }
+            Text("Approve unlocks once every document is verified. Green = yes, amber = send back to fix, red = no.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (view.stage == ApplicationStage.SUBMITTED) TextButton(onClick = { decide("under_review") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Mark as under review") }
-            TextButton(onClick = { decision = "rejected" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Reject", color = MaterialTheme.colorScheme.error) }
         }
     }
 
@@ -313,10 +348,10 @@ fun ApplicationReviewScreen(
                 ChoiceChips(categories.map { it to it }, category) { category = it }
                 OutlinedTextField(remark, { remark = it }, label = { Text("Note to applicant (optional)") }, modifier = Modifier.fillMaxWidth())
             })
-    else if (d != null) ConfirmDialog(when (d) { "rejected" -> "Reject this application?"; "incomplete" -> "Mark as incomplete?"; else -> "Return for correction?" },
+    else if (d != null) ConfirmDialog(when (d) { "rejected" -> "Not accept this application?"; else -> "Return to fix?" },
             when (d) { "rejected" -> "The applicant sees your reason and may start a new application."
                 else -> "The application unlocks so the applicant can fix it and submit again. Tell them exactly what to change." },
-            when (d) { "rejected" -> "Reject"; "incomplete" -> "Mark incomplete"; else -> "Return" },
+            when (d) { "rejected" -> "Not accepted"; else -> "Return to fix" },
             onConfirm = { decide(d) }, onDismiss = { decision = null }, destructive = d == "rejected", confirmEnabled = remark.isNotBlank() && !busy,
             extra = { OutlinedTextField(remark, { remark = it }, label = { Text("Reason (required)") }, minLines = 2, modifier = Modifier.fillMaxWidth()) })
 }
