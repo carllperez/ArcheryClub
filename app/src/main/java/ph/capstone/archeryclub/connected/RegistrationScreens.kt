@@ -57,11 +57,11 @@ private fun Milestones(items: List<Milestone>) {
     }
 }
 
-/** Red until the officer checks the file, so unchecked documents stand out. */
+/** Shown until the officer checks the file, so unchecked documents stand out. */
 @Composable
 private fun VerifyButton(text: String, busy: Boolean, onClick: () -> Unit) =
     Button(onClick = onClick, enabled = !busy, shape = RoundedCornerShape(999.dp), contentPadding = PaddingValues(horizontal = 16.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Club.roseInk, contentColor = Color.White)) { Text(text, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
+        colors = ButtonDefaults.buttonColors(containerColor = Club.forest, contentColor = Color.White)) { Text(text, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
 
 @Composable
 private fun RequirementRow(req: RequirementView, canUpload: Boolean, busy: Boolean, onOpen: (String) -> Unit, onUpload: () -> Unit,
@@ -92,7 +92,7 @@ fun ApplicationScreen(
     val membership = workspace.records("memberships").find { it.text("user_id") == user }
     val profile = workspace.records("profiles").find { it.text("id") == user }
     val initial = remember(app?.text("version")) {
-        APPLICATION_FIELDS.split(",").associateWith { k -> app?.text(k).orEmpty().ifBlank { if (k in setOf("full_name", "phone")) profile?.text(k).orEmpty() else "" } }
+        APPLICATION_FIELDS.split(",").associateWith { k -> app?.text(k).orEmpty().ifBlank { if (k in setOf("full_name", "phone", "college", "program", "year_level", "emergency_contact_name", "emergency_contact_phone")) profile?.text(k).orEmpty() else "" } }
     }
     val values = rememberSaveable(app?.text("version"), saver = mapSaver(save = { it.toMap() }, restore = { s -> mutableStateMapOf<String, String>().apply { s.forEach { (k, v) -> put(k, v as String) } } })) {
         mutableStateMapOf<String, String>().apply { putAll(initial) }
@@ -118,7 +118,7 @@ fun ApplicationScreen(
         extra()
     }
     @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
-        OutlinedTextField(values[key].orEmpty(), { values[key] = if (key == "phone") mobileInput(it) else it }, label = { Text(label) }, enabled = editable && !busy,
+        OutlinedTextField(values[key].orEmpty(), { values[key] = if (key == "phone" || key == "emergency_contact_phone") mobileInput(it) else it }, label = { Text(label) }, enabled = editable && !busy,
             isError = attempted && key in errors,
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
@@ -172,6 +172,16 @@ fun ApplicationScreen(
             field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
             field("phone", "Mobile number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
             field("student_number", "Student number", KeyboardType.Number)
+            Text("College", style = MaterialTheme.typography.labelLarge)
+            ChoiceChips(COLLEGES.map { it to it }, values["college"].orEmpty()) { if (editable && !busy) values["college"] = it }
+            if (attempted && values["college"].orEmpty().isBlank()) Text("Pick your college.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            field("program", "Program", hint = "e.g. BS Information Technology")
+            Text("Year level", style = MaterialTheme.typography.labelLarge)
+            ChoiceChips(YEAR_LEVELS.map { it to it }, values["year_level"].orEmpty()) { if (editable && !busy) values["year_level"] = it }
+            if (attempted && values["year_level"].orEmpty().isBlank()) Text("Pick your year level.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text("Emergency contact (optional)", style = MaterialTheme.typography.labelLarge)
+            field("emergency_contact_name", "Contact's name", hint = "e.g. Maria Cruz (mother)")
+            field("emergency_contact_phone", "Contact's number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
             field("experience", "Archery experience (optional)", lines = 3, hint = "e.g. none yet, PE class, two years recurve")
             if (editable) SecondaryAction(if (view.id.isBlank()) "Save and continue" else "Save details", !busy && (changed || view.id.isBlank())) {
                 attempted = true
@@ -296,6 +306,10 @@ fun ApplicationReviewScreen(
             KeyValue("Full name", app.text("full_name"))
             KeyValue("Mobile", app.text("phone"))
             KeyValue("Student no.", app.text("student_number"))
+            KeyValue("College", app.text("college"))
+            KeyValue("Program", app.text("program"))
+            KeyValue("Year level", app.text("year_level"))
+            if (app.text("emergency_contact_name").isNotBlank()) KeyValue("Emergency contact", "${app.text("emergency_contact_name")} · ${app.text("emergency_contact_phone")}")
             KeyValue("Experience", app.text("experience"))
             KeyValue("Submitted", fmtDateTime(app.instant("submitted_at")))
             if (!view.stage.decidable && view.stage !in setOf(ApplicationStage.DRAFT, ApplicationStage.NOT_STARTED)) {

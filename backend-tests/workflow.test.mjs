@@ -795,3 +795,20 @@ test('M8 announcements: each member marks their own as read, and only sees their
  assert.equal((await rpc('officer','club_workspace',[],'')).announcement_reads.filter(r=>r.announcement_id===id).length,0);
  await denied(()=>rpc('successor','mark_announcements_read',['{}'],'$1::uuid[]'),/1 to 200/);
 });
+
+test('M2 application details: college, program and year are saved, required to send, and copied to the profile on approval',async()=>{
+ ids.newbie='00000000-0000-4000-8000-000000000099';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.newbie,'newbie@example.test']);
+ await as('newbie',()=>db.exec('select public.initialize_account()'));
+ const base={full_name:'Nina Newbie',phone:'09171234567',student_number:'12345678',experience:''};
+ await denied(()=>rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,emergency_contact_name:'Mom'})],'$1,$2::jsonb'),/both/);
+ const a=await rpc('newbie','save_application_details',['save_application',JSON.stringify({...base,college:'CCS',program:'BS Information Technology',year_level:'2nd year',
+  emergency_contact_name:'Maria Newbie',emergency_contact_phone:'09181234567'})],'$1,$2::jsonb');
+ assert.equal(a.college,'CCS'); assert.equal(a.year_level,'2nd year'); assert.equal(a.full_name,'Nina Newbie');
+ await denied(()=>rpc('newbie','save_application_details',['submit_application',JSON.stringify({...base,version:a.version,confirmed:true})],'$1,$2::jsonb'),/college, program and year/);
+ await denied(()=>rpc('newbie','save_application_details',['review_application',JSON.stringify({})],'$1,$2::jsonb'),/Unknown/);
+ await db.exec('reset role');
+ await db.query("update app_private.applications set status='approved' where user_id=$1",[ids.newbie]);
+ const p=(await db.query('select college,program,year_level,emergency_contact_name from app_private.profiles where id=$1',[ids.newbie])).rows[0];
+ assert.deepEqual(p,{college:'CCS',program:'BS Information Technology',year_level:'2nd year',emergency_contact_name:'Maria Newbie'});
+});

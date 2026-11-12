@@ -62,7 +62,12 @@ fun WorkflowRoute(
             onRenewal = { onGo("records:1") }, onActivities = { onPush("activities") }, onEquipment = { onPush("equipment_member") })
         "profile_edit" -> ProfileEditScreen(workspace, busy, snackbar, onBack, onSave = { payload -> onCommand("save_profile", payload, onBack) }, onCommand = onCommand)
         "name_corrections" -> NameCorrectionsScreen(workspace, busy, snackbar, onBack, onCommand)
-        "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, onCommand, onUpload, onOpenDocument, onPayFee = onBack)
+        // Saving and sending go through save_application_details so college, program, year and emergency contact are kept too.
+        "application" -> ApplicationScreen(workspace, busy, snackbar, onBack, { action, data, done ->
+            if (vm != null && action in setOf("save_application", "submit_application"))
+                vm.save("save_application_details", buildJsonObject { put("p_action", action); put("p_data", data) }, done)
+            else onCommand(action, data, done)
+        }, onUpload, onOpenDocument, onPayFee = onBack)
         "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }) { onGo("records:7") }
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)
