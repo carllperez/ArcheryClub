@@ -100,14 +100,14 @@ fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
     if (name.isEmpty()) put("full_name", "Enter your full name as it appears on your school ID.")
     else if (name.length > 160) put("full_name", "Keep it under 160 characters.")
     val phone = v["phone"].orEmpty().trim()
-    if (phone.isNotEmpty() && !PHONE.matches(phone)) put("phone", "Use a mobile number like 0917 123 4567.")
+    if (phone.isNotEmpty() && !validMobile(phone)) put("phone", MOBILE_HINT)
     if (v["student_number"].orEmpty().trim().length > 40) put("student_number", "Keep it under 40 characters.")
     if (v["experience"].orEmpty().length > 2000) put("experience", "Keep it under 2,000 characters.")
 }
 
 /** Everything still standing between the applicant and a successful submission, in plain words. */
 fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean): List<String> = buildList {
-    if (!view.stage.editable) { add("This application is with the membership officer."); return@buildList }
+    if (!view.stage.editable) { add("This application is being checked."); return@buildList }
     applicationErrors(values).values.forEach { add(it) }
     // Documents attach to a saved draft, so a brand-new application must be saved before uploading.
     if (view.requirements.isNotEmpty() && view.id.isBlank()) add("Save your details first, then upload your documents.")
@@ -144,7 +144,7 @@ fun applicationMilestones(view: ApplicationView, membershipStatus: String): List
     val steps = listOf(
         "Details and documents" to (view.id.isNotBlank() && view.missing.isEmpty() && submitted),
         "Submitted" to submitted,
-        "Screening by the membership officer" to reviewed,
+        "Checked by the club" to reviewed,
         (if (s == ApplicationStage.REJECTED) "Decision: not approved" else "Approved") to decided,
         "Membership fee paid · Active" to active,
     )

@@ -8,7 +8,9 @@ import java.time.temporal.ChronoUnit
 
 fun greetingFor(hour: Int): String = when (hour) { in 0..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
 
-fun firstName(fullName: String): String = fullName.trim().split(Regex("\\s+")).firstOrNull().orEmpty().ifBlank { "there" }
+fun firstName(fullName: String): String = fullName.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+/** "Good evening, Mia", or just "Good evening" when there is no name yet. */
+fun hello(hour: Int, fullName: String): String = greetingFor(hour) + firstName(fullName).let { if (it.isBlank()) "" else ", $it" }
 
 /** "Today", "Tomorrow", "In 5 days" — counted in calendar days, so 11 PM tonight and 7 AM tomorrow read naturally. */
 fun countdownLabel(start: Instant?, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {

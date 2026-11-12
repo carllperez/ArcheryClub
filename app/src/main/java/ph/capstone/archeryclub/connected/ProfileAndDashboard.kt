@@ -104,7 +104,7 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
     BackHandler(onBack = leave)
     if (discard) DiscardDialog(onDismiss = { discard = false }, onDiscard = { discard = false; onBack() })
     @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
-        OutlinedTextField(values[key].orEmpty(), { values[key] = it }, label = { Text(label) }, isError = attempted && key in errors,
+        OutlinedTextField(values[key].orEmpty(), { values[key] = if (key == "phone") mobileInput(it) else it }, label = { Text(label) }, isError = attempted && key in errors,
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
     ScreenShell("Edit profile", leave, snackbar, actions = { CompletionPill(profileCompleteness(p)) }, stickyAction = {
@@ -121,7 +121,7 @@ fun ProfileEditScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
                 status = { if (pending != null) StatusPill("Correction to \"${pending.text("requested_name")}\" pending", Tone.WARNING) else StatusPill("Verified", Tone.POSITIVE) },
                 footer = { if (pending == null) TextButton(onClick = { correction = true }, enabled = !busy) { Text("Request name correction") } })
         } else field("full_name", "Full name")
-        field("phone", "Mobile number", KeyboardType.Phone)
+        field("phone", "Mobile number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
         field("program", "Program / course", hint = "e.g. BS Information Technology")
         Text("Year level", style = MaterialTheme.typography.labelLarge)
         ChoiceChips(listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Alumni").map { it to it }, values["year_level"].orEmpty()) { values["year_level"] = it }

@@ -55,7 +55,7 @@ fun OfficerHome(
     } ?: roleLabel(permissions)
     val events = workspace.records("events").filter { it.text("published") == "true" && it.text("archived") != "true" }.map { activityView(it, workspace, now) }
     val upcoming = events.filter { it.end?.isAfter(now) == true }.sortedBy { it.start }
-    HeroScaffold("${greetingFor(LocalTime.now().hour)}, ${firstName(fullName)}", snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
+    HeroScaffold(hello(LocalTime.now().hour, fullName), snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
         eyebrow = { Pill(pill, Club.lime, Club.forestDeep) },
         heroExtra = {
             Text(if (total == 0) "Nothing waiting on your desks" else "$total thing${if (total == 1) "" else "s"} need${if (total == 1) "s" else ""} you today",

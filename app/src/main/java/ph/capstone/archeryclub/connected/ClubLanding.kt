@@ -210,7 +210,7 @@ fun ClubLanding(
                     Text(membership.text("status"),style=MaterialTheme.typography.headlineMedium)
                     if(membership.text("status")=="Pending payment"){
                         val fee=workspace.records("fee_assessments").find{it.text("user_id")==user&&it.text("purpose")=="Membership fee"&&it.text("payment_id").isBlank()}
-                        Text("Your application is approved. Pay the membership fee${fee?.let{" of ₱"+it.text("amount")+" by "+it.text("due_on")}.orEmpty()} and the Treasurer's verification activates your membership.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Your application is approved. Pay the membership fee${fee?.let{" of ₱"+it.text("amount")+" by "+it.text("due_on")}.orEmpty()} and the club's verification activates your membership.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick={onModule(12)},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=MaterialTheme.shapes.small){Text("Pay membership fee")}
                     }else{
                     Text("Review your membership details and renewal status.",color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -261,7 +261,7 @@ private fun MemberHome(
         contentWindowInsets=WindowInsets(0,0,0,0)) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())) {
             Box {
-                HomeHero(clubName,"Active member","${greetingFor(LocalTime.now().hour)}, ${firstName(fullName)}")
+                HomeHero(clubName,"Active member",hello(LocalTime.now().hour, fullName))
                 if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding())
             }
             // Pulled up so the card overlaps the hero, as in the design.

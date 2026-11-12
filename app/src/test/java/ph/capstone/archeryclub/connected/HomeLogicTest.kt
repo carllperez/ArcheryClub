@@ -19,7 +19,7 @@ class HomeLogicTest {
 
     @Test fun greetingAndFirstName() {
         assertEquals("Good morning", greetingFor(9)); assertEquals("Good afternoon", greetingFor(14)); assertEquals("Good evening", greetingFor(20))
-        assertEquals("Alex", firstName("  Alex  Santos ")); assertEquals("there", firstName(""))
+        assertEquals("Alex", firstName("  Alex  Santos ")); assertEquals("", firstName("")); assertEquals("Good evening", hello(20, " ")); assertEquals("Good morning, Mia", hello(8, "Mia Cruz"))
     }
 
     @Test fun durationsReadCompactly() {

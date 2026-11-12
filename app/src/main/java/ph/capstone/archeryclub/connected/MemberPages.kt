@@ -211,18 +211,19 @@ fun ApplicantHome(
     val membership = workspace.records("memberships").find { it.text("user_id") == user }
     val view = applicationView(workspace)
     val pendingPayment = membership?.text("status") == "Pending payment"
-    val first = firstName(fullName.takeUnless { it == "Club account" }.orEmpty())
-    HeroScaffold("${greetingFor(java.time.LocalTime.now().hour)}, $first", snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
+    // No name yet (a brand-new account) gives a plain welcome instead of "Good evening, there".
+    val known = fullName.takeUnless { it == "Club account" }.orEmpty()
+    HeroScaffold(if (firstName(known).isBlank()) "Welcome to the club" else hello(java.time.LocalTime.now().hour, known), snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
         eyebrow = {
             val fee = if (pendingPayment) membershipFeeDue(workspace, user, java.time.LocalDate.now()) else null
             when (fee?.let(::payStep)) {
                 PayStep.PAY -> Pill("APPROVED · PAY TO ACTIVATE", Club.lime, Club.forestDeep)
                 PayStep.CHECKING -> Pill("PAYMENT SENT", Color.White, Club.forestDeep)
                 PayStep.RETURNED -> Pill("PAYMENT NEEDS FIXING", Club.roseSoft, Club.roseInk)
-                null -> Pill(when {
-                    membership != null -> membership.text("status").uppercase()
-                    view.stage in setOf(ApplicationStage.SUBMITTED, ApplicationStage.UNDER_REVIEW) -> "WITH THE SECRETARY"
-                    else -> "APPLICANT" }, Club.mint, Club.forestDeep)
+                null -> when {
+                    membership != null -> Pill(membership.text("status").uppercase(), Club.mint, Club.forestDeep)
+                    view.stage in setOf(ApplicationStage.SUBMITTED, ApplicationStage.UNDER_REVIEW) -> Pill("BEING CHECKED", Club.mint, Club.forestDeep)
+                    else -> Unit }
             }
         },
         heroExtra = { ProgressSegments(applicationMilestones(view, membership?.text("status").orEmpty())) }) {
@@ -237,12 +238,12 @@ fun ApplicantHome(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (pendingPayment) "PAYMENT" else "YOUR APPLICATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val (title, body) = when {
-                    pendingPayment -> "Approved — one step left" to "Pay the membership fee. Your membership becomes Active once the Treasurer verifies the payment."
+                    pendingPayment -> "Approved — one step left" to "Pay the membership fee. Your membership becomes Active once the club verifies the payment."
                     membership != null -> membership.text("status") to "Review your membership details and renewal status."
                     view.stage == ApplicationStage.NOT_STARTED -> "Ready when you are" to "Fill in your details, upload the club's required documents, then submit for screening."
                     view.stage == ApplicationStage.NEEDS_CHANGES -> "Changes requested" to view.remark.ifBlank { "Update your details or documents, then submit again." }
                     view.stage == ApplicationStage.REJECTED -> "Not approved" to view.remark.ifBlank { "You can start a new application." }
-                    else -> view.stage.label to "The membership officer is reviewing your application. You'll get a notice when there's a decision."
+                    else -> view.stage.label to "The club is checking your application. You'll be notified when there's a decision."
                 }
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

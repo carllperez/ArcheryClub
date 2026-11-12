@@ -100,7 +100,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     IconChip("clock", Tone.INFO, 46)
                     Column(Modifier.weight(1f)) {
-                        Text("The Treasurer is checking", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                        Text("Your payment is being checked", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                         Text("You'll get a notice when it's verified", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -109,7 +109,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                     KeyValue("Sent", fmtDate(payment?.date("created_at")))
                 }
                 proof.firstOrNull()?.let { d -> CardButton("Open my receipt", Modifier.fillMaxWidth()) { openPrivate(vm, context, d.text("path")) } }
-                Text("You can't change it while it's being checked. If something is wrong, the Treasurer sends it back with a note and you fix it here.",
+                Text("You can't change it while it's being checked. If something is wrong, it comes back with a note and you fix it here.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -131,11 +131,11 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                 }
                 StatusPill("Due ${fmtDate(fee.due)}", if (fee.state == FeeState.OVERDUE) Tone.DANGER else Tone.WARNING)
             }
-            if (step == PayStep.RETURNED) NoticeCard("The Treasurer sent it back", payment?.text("remark")?.ifBlank { null } ?: "Check the reference number and the screenshot, then resend.", Tone.DANGER)
+            if (step == PayStep.RETURNED) NoticeCard("Your payment was sent back", payment?.text("remark")?.ifBlank { null } ?: "Check the reference number and the screenshot, then resend.", Tone.DANGER)
 
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepLabel("1 · Send ${peso(fee.amount)} to the club")
-                if (details.isEmpty) Text("The Treasurer hasn't added the club's GCash or bank details yet. Check back soon, or ask an officer where to pay.",
+                if (details.isEmpty) Text("The club hasn't added its GCash or bank details yet. Check back soon, or ask an officer where to pay.",
                     style = MaterialTheme.typography.bodySmall)
                 if (details.hasGcash) PayToRow("money", "GCash" + details.gcashName.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), details.gcashNumber)
                 if (details.hasBank) PayToRow("settings", listOf(details.bankName, details.bankAccountName).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Bank transfer" }, details.bankAccountNumber)
@@ -180,7 +180,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
         }
     }
     if (confirmSend && payment != null) ConfirmDialog("Send ${peso(fee.amount)} for checking?",
-        "Reference no. ${payment.text("reference")}. The Treasurer checks it against the club's account. You can't change it while it's being checked.", "Send",
+        "Reference no. ${payment.text("reference")}. The club checks it against its account. You can't change it while it's being checked.", "Send",
         onConfirm = {
             confirmSend = false
             vm.command("submit_financial_request", buildJsonObject { put("id", payment.text("id")); payment.text("version").toLongOrNull()?.let { put("version", it) } })
@@ -203,7 +203,7 @@ fun ApplicantProfilePage(
     val applied = workspace.records("applications").any { it.text("user_id") == user }
     var signOut by remember { mutableStateOf(false) }
     HeroScaffold(fullName, snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
-        eyebrow = { Pill(if (membership != null) "APPLICANT · ${membership.text("status").uppercase()}" else "APPLICANT", Club.amberSoft, Club.amberInk) }) {
+        eyebrow = { if (membership != null) Pill(membership.text("status").uppercase(), Club.amberSoft, Club.amberInk) }) {
         if (state.recovery) recovery()
         RowGroup {
             GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft, trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
@@ -277,7 +277,7 @@ fun PaymentDetailsDialog(current: PaymentDetails, busy: Boolean, onSave: (JsonOb
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
-/** Submitted and waiting for the Secretary: who has it, since when, and the steps still ahead (approve, then pay). */
+/** Submitted and waiting for review: who has it, since when, and the steps still ahead (approve, then pay). */
 @Composable
 fun WaitingForReview(view: ApplicationView, fee: Double) {
     val submitted = view.application?.date("submitted_at")
@@ -286,7 +286,7 @@ fun WaitingForReview(view: ApplicationView, fee: Double) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 IconChip("clock", Tone.INFO, 46)
                 Column(Modifier.weight(1f)) {
-                    Text("With the Secretary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text("Being checked", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                     Text(submitted?.let { "Submitted ${fmtDate(it)}" } ?: "Submitted", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

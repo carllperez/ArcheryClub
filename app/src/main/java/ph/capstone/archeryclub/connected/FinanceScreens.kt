@@ -42,13 +42,13 @@ private fun SendSteps(workspace: JsonObject, record: JsonObject, busy: Boolean, 
     val reference = record.text("kind") != "payment" || record.text("reference").isNotBlank()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (record.text("status") in setOf("incomplete", "returned_for_correction") && record.text("remark").isNotBlank())
-            NoticeCard("The treasurer sent this back", record.text("remark"), Tone.DANGER)
+            NoticeCard("This was sent back", record.text("remark"), Tone.DANGER)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CardButton(if (record.text("kind") == "payment") "Edit reference no." else if (reference) "Edit details" else "Add reference no.", Modifier.weight(1f), enabled = !busy, onClick = onEdit)
             CardButton(if (proof) "Replace proof" else "Upload proof", Modifier.weight(1f), primary = !proof, enabled = !busy, onClick = onProof)
         }
         if (proof) CardButton("Send for checking", Modifier.fillMaxWidth(), primary = reference, enabled = !busy && reference, onClick = onSend)
-        Text(when { !reference -> "Add the reference number from your receipt or transfer."; !proof -> "Upload a photo or screenshot of your receipt."; else -> "Ready. The treasurer will check it and you'll get a notice." },
+        Text(when { !reference -> "Add the reference number from your receipt or transfer."; !proof -> "Upload a photo or screenshot of your receipt."; else -> "Ready. The club will check it and you'll get a notice." },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -64,7 +64,7 @@ private fun ReceiptReferenceDialog(purpose: String, amount: String, existing: Js
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("$purpose · ${peso(amount.toDoubleOrNull() ?: 0.0)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                Text("Copy the Ref No. from your GCash or bank receipt. The treasurer checks it against the club's account, and each receipt can be used only once.",
+                Text("Copy the Ref No. from your GCash or bank receipt. The club checks it against its account, and each receipt can be used only once.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(ref, { ref = it }, label = { Text("Reference number") }, singleLine = true, isError = tried && clean == null,
                     supportingText = { Text(if (tried && clean == null) "Use 6 to 30 letters or numbers, e.g. 9046292514078" else "e.g. 9046292514078") },
@@ -103,7 +103,7 @@ fun PaymentsScreen(
     HeroScaffold(when { owed > 0 -> peso(owed); checking.isNotEmpty() -> "Being checked"; else -> "All paid up" }, onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("PAYMENTS", Color.White.copy(alpha = .16f), Color.White) },
         heroExtra = { Text(when { open.isEmpty() -> "No fees waiting for you."; overdue > 0 -> "$overdue overdue · pay as soon as you can"
-            owed <= 0 && checking.isNotEmpty() -> "The Treasurer is checking ${peso(checking.sumOf { it.amount })}. You'll get a notice."
+            owed <= 0 && checking.isNotEmpty() -> "The club is checking ${peso(checking.sumOf { it.amount })}. You'll get a notice."
             else -> "${open.size} fee${if (open.size == 1) "" else "s"} open · nothing overdue" }, color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
         open.forEach { f ->
             RaisedCard {
@@ -120,21 +120,21 @@ fun PaymentsScreen(
                         FeeState.DUE, FeeState.OVERDUE -> {
                             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("HOW TO PAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("1. Pay the club through GCash or the bank, as announced.\n2. Enter the Ref No. printed on your receipt and upload a screenshot of it.\n3. The treasurer checks both against the club's account and you get a notice.", style = MaterialTheme.typography.bodySmall)
+                                Text("1. Pay the club through GCash or the bank, as announced.\n2. Enter the Ref No. printed on your receipt and upload a screenshot of it.\n3. The club checks both against the club's account and you get a notice.", style = MaterialTheme.typography.bodySmall)
                             }
                             CardButton("I've paid · enter the receipt's reference no.", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { paying = f.fee to null }
                         }
                         FeeState.DRAFT, FeeState.RETURNED -> f.payment?.let { p ->
                             SendSteps(workspace, p, busy, onEdit = { editPayment(p) }, onProof = { pickProof(p.text("id")) }, onSend = { sending = p })
                         }
-                        FeeState.CHECKING -> Text("The treasurer is checking your payment${f.payment?.text("reference")?.takeIf { it.isNotBlank() }?.let { " (ref $it)" }.orEmpty()}. You'll get a notice.",
+                        FeeState.CHECKING -> Text("The club is checking your payment${f.payment?.text("reference")?.takeIf { it.isNotBlank() }?.let { " (ref $it)" }.orEmpty()}. You'll get a notice.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FeeState.PAID -> {}
                     }
                 }
             }
         }
-        if (open.isEmpty() && history.isEmpty()) EmptyState("Nothing to pay", "Fees the treasurer charges you will appear here with how to pay them.")
+        if (open.isEmpty() && history.isEmpty()) EmptyState("Nothing to pay", "Fees the club charges you will appear here with how to pay them.")
         if (isMember) RowGroup {
             GroupRow("doc", "Ask for a reimbursement", "You paid for the club", divider = false) {
                 onStart("save_financial_request", buildJsonObject { put("kind", "reimbursement") })
@@ -175,7 +175,7 @@ fun PaymentsScreen(
         ReceiptReferenceDialog(source.text("purpose"), source.text("amount"), existing, busy,
             onSave = { data -> onCommand("save_financial_request", data) { paying = null } }, onDismiss = { paying = null })
     }
-    sending?.let { r -> ConfirmDialog("Send for checking?", "${kindLabel(r.text("kind"))} of ${peso(r.amount())} for \"${r.text("purpose")}\". You can't change it while the treasurer checks it.",
+    sending?.let { r -> ConfirmDialog("Send for checking?", "${kindLabel(r.text("kind"))} of ${peso(r.amount())} for \"${r.text("purpose")}\". You can't change it while the club checks it.",
         "Send", onConfirm = { sending = null; onCommand("submit_financial_request", versionOf(r)) {} }, onDismiss = { sending = null }) }
 }
 
@@ -246,7 +246,7 @@ fun FinanceRecordScreen(
             }
         }
     }
-    if (sending) ConfirmDialog("Send for checking?", "You can't change it while the treasurer checks it.", "Send",
+    if (sending) ConfirmDialog("Send for checking?", "You can't change it while the club checks it.", "Send",
         onConfirm = { sending = false; onCommand("submit_financial_request", versionOf(r)) {} }, onDismiss = { sending = false })
     if (verifying) VerifyDialog(workspace, r, onCommand) { verifying = false }
     if (editingRef) ReceiptReferenceDialog(r.text("purpose"), r.text("amount"), r, busy,

@@ -174,10 +174,15 @@ fun borrowingLabel(status: String, overdue: Boolean) = when {
 enum class Tone { POSITIVE, WARNING, DANGER, INFO, NEUTRAL }
 
 internal val PHONE = Regex("^\\+?[0-9][0-9 -]{6,18}$")
+/** A Philippine mobile number: 09XX XXX XXXX or +63 9XX XXX XXXX; spaces and dashes are ignored. */
+fun validMobile(s: String): Boolean = Regex("^(09\\d{9}|\\+?639\\d{9})$").matches(s.replace(Regex("[\\s().-]"), ""))
+const val MOBILE_HINT = "Use an 11-digit mobile number starting with 09, like 0917 123 4567."
+/** What the mobile box accepts while typing: digits, a leading +, spaces and dashes. */
+fun mobileInput(s: String): String = s.filterIndexed { i, c -> c.isDigit() || c == ' ' || c == '-' || (c == '+' && i == 0) }.take(16)
 /** Client checks mirror app_private.save_member_profile; the server repeats them. */
 fun profileErrors(v: Map<String, String>): Map<String, String> = buildMap {
     if (v["full_name"].orEmpty().isBlank()) put("full_name", "Enter your full name.")
-    if (v["phone"].orEmpty().isNotBlank() && !PHONE.matches(v["phone"]!!.trim())) put("phone", "Use a mobile number like 0917 123 4567.")
+    if (v["phone"].orEmpty().isNotBlank() && !validMobile(v["phone"]!!.trim())) put("phone", MOBILE_HINT)
     val ecName = v["emergency_contact_name"].orEmpty().isNotBlank(); val ecPhone = v["emergency_contact_phone"].orEmpty().isNotBlank()
     if (ecPhone && !PHONE.matches(v["emergency_contact_phone"]!!.trim())) put("emergency_contact_phone", "Enter a valid number.")
     if (ecName != ecPhone) put(if (ecName) "emergency_contact_phone" else "emergency_contact_name", "Provide both the name and the number.")

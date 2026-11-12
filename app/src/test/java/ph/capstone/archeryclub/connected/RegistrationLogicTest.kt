@@ -55,7 +55,9 @@ class RegistrationLogicTest {
         assertTrue(b.any { it.startsWith("Confirm") })
         val ready = applicationView(ws("draft", listOf(doc("d1", "School ID"), doc("d2", "Medical clearance"))))
         assertEquals(emptyList<String>(), submitBlockers(ready, mapOf("full_name" to "Ana Cruz", "phone" to "0917 123 4567"), confirmed = true))
-        assertEquals(listOf("Use a mobile number like 0917 123 4567."), submitBlockers(ready, mapOf("full_name" to "Ana", "phone" to "abc"), confirmed = true))
+        assertEquals(listOf(MOBILE_HINT), submitBlockers(ready, mapOf("full_name" to "Ana", "phone" to "abc"), confirmed = true))
+        assertEquals(listOf(MOBILE_HINT), submitBlockers(ready, mapOf("full_name" to "Ana", "phone" to "0917 123"), confirmed = true))
+        assertTrue(validMobile("+63 917-123-4567")); assertTrue(validMobile("09171234567")); assertTrue(!validMobile("0817 123 4567")); assertTrue(!validMobile("123-4567"))
         val locked = applicationView(ws("pending"))
         assertEquals(1, submitBlockers(locked, mapOf("full_name" to "Ana"), true).size)
     }
