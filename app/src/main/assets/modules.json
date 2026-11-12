@@ -2183,7 +2183,7 @@
       "fields": [
         {
           "name": "kind",
-          "label": "Kind",
+          "label": "Payment kind",
           "type": "choice",
           "options": [
             "payment",
