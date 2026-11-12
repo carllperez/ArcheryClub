@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,23 +30,30 @@ private fun profileHeroName(name: String) = name.trim().ifBlank { "Club member" 
 @Composable
 fun MemberActivitiesPage(
     workspace: JsonObject, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit,
-    onRoute: (String) -> Unit, onModule: (Int) -> Unit,
+    onRoute: (String) -> Unit, onModule: (Int) -> Unit, vm: SystemViewModel? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf("open") }
+    var view by rememberSaveable { mutableStateOf("list") }
     val open = memberActivities(workspace).count { !it.status.isMine }
     val mine = upcomingMine(workspace).size
     HeroScaffold("Activities", snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
         heroExtra = { HeroTabs(listOf("open" to "Open · $open", "mine" to "Mine · $mine", "history" to "History"), tab) { tab = it } }) {
         Spacer(Modifier.height(4.dp))
-        MemberActivitiesList(workspace, tab, { tab = it }) { onRoute("activity:$it") }
-        var calendar by rememberSaveable { mutableStateOf(false) }
-        RowGroup {
-            GroupRow("calendar", if (calendar) "Hide calendar" else "Calendar view", onClick = { calendar = !calendar })
-            GroupRow("bell", "Announcements and attendance records", divider = false, onClick = { onRoute("records:3") })
+        AnnouncementsCard(workspace, vm, state.busy, limit = 2) { onRoute("records:3") }
+        // List or Calendar, as a switch right after the announcements.
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp)) {
+            listOf("list" to "List", "calendar" to "Calendar").forEach { (key, label) ->
+                Box(Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(999.dp)).background(if (view == key) Club.forestDeep else Color.Transparent)
+                    .clickable { view = key }, contentAlignment = Alignment.Center) {
+                    Text(label, fontWeight = if (view == key) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        color = if (view == key) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
-        if (calendar) RaisedCard { Column(Modifier.padding(12.dp)) {
+        if (view == "calendar") RaisedCard { Column(Modifier.padding(12.dp)) {
             RecordCalendar(memberActivities(workspace).map { it.event }, workspace) { onRoute("activity:${it.text("id")}") }
         } }
+        else MemberActivitiesList(workspace, tab, { tab = it }) { onRoute("activity:$it") }
     }
 }
 

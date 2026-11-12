@@ -130,13 +130,13 @@ fun ClubLanding(
         return
     }
     if(memberHome&&page=="home"){
-        MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery)
+        MemberHome(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onRecord,onRefresh,hasModule,recovery,vm,onAcknowledge)
         return
     }
-    if(isMember&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule);return}
+    if(isMember&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule,vm);return}
     if(isMember&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute);return}
     if(staff&&page=="home"){
-        OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery,isMember,onPage,onModule)
+        OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery,isMember,onPage,onModule,vm)
         return
     }
     if(applicant&&page!="notices"){
@@ -247,6 +247,7 @@ private fun MemberHome(
     workspace:JsonObject,profile:JsonObject?,fullName:String,noticeCount:Int,state:SystemState,snackbar:SnackbarHostState,
     bottomBar:@Composable ()->Unit,onPage:(String)->Unit,onModule:(Int)->Unit,onRoute:(String)->Unit,
     onRecord:(Int,String,JsonObject)->Unit,onRefresh:()->Unit,hasModule:(Int)->Boolean,recovery:@Composable ()->Unit,
+    vm:SystemViewModel?=null,onAcknowledge:(JsonObject)->Unit={},
 ) {
     val user=workspace.text("user_id")
     val clubName=workspace.records("settings").firstOrNull()?.text("club_name").orEmpty().ifBlank{"Archery Club"}
@@ -266,9 +267,12 @@ private fun MemberHome(
             }
             // Pulled up so the card overlaps the hero, as in the design.
             Column(Modifier.offset(y=(-64).dp).padding(horizontal=16.dp).widthIn(max=640.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
+                // Approval first, then announcements (read ones stay gray), then the member's next session.
+                approvalNotice(workspace)?.let{n->ApprovalCard(n,state.busy){onAcknowledge(n)}}
                 state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
                 if(state.recovery)recovery()
+                AnnouncementsCard(workspace,vm,state.busy)
+                NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
                 TileRow {
                     HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
                     HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
@@ -283,9 +287,6 @@ private fun MemberHome(
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
                 if(tasks.isNotEmpty())HomeRow("tasks","Your tasks","${tasks.size} to follow up"){onModule(6)}
                 if(noticeCount>0)HomeRow("bell","Notices","$noticeCount new update${if(noticeCount==1)"" else "s"}"){onPage("notices")}
-                if(announcement!=null&&(hasModule(3)||hasModule(8)))HomeRow("activities",announcement.text("title"),"Latest announcement"){
-                    onRecord(if(hasModule(8))8 else 3,"announcements",announcement)
-                }
             }
         }
     }

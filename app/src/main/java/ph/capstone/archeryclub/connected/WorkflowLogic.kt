@@ -266,3 +266,27 @@ fun walkInWindowOpen(event: JsonObject, now: Instant = Instant.now()): Boolean {
     val end = event.instant("ends_at") ?: start
     return !now.isBefore(start.minusSeconds(7200)) && !now.isAfter(end.plusSeconds(86400))
 }
+
+/* ---------- Announcements with read marks (migration 034) ---------- */
+
+data class AnnouncementView(val row: JsonObject, val id: String, val title: String, val message: String, val at: Instant?, val by: String, val read: Boolean)
+
+/** Every announcement, newest first, marked read when this person has read it. Read ones stay (shown gray). */
+fun announcementViews(workspace: JsonObject): List<AnnouncementView> {
+    val me = workspace.text("user_id")
+    val read = workspace.records("announcement_reads").filter { it.text("user_id") == me }.map { it.text("announcement_id") }.toSet()
+    val names = workspace.records("member_directory").associate { it.text("user_id") to it.text("full_name") }
+    return workspace.records("announcements").sortedByDescending { it.text("created_at") }.map { a ->
+        AnnouncementView(a, a.text("id"), a.text("title"), a.text("message"), a.instant("created_at"), names[a.text("created_by")].orEmpty(), a.text("id") in read)
+    }
+}
+
+/** The "you're approved" notice to show on a new member's Home until they dismiss it. */
+fun approvalNotice(workspace: JsonObject): JsonObject? {
+    val me = workspace.text("user_id")
+    if (workspace.records("memberships").none { it.text("user_id") == me && it.text("status") == "Active" }) return null
+    return workspace.records("notifications").filter {
+        it.text("user_id") == me && it.text("module") == "1" && it.text("acknowledged_at").isBlank() &&
+            (it.text("message").contains("now Active", ignoreCase = true) || it.text("message").contains("was approved", ignoreCase = true))
+    }.maxByOrNull { it.text("notified_at") }
+}

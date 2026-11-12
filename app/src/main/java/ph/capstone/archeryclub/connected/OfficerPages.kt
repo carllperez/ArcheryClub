@@ -46,7 +46,7 @@ fun roleLabel(permissions: Set<String>) = when {
 fun OfficerHome(
     workspace: JsonObject, permissions: Set<String>, fullName: String, state: SystemState, snackbar: SnackbarHostState,
     bottomBar: @Composable () -> Unit, onRoute: (String) -> Unit, onAnnouncement: () -> Unit, onRefresh: () -> Unit, recovery: @Composable () -> Unit,
-    isMember: Boolean = false, onPage: (String) -> Unit = {}, onModule: (Int) -> Unit = {},
+    isMember: Boolean = false, onPage: (String) -> Unit = {}, onModule: (Int) -> Unit = {}, vm: SystemViewModel? = null,
 ) {
     val now = Instant.now()
     val desks = deskTiles(workspace, permissions, now)
@@ -86,6 +86,7 @@ fun OfficerHome(
                         .background(if (pager.currentPage == i) Club.forest else Club.mint))
                 }
             }
+            AnnouncementsCard(workspace, vm, state.busy)
             val quiet = desks.filter { it != main && it.waiting == 0 }
             if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Other desks", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

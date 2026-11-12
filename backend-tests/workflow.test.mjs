@@ -784,3 +784,14 @@ test('M10 inventory: the club sets up categories and places, items follow the ca
  const focus=(await db.query("select id from app_private.equipment where name='Focus'")).rows[0];
  await denied(()=>command('successor','request_borrowing',{equipment_id:focus.id,starts_at:future(60),ends_at:future(62),handedness:'right',bow_setup:'',purpose:'Practice'}),/not lent/);
 });
+
+test('M8 announcements: each member marks their own as read, and only sees their own marks',async()=>{
+ const a=await command('officer','publish_announcement',{title:'Range closed Saturday',message:'Set-up for the UAAP event.'});
+ const id=a.id||(await db.query("select id from app_private.announcements where title='Range closed Saturday'")).rows[0].id;
+ assert.equal((await rpc('successor','mark_announcements_read',['{'+id+'}'],'$1::uuid[]')).marked,1);
+ assert.equal((await rpc('successor','mark_announcements_read',['{'+id+'}'],'$1::uuid[]')).marked,0);
+ const mine=(await rpc('successor','club_workspace',[],'')).announcement_reads;
+ assert.equal(mine.length,1); assert.equal(mine[0].announcement_id,id);
+ assert.equal((await rpc('officer','club_workspace',[],'')).announcement_reads.filter(r=>r.announcement_id===id).length,0);
+ await denied(()=>rpc('successor','mark_announcements_read',['{}'],'$1::uuid[]'),/1 to 200/);
+});

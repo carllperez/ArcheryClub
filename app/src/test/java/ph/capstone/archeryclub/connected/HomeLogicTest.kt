@@ -36,4 +36,18 @@ class HomeLogicTest {
         assertEquals(emptyList<String>(), fitProblems("", null, "right", 24.0))
         assertEquals(emptyList<String>(), fitProblems("left", 30.0, "", null))
     }
+
+    @Test fun announcementsKeepReadOnesAndApprovalShowsOnce() {
+        fun o(vararg p: Pair<String, String>) = kotlinx.serialization.json.JsonObject(p.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })
+        fun arr(vararg x: kotlinx.serialization.json.JsonObject) = kotlinx.serialization.json.JsonArray(x.toList())
+        val w = kotlinx.serialization.json.JsonObject(mapOf("user_id" to kotlinx.serialization.json.JsonPrimitive("me"),
+            "announcements" to arr(o("id" to "a1", "title" to "Old", "created_at" to "2026-11-01T00:00:00Z"), o("id" to "a2", "title" to "New", "created_at" to "2026-11-12T00:00:00Z")),
+            "announcement_reads" to arr(o("user_id" to "me", "announcement_id" to "a1"), o("user_id" to "someone", "announcement_id" to "a2")),
+            "memberships" to arr(o("user_id" to "me", "status" to "Active")),
+            "notifications" to arr(o("id" to "n1", "user_id" to "me", "module" to "1", "message" to "Membership fee verified. Your membership is now Active.", "notified_at" to "2026-11-12T00:00:00Z"),
+                o("id" to "n2", "user_id" to "me", "module" to "12", "message" to "Payment checked"))))
+        val views = announcementViews(w)
+        assertEquals(listOf("New", "Old"), views.map { it.title }); assertEquals(listOf(false, true), views.map { it.read })
+        assertEquals("n1", approvalNotice(w)?.text("id"))
+    }
 }
