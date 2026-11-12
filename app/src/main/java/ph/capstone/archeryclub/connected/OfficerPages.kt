@@ -73,8 +73,7 @@ fun OfficerHome(
                 DeskJobCard(d, officerFocus(workspace, setOf(d.permission), now)) { onRoute(it) }
             }
             val quiet = desks.filter { it != main && it.waiting == 0 }
-            if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Other desks", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 quiet.forEach { d -> AssistChip(onClick = { onRoute(d.route) }, label = { Text(d.title, fontWeight = FontWeight.Bold) }) }
             }
