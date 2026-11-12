@@ -220,7 +220,7 @@ fun EquipmentItemScreen(
         } } else RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Category", item.text("category")); KeyValue("Handedness", human(item.text("handedness")))
             KeyValue("Draw weight", item.text("draw_weight").toDoubleOrNull()?.let { "${fmtNumber(it)} lb" }.orEmpty())
-            KeyValue("Setup", item.text("bow_setup")); KeyValue("Condition", human(item.text("condition")))
+            KeyValue("Setup", item.text("bow_setup")); KeyValue("Condition", conditionLabel(item.text("condition")))
             KeyValue("Times borrowed", s?.text("times_borrowed").orEmpty())
             KeyValue("Specifications", item.text("specifications"))
             if (isOfficer) KeyValue("Notes", item.text("notes"))
@@ -277,7 +277,7 @@ fun EquipmentItemScreen(
             val log = workspace.records("equipment_history").filter { it.text("equipment_id") == itemId }.sortedByDescending { it.text("created_at") }
             if (log.isNotEmpty()) {
                 SectionHeader("Condition log")
-                log.take(10).forEach { KeyValue(fmtDay(it.instant("created_at")), "${human(it.text("condition"))} · ${it.text("notes")}") }
+                log.take(10).forEach { KeyValue(fmtDay(it.instant("created_at")), "${conditionLabel(it.text("condition"))} · ${it.text("notes")}") }
             }
         }
     }
@@ -359,7 +359,7 @@ private fun ReviewDialog(step: String, b: JsonObject, item: JsonObject?, onDismi
         when (step) {
             "approved" -> "The item is reserved for this period. Overlapping requests can no longer be approved."
             "released" -> "Inventory changes to Borrowed and the member gets a return reminder."
-            "returned" -> "The item's condition is recorded. Anything other than Serviceable removes it from the catalog until fixed."
+            "returned" -> "The item's condition is recorded. Anything other than Ready removes it from the catalog until fixed."
             else -> "The member is notified with your remark."
         }, "Confirm", confirmEnabled = remark.isNotBlank() && (!needsCheck || checked), onDismiss = onDismiss, destructive = step == "rejected",
         onConfirm = {
@@ -374,7 +374,7 @@ private fun ReviewDialog(step: String, b: JsonObject, item: JsonObject?, onDismi
             }
             if (step == "returned") {
                 Text("Condition on return", style = MaterialTheme.typography.labelLarge)
-                ChoiceChips(listOf("serviceable" to "Serviceable", "maintenance" to "Needs maintenance", "damaged" to "Damaged"), condition) { condition = it }
+                ChoiceChips(listOf("serviceable" to "Ready", "maintenance" to "Needs repair", "damaged" to "Damaged"), condition) { condition = it }
             }
             OutlinedTextField(remark, { remark = it }, label = { Text("Remark to member") }, minLines = 2, modifier = Modifier.fillMaxWidth())
         })

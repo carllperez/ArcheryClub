@@ -93,7 +93,7 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
         9 -> listOf("Elections" to workspace.records("elections").size,
             "Open for voting" to workspace.records("elections").count { it.text("status") == "voting" })
         10 -> listOf("Equipment items" to workspace.records("equipment").size,
-            "Serviceable items" to workspace.records("equipment").count { it.text("condition") == "serviceable" },
+            "Ready items" to workspace.records("equipment").count { it.text("condition") == "serviceable" },
             "Requests to review" to workspace.records("borrowings").count { it.text("status") == "pending" })
         12 -> listOf("Awaiting verification" to workspace.records("financial_records").count { it.text("status") == "pending_verification" },
             "Verified records" to workspace.records("financial_records").count { it.text("status") == "verified" })
@@ -106,7 +106,7 @@ fun ClubModuleOverview(module: Int, workspace: JsonObject) {
         5 -> "Request equipment for your dates, then track review, release and return. Save reimbursements as drafts and attach receipts before submitting."
         7 -> "Open an application to inspect requirements before recording a screening decision. Approved applicants keep their existing account."
         9 -> "Open an election for candidacy, eligibility, a private ballot or verified results. President and Vice President are elected; other positions use appointment records."
-        10 -> "Serviceable does not mean available for every date. Check availability and compatibility before approving an allocation."
+        10 -> "Ready does not mean available for every date. Check availability and compatibility before approving an allocation."
         12 -> "Open a record to inspect receipts and approval history. President approval and finance verification follow your assigned permissions. No money is transferred."
         else -> "Generate reports from authorized club records. Goal progress is calculated by the server from operational data."
     })

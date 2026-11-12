@@ -70,7 +70,7 @@ fun invMatches(item: InvItem, query: String): Boolean {
         .any { it.lowercase().contains(q) }
 }
 
-fun conditionLabel(c: String) = when (c) { "serviceable" -> "Serviceable"; "maintenance" -> "Needs repair"; "damaged" -> "Damaged"; "retired" -> "Retired"; else -> human(c) }
+fun conditionLabel(c: String) = when (c) { "serviceable" -> "Ready"; "maintenance" -> "Needs repair"; "damaged" -> "Damaged"; "retired" -> "Retired"; else -> human(c) }
 
 /** What's wrong with one field value, or null; the server checks the same rules. */
 fun fieldProblem(f: InvField, value: String): String? {

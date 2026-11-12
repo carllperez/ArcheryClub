@@ -288,7 +288,7 @@ fun ConnectedApp(vm:SystemViewModel){
         transitionSpec={navTransition(initialState.depth,targetState.depth)}){snapshot->Screen(snapshot)}
 }
 
-fun human(value:String)=value.replace('_',' ').replaceFirstChar{it.uppercase()}
+fun human(value:String)=when(value){"serviceable"->"Ready";"maintenance"->"Needs repair";else->value.replace('_',' ').replaceFirstChar{it.uppercase()}}
 fun recordTitle(row:JsonObject,workspace:JsonObject):String {
     for(key in listOf("title","shared_title","label","full_name","name","purpose","message","position","club_name","action","request","concern","summary"))if(row.text(key).isNotBlank())return row.text(key).take(120)
     val person=workspace.records("profiles").find{it.text("id")==row.text("user_id")}?.text("full_name")

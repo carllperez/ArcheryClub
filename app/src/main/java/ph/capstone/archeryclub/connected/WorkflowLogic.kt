@@ -134,7 +134,7 @@ fun equipmentState(item: JsonObject, workspace: JsonObject): EquipmentState {
 
 /** Problems that would make the server refuse approval, shown before the member submits. */
 fun borrowingIssues(item: JsonObject, hand: String, maxDrawWeight: Double?, start: Instant?, end: Instant?, now: Instant = Instant.now()): List<String> = buildList {
-    if (item.text("condition") != "serviceable") add("This item is not serviceable.")
+    if (item.text("condition") != "serviceable") add("This item is not ready to lend.")
     val itemHand = item.text("handedness")
     if (hand.isNotBlank() && itemHand in setOf("left", "right") && itemHand != hand) add("This is a ${itemHand}-handed item; your profile says ${hand}-handed.")
     val weight = item.text("draw_weight").toDoubleOrNull()
