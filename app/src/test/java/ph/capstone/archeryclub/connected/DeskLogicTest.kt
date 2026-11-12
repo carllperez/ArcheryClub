@@ -280,9 +280,9 @@ class DeskLogicTest {
             obj("id" to "a1", "user_id" to "x", "full_name" to "Late Applicant", "status" to "pending", "submitted_at" to "2026-11-11T00:00:00Z"),
             obj("id" to "a2", "user_id" to "y", "full_name" to "Early Applicant", "status" to "under_review", "submitted_at" to "2026-11-09T00:00:00Z")))
         val f = officerFocus(w, setOf("membership"), rolesNow)!!
-        assertEquals("Early Applicant", f.title)
-        assertEquals("Review application", f.action)
-        assertTrue(f.detail.contains("1 more"))
+        assertEquals("You have 2 applications to review", f.title)
+        assertEquals("APPLICATIONS TO REVIEW", f.eyebrow)
+        assertTrue(f.detail.startsWith("Oldest: Early Applicant"))
     }
 
     // ---------------------------------------------------------------- Club setup
