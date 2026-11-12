@@ -742,3 +742,45 @@ test('A whole training goes to the coach at once',async()=>{
  assert.equal((await row('training_records',a.id)).validation,'pending');assert.equal((await row('training_records',b.id)).validation,'pending');
  assert.equal((await row('training_records',a.id)).arrows.session.session_id,'s-demo');
 });
+
+test('M10 inventory: the club sets up categories and places, items follow the category fields, sheets import',async()=>{
+ const ws=await rpc('officer','club_workspace',[],'');
+ const cats=Object.fromEntries(ws.inventory_categories.map(c=>[c.name,c]));
+ const places=Object.fromEntries(ws.inventory_places.map(p=>[p.name,p]));
+ assert.equal(cats.Riser.fields[0].label,'Hand'); assert.ok(places['Short White Cabinet (Left)']);
+ // Members can't change the inventory.
+ await denied(()=>rpc('applicant','save_inventory_place',[JSON.stringify({name:'Locker'})],'$1::jsonb'),/Equipment desk|permission/);
+ // A category with a choice and a range; repeats and blanks in choices are dropped, order kept.
+ const cat=await rpc('officer','save_inventory_category',[JSON.stringify({name:'Test Limbs',color:'orange',labelled:true,
+  fields:[{label:'Label',type:'text'},{label:'Size',type:'choice',options:['S','M','',' M','L']},{label:'Draw weight (lbs.)',type:'range',on_list:true}]})],'$1::jsonb');
+ const saved=(await db.query('select fields from app_private.inventory_categories where id=$1',[cat.id])).rows[0].fields;
+ assert.deepEqual(saved[1].options,['S','M','L']); assert.equal(saved[2].key,'draw_weight_lbs');
+ await denied(()=>rpc('officer','save_inventory_category',[JSON.stringify({name:'Bad',fields:[{label:'A'},{label:'a'}]})],'$1::jsonb'),/both called/);
+ const place=await rpc('officer','save_inventory_place',[JSON.stringify({name:'Locker 1'})],'$1::jsonb');
+ // An item: label is built and kept unique; draw weight and hand feed borrowing matches.
+ const item={name:'Akusta Breeze',category_id:cat.id,place_id:place.id,details:{label:'M4',size:'M',draw_weight_lbs:'20-22'},notes:'confirm label'};
+ const a=await rpc('officer','save_inventory_item',[JSON.stringify(item)],'$1::jsonb');
+ const b=await rpc('officer','save_inventory_item',[JSON.stringify(item)],'$1::jsonb');
+ const ra=await row('equipment',a.id), rb=await row('equipment',b.id);
+ assert.equal(ra.label,'Akusta Breeze M4'); assert.equal(rb.label,'Akusta Breeze M4 #2'); assert.equal(Number(ra.draw_weight),22);
+ assert.equal(ra.category,'Test Limbs'); assert.equal(ra.owner,'Club property'); assert.match(ra.specifications,/Size: M/);
+ await denied(()=>rpc('officer','save_inventory_item',[JSON.stringify({...item,details:{size:'XL'}})],'$1::jsonb'),/one of/);
+ await denied(()=>rpc('officer','save_inventory_item',[JSON.stringify({...item,details:{draw_weight_lbs:'heavy'}})],'$1::jsonb'),/range/);
+ await denied(()=>rpc('officer','save_inventory_item',[JSON.stringify({...item,quantity:3})],'$1::jsonb'),/one by one/);
+ const riser=await rpc('officer','save_inventory_item',[JSON.stringify({name:'SF Axiom',category_id:cats.Riser.id,details:{hand:'LH',length:'23'}})],'$1::jsonb');
+ assert.equal((await row('equipment',riser.id)).handedness,'left');
+ // A place or category with items can't be deleted; an empty one can.
+ await denied(()=>rpc('officer','delete_inventory_group',['place',place.id],'$1,$2::uuid'),/Move/);
+ const empty=await rpc('officer','save_inventory_place',[JSON.stringify({name:'Spare shelf'})],'$1::jsonb');
+ await rpc('officer','delete_inventory_group',['place',empty.id],'$1,$2::uuid');
+ // Import: all or nothing, with the row number in the error.
+ const rows=[{name:'Focus',category_id:cats.Sight.id,quantity:4,details:{size:'L',color:'Black',pins:'6 pins'},notes:'2 circle sights'},
+  {name:'SJA-40',category_id:cats.Sight.id,quantity:4,details:{size:'S'}}];
+ await denied(()=>rpc('officer','import_inventory',[place.id,JSON.stringify([...rows,{name:'Bad',category_id:cats.Sight.id,details:{size:'XXL'}}])],'$1::uuid,$2::jsonb'),/Row 3/);
+ assert.equal((await db.query("select count(*)::int n from app_private.equipment where name='Focus'")).rows[0].n,0);
+ assert.equal((await rpc('officer','import_inventory',[place.id,JSON.stringify(rows)],'$1::uuid,$2::jsonb')).imported,2);
+ // A category that isn't lent out can't be borrowed.
+ await rpc('officer','save_inventory_category',[JSON.stringify({id:cats.Sight.id,version:cats.Sight.version,name:'Sight',fields:cats.Sight.fields,borrowable:false})],'$1::jsonb');
+ const focus=(await db.query("select id from app_private.equipment where name='Focus'")).rows[0];
+ await denied(()=>command('successor','request_borrowing',{equipment_id:focus.id,starts_at:future(60),ends_at:future(62),handedness:'right',bow_setup:'',purpose:'Practice'}),/not lent/);
+});

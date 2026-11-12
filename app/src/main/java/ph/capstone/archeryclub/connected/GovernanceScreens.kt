@@ -259,7 +259,7 @@ private fun termSeed(): JsonObject {
 }
 
 @Composable
-fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onRecords: () -> Unit) {
+fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -317,6 +317,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         RowGroup {
             GroupRow("users", "Accounts", "Enable or disable sign-in", onClick = onRecords)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
+            GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
             GroupRow("doc", "Full activity log", divider = false, onClick = onRecords)
         }
         if (log.isNotEmpty()) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

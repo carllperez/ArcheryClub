@@ -21,6 +21,7 @@ fun WorkflowRoute(
     val key = route.substringBefore(':'); val id = route.substringAfter(':', "")
     val officerActivities = allowed("activities")
     val officerEquipment = allowed("equipment")
+    val inventoryDesk = allowed("equipment") || allowed("administration")
     val perms = listOf("finance", "president", "training", "elections", "administration", "interclub", "reports").filter(allowed).toSet()
     @Composable fun denied(title: String, body: String) = ScreenShell(title, onBack, snackbar) { EmptyState(title, body) }
     when (key) {
@@ -42,13 +43,18 @@ fun WorkflowRoute(
         }
         "equipment" -> if (officerEquipment) ScreenShell("Equipment", onBack, snackbar) {
             if (busy) LinearProgressIndicator()
-            OfficerEquipmentContent(workspace, { onPush("item:$it") }, { onPush("borrowing:$it") }) { onStart("save_equipment", buildJsonObject {}) }
+            OfficerEquipmentContent(workspace, { onPush("item:$it") }, { onPush("borrowing:$it") }, onSetup = { onPush("inv_setup") }) { onPush("inv_edit:new") }
             if (isMember) TextButton(onClick = { onPush("equipment_member") }) { Text("Borrow equipment for myself") }
             TextButton(onClick = { onGo("records:10") }) { Text("All inventory records and calendar") }
         } else MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
+        // Inventory set-up: the Equipment desk and the Administrator (the server checks the same).
+        "inv_edit" -> if (inventoryDesk) InventoryItemEditScreen(workspace, id, busy, snackbar, vm, onBack) { onPush("inv_setup") } else denied("Equipment desk", "Only the Equipment desk or the Administrator can change the inventory.")
+        "inv_setup" -> if (inventoryDesk) InventorySetupScreen(workspace, busy, snackbar, vm, onBack, onPush) else denied("Equipment desk", "Only the Equipment desk or the Administrator can change the inventory.")
+        "inv_category" -> if (inventoryDesk) CategoryEditScreen(workspace, id, busy, snackbar, vm, onBack) else denied("Equipment desk", "Only the Equipment desk or the Administrator can change the inventory.")
+        "inv_import" -> if (inventoryDesk) InventoryImportScreen(workspace, busy, snackbar, vm, onBack) else denied("Equipment desk", "Only the Equipment desk or the Administrator can change the inventory.")
         "equipment_member" -> MemberEquipment(workspace, busy, snackbar, onBack, onPush, onGo)
         "item" -> EquipmentItemScreen(workspace, id, busy, snackbar, isMember, officerEquipment, onBack, onCommand,
-            onEdit = { onStart("save_equipment", it) }, onBorrowing = { onPush("borrowing:$it") }, vm = vm, onUpload = onUpload,
+            onEdit = { onPush("inv_edit:${it.text("id")}") }, onBorrowing = { onPush("borrowing:$it") }, vm = vm, onUpload = onUpload,
             onDelete = if (vm != null) ({ vm.save("delete_record", deleteArgs("equipment", id)) { onBack() } }) else null)
         "borrowing" -> BorrowingScreen(workspace, id, busy, snackbar, officerEquipment, onBack, onCommand,
             onResubmit = { onStart("request_borrowing", it) }, onItem = { onPush("item:$it") })
@@ -88,7 +94,7 @@ fun WorkflowRoute(
         "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
-        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }) { onGo("records:14") }
+        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "roles" -> if (allowed("administration")) RolesScreen(workspace, busy, snackbar, onBack) { onPush("role:$it") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")

@@ -77,7 +77,7 @@ fun MemberEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onBo
     withMe.forEach { b -> WithYouCard(b, workspace) { onBorrowing(b.text("id")) } }
     if (hasOverdueItem(workspace)) NoticeCard("Return your overdue item first", "New requests open again once the equipment officer records the return.", Tone.DANGER)
 
-    val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
+    val items = workspace.records("equipment").filter { it.text("condition") != "retired" && lentOut(workspace, it) }
     val categories = items.map { it.text("category") }.filter { it.isNotBlank() }.distinct().sorted()
     ChoiceChips(listOf("fits" to "Fits me", "" to "All") + categories.map { it to it }, category) { category = it }
     OutlinedTextField(search, { search = it }, placeholder = { Text("Search gear") }, singleLine = true, shape = CircleShape,
@@ -152,7 +152,7 @@ private fun WithYouCard(b: JsonObject, workspace: JsonObject, onClick: () -> Uni
 
 /** Equipment officer: action queue and live inventory. */
 @Composable
-fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onBorrowing: (String) -> Unit, onAddItem: () -> Unit) {
+fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onBorrowing: (String) -> Unit, onSetup: () -> Unit = {}, onAddItem: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf("queue") }
     val items = workspace.records("equipment").filter { it.text("condition") != "retired" }
     val states = items.map { equipmentState(it, workspace) }
@@ -176,13 +176,7 @@ fun OfficerEquipmentContent(workspace: JsonObject, onItem: (String) -> Unit, onB
             if (toRelease.isNotEmpty()) { SectionHeader("Ready to hand over (${toRelease.size})"); toRelease.forEach { BorrowingCard(it, workspace, true) { onBorrowing(it.text("id")) } } }
             if (out.isNotEmpty()) { SectionHeader("Awaiting return (${out.size})"); out.sortedByDescending { isOverdue(it) }.forEach { BorrowingCard(it, workspace, true) { onBorrowing(it.text("id")) } } }
         }
-        "inventory" -> {
-            if (items.isEmpty()) EmptyState("No equipment yet", "Add the club's bows, arrows and accessories so members can borrow them.")
-            EquipmentState.entries.filter { s -> states.any { it == s } }.forEach { s ->
-                SectionHeader("${s.label} (${states.count { it == s }})")
-                items.filter { equipmentState(it, workspace) == s }.sortedBy { it.text("label") }.forEach { EquipmentCard(it, workspace) { onItem(it.text("id")) } }
-            }
-        }
+        "inventory" -> InventoryContent(workspace, onItem, onAddItem, onSetup)
         else -> {
             val done = borrowings.filter { it.text("status") in setOf("returned", "rejected", "cancelled") }.sortedByDescending { it.text("ends_at") }
             if (done.isEmpty()) EmptyState("No completed transactions yet", "Returned, declined and cancelled requests are kept here.")
@@ -215,11 +209,15 @@ fun EquipmentItemScreen(
     ScreenShell(item.text("label"), onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         ItemPhoto(workspace, itemId, isOfficer, busy, vm, onUpload)
+        InventoryDetails(workspace, itemId)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusPill(state.label, state.tone())
             s?.instant("next_booking")?.let { StatusPill("Next booking ${fmtDay(it)}", Tone.NEUTRAL) }
         }
-        RaisedCard { Column(Modifier.padding(16.dp)) {
+        // Items set up with a category show their own fields above; older items keep the original details.
+        if (item.text("category_id").isNotBlank()) RaisedCard { Column(Modifier.padding(16.dp)) {
+            KeyValue("Condition", conditionLabel(item.text("condition"))); KeyValue("Times borrowed", s?.text("times_borrowed").orEmpty())
+        } } else RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Category", item.text("category")); KeyValue("Handedness", human(item.text("handedness")))
             KeyValue("Draw weight", item.text("draw_weight").toDoubleOrNull()?.let { "${fmtNumber(it)} lb" }.orEmpty())
             KeyValue("Setup", item.text("bow_setup")); KeyValue("Condition", human(item.text("condition")))
