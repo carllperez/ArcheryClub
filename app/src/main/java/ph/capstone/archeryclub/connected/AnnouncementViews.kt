@@ -28,8 +28,9 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
     // On Home (onViewAll set) only unread ones show; read ones live in the Announcements tab.
     val all = if (onViewAll != null) every.filter { !it.read } else every
     if (onViewAll != null && all.isEmpty()) {
-        Text("ANNOUNCEMENTS", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         RaisedCard(radius = 18.dp) { Column {
+            Text("ANNOUNCEMENTS", Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp), style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("✓", color = Club.forest, fontWeight = FontWeight.ExtraBold)
                 Text("You're all caught up", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
@@ -47,13 +48,15 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
     fun mark(ids: List<String>) {
         if (vm != null && ids.isNotEmpty()) vm.save("mark_announcements_read", buildJsonObject { put("p_ids", JsonArray(ids.map(::JsonPrimitive))) })
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(if (unread.isEmpty()) "ANNOUNCEMENTS" else "ANNOUNCEMENTS · ${unread.size} NEW", style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        if (unread.size > 1) TextButton(onClick = { mark(unread.map { it.id }) }, enabled = !busy) { Text("Mark all read", fontWeight = FontWeight.ExtraBold) }
-    }
+    // The heading sits inside the white card, so it reads clearly where the card overlaps the green header on Home.
     RaisedCard(radius = 18.dp) {
         Column(Modifier.animateContentSize()) {
+            Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (unread.isEmpty()) "ANNOUNCEMENTS" else "ANNOUNCEMENTS · ${unread.size} NEW", style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
+                if (unread.size > 1) TextButton(onClick = { mark(unread.map { it.id }) }, enabled = !busy) { Text("Mark all read", fontWeight = FontWeight.ExtraBold) }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
             shown.forEachIndexed { i, a ->
                 val expanded = open == a.id
                 Column(Modifier.fillMaxWidth().background(if (a.read) Color(0xFFF4F6F3) else Color.Transparent)
