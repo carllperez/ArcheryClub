@@ -141,13 +141,13 @@ fun OfficerHome(
         }
         if ("finance" in permissions || "president" in permissions) {
             val balance = fundsSummary(workspace.records("financial_records")).balance
-            RaisedCard(onClick = { onRoute("finance_desk") }) {
+            RaisedCard(onClick = { onRoute("finance_desk:ledger") }) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("CLUB FUNDS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${peso(balance)} balance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                     }
-                    FilledTonalButton(onClick = { onRoute("finance_desk") }) { Text("View", fontWeight = FontWeight.ExtraBold) }
+                    FilledTonalButton(onClick = { onRoute("finance_desk:ledger") }) { Text("View", fontWeight = FontWeight.ExtraBold) }
                 }
             }
         }

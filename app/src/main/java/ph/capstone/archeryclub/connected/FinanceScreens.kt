@@ -278,7 +278,7 @@ private fun VerifyDialog(workspace: JsonObject, r: JsonObject, onCommand: (Strin
 @Composable
 fun FinanceDeskScreen(
     workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onOpen: (String) -> Unit,
-    onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit, vm: SystemViewModel?, onMine: () -> Unit,
+    onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onRecords: () -> Unit, vm: SystemViewModel?, startTab: String = "", onMine: () -> Unit,
 ) {
     val finance = "finance" in permissions; val president = "president" in permissions
     var editingPayTo by remember { mutableStateOf(false) }
@@ -296,7 +296,8 @@ fun FinanceDeskScreen(
         if (finance) add("fees" to "Fees")
         add("ledger" to "Ledger")
     }
-    var tab by rememberSaveable { mutableStateOf(tabs.first().first) }
+    // "Payments to check" opens on To check; "Club funds" opens on the Ledger (money in and out).
+    var tab by rememberSaveable { mutableStateOf(tabs.firstOrNull { it.first == startTab }?.first ?: tabs.first().first) }
     var verifying by remember { mutableStateOf<JsonObject?>(null) }
     var matching by remember { mutableStateOf<JsonObject?>(null) }
     val settingsFee = workspace.records("settings").firstOrNull()?.amount("membership_fee") ?: 0.0
