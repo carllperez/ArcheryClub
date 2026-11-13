@@ -101,7 +101,7 @@ fun ClubLanding(
     val staff=permissions.isNotEmpty()
     val memberHome=isMember&&!staff
     val hasModule:(Int)->Boolean={n->modules.any{it.text("number")==n.toString()}}
-    val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()&&it.text("completed_at").isBlank()}.sortedByDescending{it.text("notified_at")}
+    val notices=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("kind")!="announcement"&&it.text("acknowledged_at").isBlank()&&it.text("completed_at").isBlank()}.sortedByDescending{it.text("notified_at")}
     val title=when(page){
         "activities"->"Activities";"modules"->"All modules";"account"->"Your account";"notices"->"Notices"
         else->if(staff)"Club workspace" else if(memberHome){
@@ -279,7 +279,7 @@ private fun MemberHome(
                     HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
                     HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
                 }
-                featuredElection(workspace.records("elections"),false)?.takeIf{it.text("status") in setOf("announced","voting")}?.let{e->
+                featuredElection(workspace.records("elections"),false)?.takeIf{electionStageOpen(it,java.time.Instant.now())}?.let{e->
                     HomeRow("vote",e.text("title"),if(e.text("status")=="voting")"Voting open · closes ${fmtDay(e.instant("voting_closes"))}" else "Candidacy open · closes ${fmtDay(e.instant("candidacy_closes"))}"){onModule(9)}
                 }
                 val owed=amountOwed(feeViews(workspace,user,java.time.LocalDate.now()))
@@ -287,8 +287,6 @@ private fun MemberHome(
                 HomeRow("target","My Training",scoreCards(workspace,user).firstOrNull()?.let{"Last round ${it.scoreLabel} · ${it.state.label}"}?:"Log rounds, get coach feedback"){onModule(4)}
                 HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
-                if(tasks.isNotEmpty())HomeRow("tasks","Your tasks","${tasks.size} to follow up"){onModule(6)}
-                if(noticeCount>0)HomeRow("bell","Notices","$noticeCount new update${if(noticeCount==1)"" else "s"}"){onPage("notices")}
             }
         }
     }

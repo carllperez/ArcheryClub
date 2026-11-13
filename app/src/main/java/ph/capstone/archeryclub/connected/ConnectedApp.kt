@@ -352,7 +352,7 @@ fun recordTitle(row:JsonObject,workspace:JsonObject):String {
         InfoCard(human(key),"${workspace.records(key).count{it.text("user_id")==user}} recorded entries")
         TextButton(onClick={onNavigate(target)}){Text("Open ${human(key).lowercase()}")}
     }
-    val pending=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("acknowledged_at").isBlank()&&it.text("completed_at").isBlank()}
+    val pending=workspace.records("notifications").filter{it.text("user_id")==user&&it.text("kind")!="announcement"&&it.text("acknowledged_at").isBlank()&&it.text("completed_at").isBlank()}
     InfoCard("Notices to review","${pending.size} unacknowledged notices")
     val registered=workspace.records("registrations").filter{it.text("user_id")==user}.map{it.text("event_id")}.toSet()
     workspace.records("events").filter{it.text("id") in registered&&runCatching{Instant.parse(it.text("starts_at")).isAfter(Instant.now())}.getOrDefault(false)}.sortedBy{it.text("starts_at")}.forEach{

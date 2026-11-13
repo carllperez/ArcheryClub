@@ -290,3 +290,11 @@ fun approvalNotice(workspace: JsonObject): JsonObject? {
             (it.text("message").contains("now Active", ignoreCase = true) || it.text("message").contains("was approved", ignoreCase = true))
     }.maxByOrNull { it.text("notified_at") }
 }
+
+/** An election's member-facing stage is open: candidacy (announced) before candidacy closes, or voting before voting closes.
+ *  Once the deadline passes it stays hidden until the COMELEC moves it on. */
+fun electionStageOpen(e: JsonObject, now: Instant): Boolean = when (e.text("status")) {
+    "announced" -> e.instant("candidacy_closes")?.isAfter(now) ?: true
+    "voting" -> e.instant("voting_closes")?.isAfter(now) ?: true
+    else -> false
+}

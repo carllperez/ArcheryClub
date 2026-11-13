@@ -50,4 +50,12 @@ class HomeLogicTest {
         assertEquals(listOf("New", "Old"), views.map { it.title }); assertEquals(listOf(false, true), views.map { it.read })
         assertEquals("n1", approvalNotice(w)?.text("id"))
     }
+
+    @Test fun electionRowHidesAfterItsDeadline() {
+        fun e(status: String, key: String, at: String) = kotlinx.serialization.json.JsonObject(mapOf("status" to kotlinx.serialization.json.JsonPrimitive(status), key to kotlinx.serialization.json.JsonPrimitive(at)))
+        val now = Instant.parse("2026-11-13T01:00:00Z")
+        assertEquals(false, electionStageOpen(e("announced", "candidacy_closes", "2026-11-12T15:00:00Z"), now))
+        assertEquals(true, electionStageOpen(e("voting", "voting_closes", "2026-11-14T15:00:00Z"), now))
+        assertEquals(false, electionStageOpen(e("closed", "voting_closes", "2026-11-14T15:00:00Z"), now))
+    }
 }

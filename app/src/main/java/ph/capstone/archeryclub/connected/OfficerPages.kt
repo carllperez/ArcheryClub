@@ -171,7 +171,7 @@ fun OfficerHome(
             HomeRow("target", "My training", scoreCards(workspace, user).firstOrNull()?.let { "Last round ${it.scoreLabel} · ${it.state.label}" } ?: "Log rounds, get coach feedback") { onModule(4) }
             val owed = amountOwed(feeViews(workspace, user, java.time.LocalDate.now()))
             if (owed > 0) HomeRow("money", "Payments", "${peso(owed)} due") { onModule(12) }
-            featuredElection(workspace.records("elections"), false)?.takeIf { it.text("status") in setOf("announced", "voting") }?.let { e ->
+            featuredElection(workspace.records("elections"), false)?.takeIf { electionStageOpen(it, now) }?.let { e ->
                 HomeRow("vote", e.text("title"), if (e.text("status") == "voting") "Voting open" else "Candidacy open") { onModule(9) }
             }
         }

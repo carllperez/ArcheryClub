@@ -103,8 +103,9 @@ test('M8 announcement edits notify members, reject stale writes and protect unpu
  assert.equal((await row('announcements',a.id)).version,2);
  await as('applicant',async()=>{
   assert.equal((await db.query('select message from app_private.announcements where id=$1',[a.id])).rows[0].message,'Corrected venue');
-  const n=(await db.query('select * from app_private.notifications where record_id=$1',[a.id])).rows;
-  assert.equal(n.length,1);assert.equal(n[0].acknowledged_at,null);
+  // Announcements no longer create Notices; an edit makes the announcement unread again instead.
+  const n=(await db.query('select * from app_private.notifications where record_id=$1 and completed_at is null',[a.id])).rows;
+  assert.equal(n.length,0);
  });
  const e=await command('officer','save_event',{title:'Draft event',description:'Private draft',venue:'Range',starts_at:future(24),ends_at:future(25),registration_opens:future(-2),registration_closes:future(12),capacity:2});
  await denied(()=>command('officer','publish_announcement',{event_id:e.id,title:'Leaked draft',message:'Private'}),/published/);
@@ -812,4 +813,14 @@ test('M2 application details: college, program and year are saved, required to s
  await db.query("update app_private.applications set status='approved' where user_id=$1",[ids.newbie]);
  const p=(await db.query('select sex,college,program,year_level,emergency_contact_name from app_private.profiles where id=$1',[ids.newbie])).rows[0];
  assert.deepEqual(p,{sex:'Female',college:'CCS',program:'BS Information Technology',year_level:'2nd year',emergency_contact_name:'Maria Newbie'});
+});
+
+test('M8 announcements no longer create Notices, and an edit makes one unread again',async()=>{
+ await command('officer','publish_announcement',{title:'No notice please',message:'Announcements tab only.'});
+ const n=(await db.query("select count(*)::int n from app_private.notifications where kind='announcement' and completed_at is null")).rows[0].n;
+ assert.equal(n,0);
+ const id=(await db.query("select id from app_private.announcements where title='No notice please'")).rows[0].id;
+ await rpc('successor','mark_announcements_read',['{'+id+'}'],'$1::uuid[]');
+ await command('officer','update_announcement',{id,version:1,title:'No notice please',message:'Changed time.'});
+ assert.equal((await rpc('successor','club_workspace',[],'')).announcement_reads.filter(r=>r.announcement_id===id).length,0);
 });
