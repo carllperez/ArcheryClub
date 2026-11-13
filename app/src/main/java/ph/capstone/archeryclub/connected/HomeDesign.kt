@@ -307,14 +307,24 @@ fun HeroStats(stats: List<Pair<String, String>>) {
 fun RowGroup(content: @Composable ColumnScope.() -> Unit) =
     RaisedCard(radius = 18.dp) { Column(content = content) }
 
+/** Values longer than this go under a GroupRow's title instead of beside it. */
+const val GROUP_ROW_SIDE_VALUE = 14
+
 @Composable
 fun GroupRow(icon: String, title: String, value: String = "", tint: Color = Club.forest, chip: Color = Club.mint, divider: Boolean = true,
              trailing: (@Composable () -> Unit)? = null, onClick: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
         .padding(horizontal = 14.dp, vertical = 12.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(chip), contentAlignment = Alignment.Center) { ClubIcon(icon, Modifier.size(18.dp), tint) }
-        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        if (value.isNotBlank()) Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        // A short value ("Active", "₱800 due") sits on the right; a longer one goes under the title,
+        // because beside it the value is measured first and squeezes the title to a letter per line.
+        val below = value.length > GROUP_ROW_SIDE_VALUE
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            if (below) Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (value.isNotBlank() && !below) Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
         trailing?.invoke()
         if (onClick != null) ClubIcon("chevron", Modifier.size(16.dp), MaterialTheme.colorScheme.onSurfaceVariant)
     }

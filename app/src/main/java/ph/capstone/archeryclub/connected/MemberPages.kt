@@ -160,8 +160,10 @@ fun MemberProfilePage(
                     GroupRow("vote", "Elections", onClick = { onModule(9) })
                     GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
                         trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
-                    GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
-                    GroupRow("modules", if (myRoles.isNotEmpty()) "All club records" else "All club services", divider = false, onClick = { onPage("modules") })
+                    // Officers keep All club records as the way into records that aren't on their desks;
+                    // plain members already reach everything from Home, Activities and the rows above.
+                    GroupRow("qr", "Scan club code", "Attendance and gear", divider = myRoles.isNotEmpty(), onClick = onScan)
+                    if (myRoles.isNotEmpty()) GroupRow("modules", "All club records", divider = false, onClick = { onPage("modules") })
                 }
                 SecondaryAction("Refresh records", !state.busy, onClick = onRefresh)
                 OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
