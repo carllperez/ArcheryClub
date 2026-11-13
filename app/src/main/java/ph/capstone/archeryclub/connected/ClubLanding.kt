@@ -112,12 +112,12 @@ fun ClubLanding(
     // Until the membership is active, Home is the application: no Services tab (bylaws: club services are for members).
     val applicant=!staff&&!isMember&&!hasModule(15)
     // Officers who are members keep the member tabs; their desks live on Home. Officers without a membership get Home and Profile.
-    // Gear is reached from Home (Borrow Club Gear); the tab bar has Announcements instead.
-    val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","announcements" to "Announcements","account" to "Profile")
+    // Gear and Announcements open from cards on Home (Borrow Club Gear, View all announcements), each with a back arrow.
+    val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","account" to "Profile")
         else if(applicant||staff)listOf("home" to "Home","account" to "Profile")
         else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
-        ClubBottomBar(tabs,page,mapOf("account" to notices.size,"announcements" to announcementViews(workspace).count{!it.read})){onPage(it)}
+        ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
     }
     val context=androidx.compose.ui.platform.LocalContext.current
     var welcomed by remember(user){mutableStateOf(context.clubPrefs().getBoolean(welcomedKey(user),false))}
@@ -136,7 +136,7 @@ fun ClubLanding(
     }
     if(isMember&&page=="activities"){MemberActivitiesPage(workspace,state,snackbar,bottomBar,onRoute,onModule,vm);return}
     if(isMember&&page=="gear"){MemberGearPage(workspace,state,snackbar,bottomBar,onRoute){onPage("home")};return}
-    if(isMember&&page=="announcements"){AnnouncementsPage(workspace,vm,state,snackbar,bottomBar);return}
+    if(isMember&&page=="announcements"){AnnouncementsPage(workspace,vm,state,snackbar,bottomBar){onPage("home")};return}
     if(staff&&page=="home"){
         OfficerHome(workspace,permissions,fullName,state,snackbar,bottomBar,onRoute,onAnnouncement,onRefresh,recovery,isMember,onPage,onModule,vm)
         return

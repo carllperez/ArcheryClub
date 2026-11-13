@@ -96,9 +96,9 @@ fun ApprovalCard(notice: JsonObject, busy: Boolean, onDismiss: () -> Unit) {
     }
 }
 
-/** The Announcements tab: Unread and Read. Tap one to read all of it; Mark read moves it to Read. */
+/** All announcements, opened from the Home card: Unread and Read. Tap one to read all of it; Mark read moves it to Read. */
 @Composable
-fun AnnouncementsPage(workspace: JsonObject, vm: SystemViewModel?, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit) {
+fun AnnouncementsPage(workspace: JsonObject, vm: SystemViewModel?, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit, onBack: (() -> Unit)? = null) {
     val all = announcementViews(workspace)
     val unread = all.filter { !it.read }; val read = all.filter { it.read }
     var tab by rememberSaveable { mutableStateOf("unread") }
@@ -107,7 +107,9 @@ fun AnnouncementsPage(workspace: JsonObject, vm: SystemViewModel?, state: System
         if (vm != null && ids.isNotEmpty()) vm.save("mark_announcements_read", buildJsonObject { put("p_ids", JsonArray(ids.map(::JsonPrimitive))) })
     }
     val shown = if (tab == "unread") unread else read
-    HeroScaffold("Announcements", snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
+    // The phone's back gesture returns to Home too, since this page isn't a tab.
+    if (onBack != null) androidx.activity.compose.BackHandler(onBack = onBack)
+    HeroScaffold("Announcements", onBack, snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
         heroExtra = { HeroTabs(listOf("unread" to "Unread · ${unread.size}", "read" to "Read · ${read.size}"), tab) { tab = it } }) {
         Spacer(Modifier.height(4.dp))
         if (tab == "unread" && unread.size > 1) TextButton(onClick = { mark(unread.map { it.id }) }, enabled = !state.busy) { Text("Mark all read", fontWeight = FontWeight.ExtraBold) }

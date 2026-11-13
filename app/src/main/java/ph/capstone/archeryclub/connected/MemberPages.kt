@@ -61,6 +61,7 @@ fun MemberActivitiesPage(
 fun MemberGearPage(workspace: JsonObject, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit, onRoute: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val user = workspace.text("user_id")
     val profile = workspace.records("profiles").find { it.text("id") == user }
+    if (onBack != null) androidx.activity.compose.BackHandler(onBack = onBack)
     HeroScaffold("Club Gear", onBack, snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
         heroExtra = { Text(gearMatchLine(profile), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodySmall) }) {
         Spacer(Modifier.height(4.dp))
