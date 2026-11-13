@@ -58,10 +58,10 @@ fun MemberActivitiesPage(
 }
 
 @Composable
-fun MemberGearPage(workspace: JsonObject, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit, onRoute: (String) -> Unit) {
+fun MemberGearPage(workspace: JsonObject, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit, onRoute: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val user = workspace.text("user_id")
     val profile = workspace.records("profiles").find { it.text("id") == user }
-    HeroScaffold("Club Gear", snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
+    HeroScaffold("Club Gear", onBack, snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
         heroExtra = { Text(gearMatchLine(profile), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodySmall) }) {
         Spacer(Modifier.height(4.dp))
         MemberEquipmentContent(workspace, { onRoute("item:$it") }) { onRoute("borrowing:$it") }

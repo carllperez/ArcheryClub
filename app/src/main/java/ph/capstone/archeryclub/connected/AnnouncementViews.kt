@@ -80,3 +80,43 @@ fun ApprovalCard(notice: JsonObject, busy: Boolean, onDismiss: () -> Unit) {
         }
     }
 }
+
+/** The Announcements tab: Unread and Read. Tap one to read all of it; Mark read moves it to Read. */
+@Composable
+fun AnnouncementsPage(workspace: JsonObject, vm: SystemViewModel?, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit) {
+    val all = announcementViews(workspace)
+    val unread = all.filter { !it.read }; val read = all.filter { it.read }
+    var tab by rememberSaveable { mutableStateOf("unread") }
+    var open by rememberSaveable { mutableStateOf("") }
+    fun mark(ids: List<String>) {
+        if (vm != null && ids.isNotEmpty()) vm.save("mark_announcements_read", buildJsonObject { put("p_ids", JsonArray(ids.map(::JsonPrimitive))) })
+    }
+    val shown = if (tab == "unread") unread else read
+    HeroScaffold("Announcements", snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
+        heroExtra = { HeroTabs(listOf("unread" to "Unread · ${unread.size}", "read" to "Read · ${read.size}"), tab) { tab = it } }) {
+        Spacer(Modifier.height(4.dp))
+        if (tab == "unread" && unread.size > 1) TextButton(onClick = { mark(unread.map { it.id }) }, enabled = !state.busy) { Text("Mark all read", fontWeight = FontWeight.ExtraBold) }
+        if (shown.isEmpty()) EmptyState(if (tab == "unread") "You're all caught up" else "Nothing read yet",
+            if (tab == "unread") "New announcements from the club appear here." else "Announcements you've opened stay here.")
+        shown.forEach { a ->
+            val expanded = open == a.id
+            RaisedCard(radius = 18.dp, onClick = { open = if (expanded) "" else a.id }) {
+                Column(Modifier.fillMaxWidth().animateContentSize().background(if (a.read) Color(0xFFF4F6F3) else Color.Transparent).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(9.dp).clip(CircleShape).background(if (a.read) Color(0xFFC9D1CB) else Club.roseInk))
+                        Column(Modifier.weight(1f)) {
+                            Text(a.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (a.read) FontWeight.SemiBold else FontWeight.ExtraBold,
+                                color = if (a.read) Color(0xFF6B746E) else MaterialTheme.colorScheme.onSurface)
+                            Text(listOf(fmtDay(a.at), a.by).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A948D))
+                        }
+                    }
+                    Text(a.message, Modifier.padding(start = 19.dp), style = MaterialTheme.typography.bodyMedium,
+                        maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                    if (!a.read) TextButton(onClick = { mark(listOf(a.id)) }, enabled = !state.busy, modifier = Modifier.align(Alignment.End)) {
+                        Text("Mark read", fontWeight = FontWeight.ExtraBold) }
+                }
+            }
+        }
+    }
+}
