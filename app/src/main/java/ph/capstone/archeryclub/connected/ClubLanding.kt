@@ -196,7 +196,6 @@ fun ClubLanding(
                 }
                 val settings=workspace.records("settings").firstOrNull()
                 if(settings?.text("rules_validated")!="true")InfoCard("Club configuration pending","Club-specific requirements and rules are awaiting validation.")
-                OutlinedButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Refresh records")}
                 TextButton(onClick=onSignOut,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Sign out")}
             }
             else->{

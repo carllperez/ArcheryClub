@@ -165,7 +165,6 @@ fun MemberProfilePage(
                     GroupRow("qr", "Scan club code", "Attendance and gear", divider = myRoles.isNotEmpty(), onClick = onScan)
                     if (myRoles.isNotEmpty()) GroupRow("modules", "All club records", divider = false, onClick = { onPage("modules") })
                 }
-                SecondaryAction("Refresh records", !state.busy, onClick = onRefresh)
                 OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.roseSoft)) { Text("Sign out", color = Club.roseInk) }
             }

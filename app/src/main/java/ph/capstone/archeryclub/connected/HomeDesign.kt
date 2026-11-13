@@ -230,6 +230,13 @@ fun HeroBand(modifier: Modifier = Modifier, bottomPadding: Dp = 20.dp, content: 
  * Hero screen: green band (back button, eyebrow pills, big white title, optional extra like tabs or stats),
  * then cards pulled up over the band by [overlap]. A sticky action bar or the tab bar sits at the bottom.
  */
+/** The reload for pull-to-refresh; provided around the tab pages only. */
+val LocalPullRefresh = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** Coming back to the app after this long reloads the records. */
+const val RELOAD_AFTER_AWAY_MS = 60_000L
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HeroScaffold(
     title: String,
@@ -253,7 +260,12 @@ fun HeroScaffold(
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), content = sticky)
             } else bottomBar()
         }) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+        // Pull down to reload on pages without a sticky form bar. The spinner shows until the reload finishes.
+        val reload = LocalPullRefresh.current.takeIf { sticky == null }
+        var pulled by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+        androidx.compose.runtime.LaunchedEffect(pulled, busy) { if (pulled && !busy) { kotlinx.coroutines.delay(700); if (!busy) pulled = false } }
+        val page: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             Box {
                 HeroBand(bottomPadding = overlap + 22.dp) {
                     Row(Modifier.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -270,6 +282,10 @@ fun HeroScaffold(
             Column(Modifier.offset(y = -overlap).padding(horizontal = 16.dp).widthIn(max = 640.dp).padding(bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
         }
+        }
+        if (reload != null) androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = pulled,
+            onRefresh = { pulled = true; reload() }, modifier = Modifier.fillMaxSize().padding(pad)) { page() }
+        else Box(Modifier.fillMaxSize().padding(pad)) { page() }
     }
 }
 

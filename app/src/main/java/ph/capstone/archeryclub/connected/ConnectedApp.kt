@@ -80,6 +80,13 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     LaunchedEffect(state.signedIn){if(!state.signedIn){selectedVar=null;editingVar=null;moduleVar=0;landingVar="home";returnToLanding=false;stackVar=""}}
     LaunchedEffect(state.signedIn){while(state.signedIn){delay(30000);vm.refresh()}}
+    // Coming back to the app after a while away reloads, since that's when someone expects news.
+    // Short trips (the camera for a QR code, the file picker) don't, so they never interrupt a form.
+    var leftAt by remember{mutableStateOf(0L)}
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP){leftAt=System.currentTimeMillis()}
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START){
+        if(leftAt>0&&System.currentTimeMillis()-leftAt>RELOAD_AFTER_AWAY_MS&&state.signedIn)vm.refresh()
+    }
     if(!state.signedIn){ClubAuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
     if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")});return}
@@ -180,7 +187,8 @@ fun ConnectedApp(vm:SystemViewModel){
             return
         }
         if(module==0){
-            ClubLanding(page=landingPage,onPage={landingVar=it},workspace=workspace,
+            // The tab pages (Home, Activities, Profile, Gear, Announcements) reload when pulled down.
+            CompositionLocalProvider(LocalPullRefresh provides vm::refresh){ClubLanding(page=landingPage,onPage={landingVar=it},workspace=workspace,
                 modules=modules.filter{visible(it.text("number").toInt())},state=state,snackbar=snackbar,
                 onModule={openModule(it)},onRoute={go(it)},
                 onRecord={target,table,row->if(visible(target)){moduleVar=target;selectedVar=table to row;returnToLanding=true}},
@@ -190,7 +198,7 @@ fun ConnectedApp(vm:SystemViewModel){
                 onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
                 onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
                 recovery={PasswordChangeCard(vm,state.busy)},
-                onCommand={action,data->vm.command(action,data)},vm=vm)
+                onCommand={action,data->vm.command(action,data)},vm=vm)}
             return
         }
         if(!visible(module)){LaunchedEffect(module){moduleVar=0;selectedVar=null;editingVar=null};return}
