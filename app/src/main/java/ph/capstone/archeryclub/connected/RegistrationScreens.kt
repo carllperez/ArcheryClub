@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -295,7 +297,10 @@ fun ApplicationReviewScreen(
         .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.ifEmpty { listOf("Regular member") }
     var decision by remember { mutableStateOf<String?>(null) }
     var remark by remember(decision) { mutableStateOf("") }
-    var category by remember { mutableStateOf(categories.first()) }
+    // The category comes from the year level the applicant gave; the officer only picks when nothing matches.
+    val auto = categoryFor(app.text("year_level"), categories)
+    var category by remember { mutableStateOf(auto ?: categories.first()) }
+    var pickCategory by remember { mutableStateOf(auto == null) }
 
     fun decide(status: String, extra: JsonObjectBuilder.() -> Unit = {}) = onCommand("review_application", buildJsonObject {
         put("id", id); app.text("version").toLongOrNull()?.let { put("version", it) }; put("status", status); put("remark", remark.trim()); extra()
@@ -359,11 +364,25 @@ fun ApplicationReviewScreen(
 
     val d = decision
     if (d == "approved") ConfirmDialog("Approve ${app.text("full_name")}?",
-            "Their verified name becomes ${app.text("full_name")}. If the club charges a membership fee, they become Active once the Treasurer verifies payment.",
+            "Their verified name becomes ${app.text("full_name")}. If the club charges a membership fee, they become Active once the fee payment is verified.",
             "Approve", onConfirm = { decide("approved") { put("category", category); put("requirements_verified", true) } }, onDismiss = { decision = null },
             extra = {
-                Text("Membership category", style = MaterialTheme.typography.labelLarge)
-                ChoiceChips(categories.map { it to it }, category) { category = it }
+                if (!pickCategory) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Membership category", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$category · from year level: ${app.text("year_level")}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = { pickCategory = true }) { Text("Change") }
+                } else {
+                    Text("Membership category", style = MaterialTheme.typography.labelLarge)
+                    // A list fits the dialog; chips in one row cut long names off.
+                    categories.forEach { c ->
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { category = c }.padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(category == c, { category = c }); Text(c)
+                        }
+                    }
+                }
                 OutlinedTextField(remark, { remark = it }, label = { Text("Note to applicant (optional)") }, modifier = Modifier.fillMaxWidth())
             })
     else if (d != null) ConfirmDialog(when (d) { "rejected" -> "Not accept this application?"; else -> "Return to fix?" },

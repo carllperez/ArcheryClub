@@ -95,4 +95,13 @@ class RegistrationLogicTest {
         val paid = applicationMilestones(applicationView(ws("approved", listOf(doc("d1", "School ID", true), doc("d2", "Medical clearance", true)))), "Active")
         assertTrue(paid.all { it.done })
     }
+
+    @Test fun categoryFollowsYearLevel() {
+        val club = listOf("Undergraduate student", "Graduate student", "Alumni", "Faculty/Staff")
+        assertEquals("Undergraduate student", categoryFor("2nd year", club))
+        assertEquals("Graduate student", categoryFor("Graduate", club))
+        assertEquals("Alumni", categoryFor("Alumni", club))
+        assertEquals("Regular member", categoryFor("Alumni", listOf("Regular member")))
+        assertEquals(null, categoryFor("", club)); assertEquals(null, categoryFor("3rd year", listOf("Regular member")))
+    }
 }

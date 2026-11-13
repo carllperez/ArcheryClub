@@ -98,6 +98,19 @@ val COLLEGES = listOf("CCS", "GCOE", "COS", "CLA", "RVR-COB", "SOE", "BAGCED", "
 val YEAR_LEVELS = listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Graduate", "Alumni")
 val SEXES = listOf("Male", "Female")
 
+/** The membership category that matches the year level the applicant gave, from the club's own list, or null when
+ *  none clearly matches (the officer then picks). Alumni go to an Alumni category, else to a regular one. */
+fun categoryFor(yearLevel: String, categories: List<String>): String? {
+    fun find(test: (String) -> Boolean) = categories.firstOrNull { test(it.lowercase()) }
+    val y = yearLevel.trim().lowercase()
+    return when {
+        y.matches(Regex("[1-5](st|nd|rd|th) year")) -> find { "undergrad" in it }
+        y == "graduate" -> find { "graduate" in it && "undergrad" !in it }
+        y == "alumni" -> find { "alumni" in it } ?: find { "regular" in it }
+        else -> null
+    }
+}
+
 /** Mirrors the server: name required (≤160); optional fields are length-limited and the phone must look like one. */
 fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
     val name = v["full_name"].orEmpty().trim()
