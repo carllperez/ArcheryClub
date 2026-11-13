@@ -273,7 +273,7 @@ private fun MemberHome(
                 approvalNotice(workspace)?.let{n->ApprovalCard(n,state.busy){onAcknowledge(n)}}
                 state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
                 if(state.recovery)recovery()
-                AnnouncementsCard(workspace,vm,state.busy)
+                AnnouncementsCard(workspace,vm,state.busy,onViewAll={onPage("announcements")})
                 NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
                 TileRow {
                     HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}

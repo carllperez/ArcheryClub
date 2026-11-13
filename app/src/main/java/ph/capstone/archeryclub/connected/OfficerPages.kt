@@ -86,7 +86,7 @@ fun OfficerHome(
                         .background(if (pager.currentPage == i) Club.forest else Club.mint))
                 }
             }
-            AnnouncementsCard(workspace, vm, state.busy)
+            AnnouncementsCard(workspace, vm, state.busy, onViewAll = { onPage("announcements") })
             val quiet = desks.filter { it != main && it.waiting == 0 }
             if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Other desks", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

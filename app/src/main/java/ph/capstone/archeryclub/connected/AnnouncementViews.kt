@@ -20,10 +20,25 @@ import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 
 /** Announcements card for Home and Activities. Unread ones have a red dot and bold title; read ones stay, in gray.
- *  Tapping one opens its message and marks it read. */
+ *  Tapping one opens its message (on Activities it also marks it read; on Home, Mark read does). */
 @Composable
-fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean, limit: Int = 3, onSeeAll: (() -> Unit)? = null) {
-    val all = announcementViews(workspace)
+fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean, limit: Int = 3, onSeeAll: (() -> Unit)? = null,
+                      onViewAll: (() -> Unit)? = null) {
+    val every = announcementViews(workspace)
+    // On Home (onViewAll set) only unread ones show; read ones live in the Announcements tab.
+    val all = if (onViewAll != null) every.filter { !it.read } else every
+    if (onViewAll != null && all.isEmpty()) {
+        Text("ANNOUNCEMENTS", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RaisedCard(radius = 18.dp) { Column {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("✓", color = Club.forest, fontWeight = FontWeight.ExtraBold)
+                Text("You're all caught up", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            TextButton(onClick = onViewAll, modifier = Modifier.fillMaxWidth()) { Text("View all announcements", fontWeight = FontWeight.ExtraBold) }
+        } }
+        return
+    }
     if (all.isEmpty()) return
     var showAll by rememberSaveable { mutableStateOf(false) }
     var open by rememberSaveable { mutableStateOf("") }
@@ -42,7 +57,7 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
             shown.forEachIndexed { i, a ->
                 val expanded = open == a.id
                 Column(Modifier.fillMaxWidth().background(if (a.read) Color(0xFFF4F6F3) else Color.Transparent)
-                    .clickable { open = if (expanded) "" else a.id; if (!a.read && !expanded) mark(listOf(a.id)) }
+                    .clickable { open = if (expanded) "" else a.id; if (onViewAll == null && !a.read && !expanded) mark(listOf(a.id)) }
                     .padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Box(Modifier.size(9.dp).clip(CircleShape).background(if (a.read) Color(0xFFC9D1CB) else Club.roseInk))
@@ -59,7 +74,8 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
                 }
                 if (i < shown.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
             }
-            if (all.size > limit) TextButton(onClick = { showAll = !showAll }, modifier = Modifier.fillMaxWidth()) {
+            if (onViewAll != null) TextButton(onClick = onViewAll, modifier = Modifier.fillMaxWidth()) { Text("View all announcements", fontWeight = FontWeight.ExtraBold) }
+            else if (all.size > limit) TextButton(onClick = { showAll = !showAll }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (showAll) "Show fewer" else "See all ${all.size}", fontWeight = FontWeight.ExtraBold) }
             else if (onSeeAll != null) TextButton(onClick = onSeeAll, modifier = Modifier.fillMaxWidth()) { Text("Announcements and attendance records") }
         }
