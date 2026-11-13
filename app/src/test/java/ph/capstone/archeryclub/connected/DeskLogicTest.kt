@@ -282,7 +282,7 @@ class DeskLogicTest {
         val f = officerFocus(w, setOf("membership"), rolesNow)!!
         assertEquals("You have 2 applications to review", f.title)
         assertEquals("APPLICATIONS TO REVIEW", f.eyebrow)
-        assertTrue(f.detail.startsWith("Oldest: Early Applicant"))
+        assertEquals("", f.detail)
     }
 
     // ---------------------------------------------------------------- Club setup

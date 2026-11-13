@@ -97,7 +97,7 @@ fun OfficerHome(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(f.eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(f.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(f.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (f.detail.isNotBlank()) Text(f.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     PillButton(f.action, { onRoute(f.route) })
                 }
             }
@@ -196,7 +196,7 @@ private fun DeskJobCard(d: DeskTile, focus: OfficerFocus?, onRoute: (String) -> 
             }
             Text(focus?.title ?: "Nothing waiting on ${d.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(focus?.detail ?: d.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            (focus?.detail ?: d.detail).takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             PillButton(focus?.action ?: "Open ${d.title}", { onRoute(route) })
         }
     }

@@ -449,11 +449,10 @@ fun officerFocus(workspace: JsonObject, permissions: Set<String>, now: Instant):
     return when (q.label) {
         "Applications to review", "Documents to verify" -> workspace.records("applications")
             .filter { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }.let { waiting ->
-                // Headline is how many are waiting; the line below names the one sent first, which opens first.
-                waiting.minByOrNull { it.text("submitted_at") }?.let { a ->
+                // Kept short: just how many. Names and dates are on the Applications list.
+                waiting.takeIf { it.isNotEmpty() }?.let {
                     OfficerFocus("APPLICATIONS TO REVIEW", "You have ${waiting.size} application${if (waiting.size == 1) "" else "s"} to review",
-                        "Oldest: ${a.text("full_name").ifBlank { memberName(workspace, a.text("user_id")) }} · sent ${day(a.instant("submitted_at"))}",
-                        "applications", "Review applications") }
+                        "", "applications", "Review applications") }
             }
         "Scorecards to validate" -> workspace.records("training_records").filter { it.text("validation") == "pending" }.minByOrNull { it.text("encoded_at") }
             ?.let { r -> OfficerFocus("CHECK FIRST", "${memberName(workspace, r.text("user_id"))} · ${plainNumber(r.amount("score"))}/${plainNumber(r.amount("maximum_score"))}",
