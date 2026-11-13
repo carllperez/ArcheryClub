@@ -460,11 +460,9 @@ fun officerFocus(workspace: JsonObject, permissions: Set<String>, now: Instant):
                 "${r.text("scoring_format")} · ${plainNumber(r.amount("distance"))} m · ${r.text("target_face")}$more", "training_desk", "Open coach desk") }
         "Financial submissions" -> workspace.records("financial_records").filter { it.text("user_id") != user && it.text("status") == "pending_verification" }
             .sortedBy { it.text("created_at") }.takeIf { it.isNotEmpty() }?.let { list ->
-                // Several payments read as one summary: how many, how much, the oldest, and the first two by name.
-                val names = list.take(2).joinToString(", ") { "${memberName(workspace, it.text("user_id"))} ${peso(it.amount())}" } +
-                    if (list.size > 2) " + ${list.size - 2} more" else ""
+                // Kept short: how many and how much. Names and dates are on the To check list.
                 OfficerFocus("PAYMENTS TO CHECK", "You have ${list.size} payment${if (list.size == 1) "" else "s"} to check",
-                    "${peso(list.sumOf { it.amount() })} in total · oldest ${day(list.first().instant("created_at"))} · $names", "finance_desk", "Check payments")
+                    "${peso(list.sumOf { it.amount() })} in total", "finance_desk", "Check payments")
             }
         "Borrowing requests" -> workspace.records("borrowings").filter { it.text("status") == "pending" }.minByOrNull { it.text("starts_at") }
             ?.let { b -> OfficerFocus("BORROWING REQUEST", memberName(workspace, b.text("user_id")),
