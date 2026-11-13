@@ -330,9 +330,9 @@ fun FinanceDeskScreen(
                             missing.takeIf { it.isNotEmpty() }?.let { m -> "waiting for " + m.joinToString(" and ") { if (it == "president") "President" else "Treasurer" } + " approval" }).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall, color = if (missing.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Club.amberInk)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            ViewLink { onOpen(r.text("id")) }
                             CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("verify_financial_request", JsonObject(r + ("status" to JsonPrimitive("returned_for_correction")))) }
-                            CardButton("Verify", Modifier.weight(1f), primary = true, enabled = !busy && missing.isEmpty()) { verifying = r }
+                            // Verify happens on the payment's page, after the Treasurer has looked at the receipt.
+                            CardButton("View", Modifier.weight(1f), primary = true, enabled = !busy) { onOpen(r.text("id")) }
                         }
                     }
                 }
