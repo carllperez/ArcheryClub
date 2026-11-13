@@ -449,4 +449,21 @@ class DeskLogicTest {
         c = c.undo(); assertEquals("9,X", c.ends[0].joinToString(",") { it.p })
         assertEquals(0, c.previous().clearEnd().ends.size)
     }
+
+    @Test fun treasurerSeesPaymentsAsOneSummaryAndMatchExplainsItself() {
+        val w = ws("financial_records" to listOf(
+            obj("id" to "p1", "user_id" to "a", "kind" to "payment", "status" to "pending_verification", "amount" to "500", "purpose" to "Membership fee", "created_at" to "2026-11-09T01:00:00Z"),
+            obj("id" to "p2", "user_id" to "b", "kind" to "payment", "status" to "pending_verification", "amount" to "500", "purpose" to "Membership fee", "created_at" to "2026-11-10T01:00:00Z"),
+            obj("id" to "p3", "user_id" to "c", "kind" to "payment", "status" to "pending_verification", "amount" to "250", "purpose" to "Shirt", "created_at" to "2026-11-11T01:00:00Z")))
+        val f = officerFocus(w, setOf("finance"), rolesNow)!!
+        assertEquals("You have 3 payments to check", f.title)
+        assertTrue(f.detail.startsWith("₱1,250"))
+        assertTrue(f.detail.endsWith("+ 1 more"))
+        val pay = obj("id" to "x", "user_id" to "a", "amount" to "500", "purpose" to "Membership fee")
+        val fees = listOf(obj("id" to "f1", "user_id" to "a", "amount" to "300", "purpose" to "Shirt", "due_on" to "2026-11-01"),
+            obj("id" to "f2", "user_id" to "a", "amount" to "500", "purpose" to "Membership fee", "due_on" to "2026-12-01"),
+            obj("id" to "f3", "user_id" to "z", "amount" to "500", "purpose" to "Membership fee", "due_on" to "2026-12-01"))
+        assertEquals(listOf("f2", "f1"), feesToMatch(pay, fees).map { it.text("id") })
+        assertEquals(listOf("same member", "same amount (₱500)", "same purpose", "fee still unpaid"), matchReasons(pay, fees[1]))
+    }
 }

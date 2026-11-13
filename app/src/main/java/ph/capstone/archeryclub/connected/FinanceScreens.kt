@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -240,8 +241,12 @@ fun FinanceRecordScreen(
             val match = if (linkedFee == null) matchingFee(r, fees) else null
             when {
                 linkedFee != null -> NoticeCard("Settles a fee", "${linkedFee.text("purpose")} · due ${fmtDate(linkedFee.date("due_on"))}", Tone.POSITIVE)
-                match != null -> CardButton("Match to \"${match.text("purpose")}\"", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
-                    onCommand("link_fee_payment", buildJsonObject { put("id", match.text("id")); put("payment_id", id) }) {}
+                match != null -> {
+                    var matching by remember { mutableStateOf(false) }
+                    CardButton("Match to a fee…", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { matching = true }
+                    if (matching) MatchFeeDialog(workspace, r, busy, onDismiss = { matching = false }) { feeId ->
+                        onCommand("link_fee_payment", buildJsonObject { put("id", feeId); put("payment_id", id) }) { matching = false }
+                    }
                 }
             }
         }
@@ -293,6 +298,7 @@ fun FinanceDeskScreen(
     }
     var tab by rememberSaveable { mutableStateOf(tabs.first().first) }
     var verifying by remember { mutableStateOf<JsonObject?>(null) }
+    var matching by remember { mutableStateOf<JsonObject?>(null) }
     val settingsFee = workspace.records("settings").firstOrNull()?.amount("membership_fee") ?: 0.0
     HeroScaffold("Club funds", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill(if (finance) "TREASURER" else "PRESIDENT", Club.lime, Club.forestDeep) },
@@ -306,7 +312,9 @@ fun FinanceDeskScreen(
                     DeskLabel("Verified, not yet matched to a fee")
                     toLink.forEach { (p, fee) ->
                         DeskRow(memberName(workspace, p.text("user_id")), "${fee.text("purpose")} · ${peso(p.amount())}", leading = { IconChip("money", Tone.INFO) },
-                            trailing = { CardButton("Match", primary = true, enabled = !busy) { onCommand("link_fee_payment", buildJsonObject { put("id", fee.text("id")); put("payment_id", p.text("id")) }) {} } },
+                            trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
+                                ViewLink { onOpen(p.text("id")) }
+                                CardButton("Match", primary = true, enabled = !busy) { matching = p } } },
                             onClick = { onOpen(p.text("id")) })
                     }
                 }
@@ -320,7 +328,8 @@ fun FinanceDeskScreen(
                         Text(listOfNotNull(kindLabel(r.text("kind")), if (proof) "receipt attached" else "no receipt",
                             missing.takeIf { it.isNotEmpty() }?.let { m -> "waiting for " + m.joinToString(" and ") { if (it == "president") "President" else "Treasurer" } + " approval" }).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall, color = if (missing.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Club.amberInk)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            ViewLink { onOpen(r.text("id")) }
                             CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("verify_financial_request", JsonObject(r + ("status" to JsonPrimitive("returned_for_correction")))) }
                             CardButton("Verify", Modifier.weight(1f), primary = true, enabled = !busy && missing.isEmpty()) { verifying = r }
                         }
@@ -332,9 +341,10 @@ fun FinanceDeskScreen(
                 toApprove.forEach { r ->
                     DeskRow(r.text("purpose"), "${kindLabel(r.text("kind"))} · ${memberName(workspace, r.text("user_id"))}", leading = { IconChip("doc", Tone.WARNING) },
                         trailing = { Text(peso(r.amount()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold) }, onClick = { onOpen(r.text("id")) }) {
-                        CardButton("Approve as ${if (myOffice == "president") "President" else "Treasurer"}", Modifier.fillMaxWidth(), primary = true, enabled = !busy && r.text("user_id") != workspace.text("user_id")) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { ViewLink { onOpen(r.text("id")) }
+                        CardButton("Approve as ${if (myOffice == "president") "President" else "Treasurer"}", Modifier.weight(1f), primary = true, enabled = !busy && r.text("user_id") != workspace.text("user_id")) {
                             onStart("approve_funds", JsonObject(r + ("office" to JsonPrimitive(myOffice))))
-                        }
+                        } }
                     }
                 }
             }
@@ -363,12 +373,13 @@ fun FinanceDeskScreen(
                 if (ledger.isNotEmpty()) RowGroup {
                     ledger.take(25).forEachIndexed { i, r ->
                         val incoming = r.text("kind") == "payment"
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable { onOpen(r.text("id")) }.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(r.text("purpose"), style = MaterialTheme.typography.titleSmall, maxLines = 1)
                                 Text("${memberName(workspace, r.text("user_id"))} · ${fmtDate(r.date("verified_at"))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text((if (incoming) "+" else "−") + peso(r.amount()), style = MaterialTheme.typography.titleSmall, color = if (incoming) Club.forest else Club.roseInk)
+                            ViewLink { onOpen(r.text("id")) }
                         }
                         if (i < minOf(ledger.size, 25) - 1) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
                     }
@@ -378,8 +389,44 @@ fun FinanceDeskScreen(
         }
         TextButton(onClick = onMine, modifier = Modifier.fillMaxWidth()) { Text("My own payments and claims") }
     }
+    matching?.let { p -> MatchFeeDialog(workspace, p, busy, onDismiss = { matching = null }) { feeId ->
+        onCommand("link_fee_payment", buildJsonObject { put("id", feeId); put("payment_id", p.text("id")) }) { matching = null }
+    } }
     verifying?.let { r -> VerifyDialog(workspace, r, onCommand) { verifying = null } }
     if (editingPayTo && vm != null) PaymentDetailsDialog(payTo, busy, onSave = { details ->
         vm.save("set_payment_details", buildJsonObject { put("p_details", details) }) { editingPayTo = false }
     }, onDismiss = { editingPayTo = false })
+}
+
+@Composable
+private fun ViewLink(onClick: () -> Unit) = TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp)) {
+    Text("View", fontWeight = FontWeight.ExtraBold, color = Club.forest)
+}
+
+/** Match a verified payment to the fee it pays: the likeliest fee first with the reasons it fits, the member's other
+ *  unpaid fees below it, and nothing is linked until the Treasurer confirms. Linking is what activates a pending membership. */
+@Composable
+fun MatchFeeDialog(workspace: JsonObject, payment: JsonObject, busy: Boolean, onDismiss: () -> Unit, onMatch: (String) -> Unit) {
+    val fees = feesToMatch(payment, workspace.records("fee_assessments"))
+    var picked by remember { mutableStateOf(fees.firstOrNull()?.text("id").orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Match this payment to a fee") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${memberName(workspace, payment.text("user_id"))} paid ${peso(payment.amount())} · ${payment.text("purpose")}" +
+                (payment.text("reference").takeIf { it.isNotBlank() }?.let { " · Ref $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
+            if (fees.isEmpty()) Text("This member has no unpaid fees to match.", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
+            fees.forEachIndexed { i, f ->
+                Row(Modifier.fillMaxWidth().clickable { picked = f.text("id") }, verticalAlignment = Alignment.Top) {
+                    RadioButton(picked == f.text("id"), { picked = f.text("id") })
+                    Column(Modifier.padding(top = 10.dp)) {
+                        Text("${f.text("purpose")} · ${peso(f.amount())}", fontWeight = FontWeight.ExtraBold)
+                        Text((if (i == 0) "Looks like this one: " else "") + matchReasons(payment, f).joinToString(", ") + " · due ${fmtDate(f.date("due_on"))}",
+                            style = MaterialTheme.typography.bodySmall, color = if (i == 0) Club.forest else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        } },
+        confirmButton = { Button(onClick = { onMatch(picked) }, enabled = !busy && picked.isNotBlank(), shape = RoundedCornerShape(999.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) { Text("Match to this fee", fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

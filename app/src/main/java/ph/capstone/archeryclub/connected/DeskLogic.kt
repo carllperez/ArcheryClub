@@ -151,6 +151,21 @@ fun matchingFee(payment: JsonObject, fees: List<JsonObject>): JsonObject? {
     return open.find { it.text("purpose").trim().equals(payment.text("purpose").trim(), true) } ?: open.minByOrNull { it.text("due_on") }
 }
 
+/** Why a fee looks like the one a payment settles, in plain words for the Match dialog. */
+fun matchReasons(payment: JsonObject, fee: JsonObject): List<String> = buildList {
+    if (fee.text("user_id") == payment.text("user_id")) add("same member")
+    if (sameAmount(fee, payment)) add("same amount (${peso(fee.amount())})") else add("amount differs: fee ${peso(fee.amount())}, paid ${peso(payment.amount())}")
+    if (fee.text("purpose").trim().equals(payment.text("purpose").trim(), true)) add("same purpose")
+    if (fee.text("payment_id").isBlank()) add("fee still unpaid")
+}
+
+/** The member's unpaid fees a payment could settle, the best match first. */
+fun feesToMatch(payment: JsonObject, fees: List<JsonObject>): List<JsonObject> {
+    val best = matchingFee(payment, fees)
+    val open = fees.filter { it.text("payment_id").isBlank() && it.text("user_id") == payment.text("user_id") }.sortedBy { it.text("due_on") }
+    return listOfNotNull(best) + open.filter { it.text("id") != best?.text("id") }
+}
+
 /** Verified payments that still need to be matched to the fee they pay (this is what activates a pending membership). */
 fun paymentsToLink(workspace: JsonObject): List<Pair<JsonObject, JsonObject>> {
     val fees = workspace.records("fee_assessments"); val linked = fees.map { it.text("payment_id") }.toSet()
@@ -444,9 +459,13 @@ fun officerFocus(workspace: JsonObject, permissions: Set<String>, now: Instant):
             ?.let { r -> OfficerFocus("CHECK FIRST", "${memberName(workspace, r.text("user_id"))} · ${plainNumber(r.amount("score"))}/${plainNumber(r.amount("maximum_score"))}",
                 "${r.text("scoring_format")} · ${plainNumber(r.amount("distance"))} m · ${r.text("target_face")}$more", "training_desk", "Open coach desk") }
         "Financial submissions" -> workspace.records("financial_records").filter { it.text("user_id") != user && it.text("status") == "pending_verification" }
-            .minByOrNull { it.text("created_at") }
-            ?.let { r -> OfficerFocus("TO VERIFY", "${r.text("purpose")} · ${peso(r.amount("amount"))}",
-                memberName(workspace, r.text("user_id")) + (r.text("reference").takeIf { it.isNotBlank() }?.let { " · Ref $it" } ?: "") + more, "finance_desk", "Check and verify") }
+            .sortedBy { it.text("created_at") }.takeIf { it.isNotEmpty() }?.let { list ->
+                // Several payments read as one summary: how many, how much, the oldest, and the first two by name.
+                val names = list.take(2).joinToString(", ") { "${memberName(workspace, it.text("user_id"))} ${peso(it.amount())}" } +
+                    if (list.size > 2) " + ${list.size - 2} more" else ""
+                OfficerFocus("PAYMENTS TO CHECK", "You have ${list.size} payment${if (list.size == 1) "" else "s"} to check",
+                    "${peso(list.sumOf { it.amount() })} in total · oldest ${day(list.first().instant("created_at"))} · $names", "finance_desk", "Check payments")
+            }
         "Borrowing requests" -> workspace.records("borrowings").filter { it.text("status") == "pending" }.minByOrNull { it.text("starts_at") }
             ?.let { b -> OfficerFocus("BORROWING REQUEST", memberName(workspace, b.text("user_id")),
                 (workspace.records("equipment").find { it.text("id") == b.text("equipment_id") }?.text("label") ?: "Club equipment") +
