@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 
-/** Announcements card for Home and Activities. Unread ones have a red dot and bold title; read ones stay, in gray.
+/** Announcements card for Home and Activities. Unread ones are bold; read ones are plain and gray.
  *  Tapping one opens its message (on Activities it also marks it read; on Home, Mark read does). */
 @Composable
 fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean, limit: Int = 3, onSeeAll: (() -> Unit)? = null,
@@ -60,9 +60,8 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
                     .clickable { open = if (expanded) "" else a.id; if (onViewAll == null && !a.read && !expanded) mark(listOf(a.id)) }
                     .padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(9.dp).clip(CircleShape).background(if (a.read) Color(0xFFC9D1CB) else Club.roseInk))
                         Column(Modifier.weight(1f)) {
-                            Text(a.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (a.read) FontWeight.SemiBold else FontWeight.ExtraBold,
+                            Text(a.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (a.read) FontWeight.Normal else FontWeight.ExtraBold,
                                 color = if (a.read) Color(0xFF8A948D) else MaterialTheme.colorScheme.onSurface, maxLines = if (expanded) 4 else 1, overflow = TextOverflow.Ellipsis)
                             Text(listOf(fmtDay(a.at), a.by, if (a.read) "Read" else "").filter { it.isNotBlank() }.joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A948D))
@@ -70,7 +69,7 @@ fun AnnouncementsCard(workspace: JsonObject, vm: SystemViewModel?, busy: Boolean
                         if (!a.read) Text("Mark read", Modifier.clip(RoundedCornerShape(999.dp)).clickable(enabled = !busy) { mark(listOf(a.id)) }
                             .padding(horizontal = 6.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = Club.forest)
                     }
-                    if (expanded) Text(a.message, Modifier.padding(start = 19.dp), style = MaterialTheme.typography.bodyMedium)
+                    if (expanded) Text(a.message, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (i < shown.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
             }
@@ -120,14 +119,13 @@ fun AnnouncementsPage(workspace: JsonObject, vm: SystemViewModel?, state: System
                 Column(Modifier.fillMaxWidth().animateContentSize().background(if (a.read) Color(0xFFF4F6F3) else Color.Transparent).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(9.dp).clip(CircleShape).background(if (a.read) Color(0xFFC9D1CB) else Club.roseInk))
                         Column(Modifier.weight(1f)) {
-                            Text(a.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (a.read) FontWeight.SemiBold else FontWeight.ExtraBold,
+                            Text(a.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (a.read) FontWeight.Normal else FontWeight.ExtraBold,
                                 color = if (a.read) Color(0xFF6B746E) else MaterialTheme.colorScheme.onSurface)
                             Text(listOf(fmtDay(a.at), a.by).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A948D))
                         }
                     }
-                    Text(a.message, Modifier.padding(start = 19.dp), style = MaterialTheme.typography.bodyMedium,
+                    Text(a.message, style = MaterialTheme.typography.bodyMedium,
                         maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
                     if (!a.read) TextButton(onClick = { mark(listOf(a.id)) }, enabled = !state.busy, modifier = Modifier.align(Alignment.End)) {
                         Text("Mark read", fontWeight = FontWeight.ExtraBold) }
