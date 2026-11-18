@@ -111,25 +111,28 @@ fun categoryFor(yearLevel: String, categories: List<String>): String? {
     }
 }
 
-/** Mirrors the server: name required (≤160); optional fields are length-limited and the phone must look like one. */
+/** Mirrors the server: name required (≤160); mobile numbers are Philippine mobiles; the ID number is 8 digits. */
 fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
     val name = v["full_name"].orEmpty().trim()
     if (name.isEmpty()) put("full_name", "Enter your full name as it appears on your school ID.")
     else if (name.length > 160) put("full_name", "Keep it under 160 characters.")
     val phone = v["phone"].orEmpty().trim()
     if (phone.isNotEmpty() && !validMobile(phone)) put("phone", MOBILE_HINT)
-    if (v["student_number"].orEmpty().trim().length > 40) put("student_number", "Keep it under 40 characters.")
+    val id = v["student_number"].orEmpty().trim()
+    if (id.isNotEmpty() && !validStudentId(id)) put("student_number", STUDENT_ID_HINT)
     if (v["experience"].orEmpty().length > 2000) put("experience", "Keep it under 2,000 characters.")
     if (v["program"].orEmpty().trim().length > 120) put("program", "Keep it under 120 characters.")
     val ecName = v["emergency_contact_name"].orEmpty().trim(); val ecPhone = v["emergency_contact_phone"].orEmpty().trim()
     if (ecName.isEmpty() != ecPhone.isEmpty()) put(if (ecName.isEmpty()) "emergency_contact_name" else "emergency_contact_phone", "Give both the name and the number, or leave both empty.")
-    if (ecPhone.isNotEmpty() && !PHONE.matches(ecPhone)) put("emergency_contact_phone", "Use a number like 0917 123 4567 or (02) 8123 4567.")
+    if (ecPhone.isNotEmpty() && !validMobile(ecPhone)) put("emergency_contact_phone", MOBILE_HINT)
 }
 
 /** Everything still standing between the applicant and a successful submission, in plain words. */
 fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean): List<String> = buildList {
     if (!view.stage.editable) { add("This application is being checked."); return@buildList }
     applicationErrors(values).values.forEach { add(it) }
+    if (values["phone"].orEmpty().isBlank()) add("Enter your mobile number.")
+    if (values["student_number"].orEmpty().isBlank()) add("Enter your DLSU ID number.")
     if (values["sex"].orEmpty().isBlank()) add("Pick your sex.")
     if (values["college"].orEmpty().isBlank()) add("Pick your college.")
     if (values["program"].orEmpty().isBlank()) add("Enter your program.")

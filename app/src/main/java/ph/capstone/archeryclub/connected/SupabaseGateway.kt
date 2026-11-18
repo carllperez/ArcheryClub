@@ -12,6 +12,8 @@ import io.github.jan.supabase.auth.SignOutScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.Storage
@@ -60,8 +62,24 @@ class SupabaseGateway {
         try { withTimeoutOrNull(8000) { client.auth.signOut(SignOutScope.LOCAL) } }
         finally { withContext(NonCancellable) { client.auth.clearSession() } }
     }
-    suspend fun initialize() { authenticatedRead({client.auth.refreshCurrentSession()}) { client.postgrest.rpc("initialize_account") } }
-    suspend fun workspace(): JsonObject = authenticatedRead({client.auth.refreshCurrentSession()}) {
+    /** When the app comes back from the background, the Auth plugin reloads and refreshes the saved session
+     *  itself. Reading before it finishes found no session ("No refresh token found in current session"),
+     *  so wait for it to settle first (up to 10 s). */
+    suspend fun awaitSession() {
+        if (client.auth.sessionStatus.value is SessionStatus.Authenticated) return
+        withTimeoutOrNull(10_000) { client.auth.sessionStatus.first { it is SessionStatus.Authenticated || it is SessionStatus.NotAuthenticated } }
+    }
+    /** After a 401: refresh the session, unless the plugin is already doing it (then just wait for its result). */
+    private suspend fun renewSession() {
+        awaitSession()
+        if (client.auth.currentSessionOrNull()?.refreshToken.isNullOrBlank()) return
+        try { client.auth.refreshCurrentSession() }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { awaitSession() } // the plugin refreshed it first; the retry uses its new token
+    }
+    suspend fun initialize() { awaitSession(); authenticatedRead({renewSession()}) { client.postgrest.rpc("initialize_account") } }
+    suspend fun workspace(): JsonObject = authenticatedRead({renewSession()}) {
+        awaitSession()
         Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
     }
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })

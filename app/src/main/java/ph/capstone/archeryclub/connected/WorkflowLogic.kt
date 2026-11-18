@@ -176,15 +176,24 @@ enum class Tone { POSITIVE, WARNING, DANGER, INFO, NEUTRAL }
 internal val PHONE = Regex("^\\+?[0-9][0-9 -]{6,18}$")
 /** A Philippine mobile number: 09XX XXX XXXX or +63 9XX XXX XXXX; spaces and dashes are ignored. */
 fun validMobile(s: String): Boolean = Regex("^(09\\d{9}|\\+?639\\d{9})$").matches(s.replace(Regex("[\\s().-]"), ""))
-const val MOBILE_HINT = "Use an 11-digit mobile number starting with 09, like 0917 123 4567."
+const val MOBILE_HINT = "Only Philippine mobile numbers: 09XX XXX XXXX or +63 9XX XXX XXXX."
+/** Shown under every mobile number box before anything is typed, so a foreign number isn't a surprise. */
+const val MOBILE_HELP = "Philippine mobile only, e.g. 0917 123 4567 or +63 917 123 4567"
+/** A DLSU ID number: exactly 8 digits. */
+fun validStudentId(s: String): Boolean = Regex("^\\d{8}$").matches(s.trim())
+const val STUDENT_ID_HINT = "Your DLSU ID number is 8 digits, e.g. 12345678."
+/** What the ID box accepts while typing: digits only, at most 8. */
+fun studentIdInput(s: String): String = s.filter { it.isDigit() }.take(8)
 /** What the mobile box accepts while typing: digits, a leading +, spaces and dashes. */
 fun mobileInput(s: String): String = s.filterIndexed { i, c -> c.isDigit() || c == ' ' || c == '-' || (c == '+' && i == 0) }.take(16)
 /** Client checks mirror app_private.save_member_profile; the server repeats them. */
 fun profileErrors(v: Map<String, String>): Map<String, String> = buildMap {
     if (v["full_name"].orEmpty().isBlank()) put("full_name", "Enter your full name.")
-    if (v["phone"].orEmpty().isNotBlank() && !validMobile(v["phone"]!!.trim())) put("phone", MOBILE_HINT)
+    // The mobile number was required on the application, so it stays required on the profile.
+    val phone = v["phone"].orEmpty().trim()
+    if (phone.isEmpty()) put("phone", "Enter your mobile number.") else if (!validMobile(phone)) put("phone", MOBILE_HINT)
     val ecName = v["emergency_contact_name"].orEmpty().isNotBlank(); val ecPhone = v["emergency_contact_phone"].orEmpty().isNotBlank()
-    if (ecPhone && !PHONE.matches(v["emergency_contact_phone"]!!.trim())) put("emergency_contact_phone", "Enter a valid number.")
+    if (ecPhone && !validMobile(v["emergency_contact_phone"]!!.trim())) put("emergency_contact_phone", MOBILE_HINT)
     if (ecName != ecPhone) put(if (ecName) "emergency_contact_phone" else "emergency_contact_name", "Provide both the name and the number.")
     v["draw_weight"].orEmpty().takeIf { it.isNotBlank() }?.let { if (it.toDoubleOrNull()?.let { w -> w in 5.0..80.0 } != true) put("draw_weight", "Between 5 and 80 lb.") }
     v["arrow_length"].orEmpty().takeIf { it.isNotBlank() }?.let { if (it.toDoubleOrNull()?.let { w -> w in 20.0..34.0 } != true) put("arrow_length", "Between 20 and 34 in.") }

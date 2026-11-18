@@ -196,7 +196,7 @@ fun ConnectedApp(vm:SystemViewModel){
                 onNotice=::openNotice,
                 onAcknowledge={notice->vm.command("acknowledge_notification",buildJsonObject{put("id",notice.text("id"))})},
                 onRefresh={vm.refresh()},onSignOut={vm.auth("signout","","")},
-                onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false))},
+                onScan={scan.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE,ScanOptions.CODE_128).setPrompt("Scan a club code").setBeepEnabled(false).setOrientationLocked(false))},
                 recovery={PasswordChangeCard(vm,state.busy)},
                 onCommand={action,data->vm.command(action,data)},vm=vm)}
             return
@@ -299,6 +299,8 @@ fun ConnectedApp(vm:SystemViewModel){
 fun human(value:String)=when(value){"serviceable"->"Ready";"maintenance"->"Needs repair";else->value.replace('_',' ').replaceFirstChar{it.uppercase()}}
 fun recordTitle(row:JsonObject,workspace:JsonObject):String {
     for(key in listOf("title","shared_title","label","full_name","name","purpose","message","position","club_name","action","request","concern","summary"))if(row.text(key).isNotBlank())return row.text(key).take(120)
+    // A new account that hasn't applied yet has no name: show its sign-in email instead of a generic label.
+    if(row.text("email").isNotBlank())return "${row.text("email")} (no name yet)"
     val person=workspace.records("profiles").find{it.text("id")==row.text("user_id")}?.text("full_name")
         ?:workspace.records("member_directory").find{it.text("user_id")==row.text("user_id")}?.text("full_name")
     return person?.takeIf{it.isNotBlank()}?:human(row.text("status").ifBlank{row.text("training_date").ifBlank{"Club record"}})

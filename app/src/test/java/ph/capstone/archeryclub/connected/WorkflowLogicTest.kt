@@ -76,6 +76,9 @@ class WorkflowLogicTest {
         assertTrue("emergency_contact_phone" in profileErrors(ok + ("emergency_contact_phone" to "")))
         assertTrue("draw_weight" in profileErrors(ok + ("draw_weight" to "120")))
         assertTrue("full_name" in profileErrors(ok + ("full_name" to " ")))
+        assertTrue("the mobile number stays required", "phone" in profileErrors(ok + ("phone" to "")))
+        assertTrue("emergency contact is a Philippine mobile", "emergency_contact_phone" in profileErrors(ok + ("emergency_contact_phone" to "+44 20 7946 0958")))
+        assertTrue(profileErrors(ok + ("phone" to "+63 917 123 4567")).isEmpty())
     }
 
     @Test fun officerQueuesCountOnlyActionableRecords() {

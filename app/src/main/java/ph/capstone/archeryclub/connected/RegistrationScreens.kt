@@ -120,7 +120,7 @@ fun ApplicationScreen(
         extra()
     }
     @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
-        OutlinedTextField(values[key].orEmpty(), { values[key] = if (key == "phone" || key == "emergency_contact_phone") mobileInput(it) else it }, label = { Text(label) }, enabled = editable && !busy,
+        OutlinedTextField(values[key].orEmpty(), { values[key] = when (key) { "phone", "emergency_contact_phone" -> mobileInput(it); "student_number" -> studentIdInput(it); else -> it } }, label = { Text(label) }, enabled = editable && !busy,
             isError = attempted && key in errors,
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
@@ -172,8 +172,8 @@ fun ApplicationScreen(
             RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepHeader(1, "Your details", view.id.isNotBlank() && errors.isEmpty() && !changed)
             field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
-            field("phone", "Mobile number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
-            field("student_number", "Student number", KeyboardType.Number)
+            field("phone", "Mobile number", KeyboardType.Phone, hint = MOBILE_HELP)
+            field("student_number", "DLSU ID number", KeyboardType.Number, hint = "8 digits, e.g. 12345678")
             Text("Sex", style = MaterialTheme.typography.labelLarge)
             ChoiceChips(SEXES.map { it to it }, values["sex"].orEmpty()) { if (editable && !busy) values["sex"] = it }
             if (attempted && values["sex"].orEmpty().isBlank()) Text("Pick your sex.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -186,7 +186,7 @@ fun ApplicationScreen(
             if (attempted && values["year_level"].orEmpty().isBlank()) Text("Pick your year level.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             Text("Emergency contact (optional)", style = MaterialTheme.typography.labelLarge)
             field("emergency_contact_name", "Contact's name", hint = "e.g. Maria Cruz (mother)")
-            field("emergency_contact_phone", "Contact's number", KeyboardType.Phone, hint = "e.g. 0917 123 4567")
+            field("emergency_contact_phone", "Contact's number", KeyboardType.Phone, hint = MOBILE_HELP)
             field("experience", "Archery experience (optional)", lines = 3, hint = "e.g. none yet, PE class, two years recurve")
             if (editable) SecondaryAction(if (view.id.isBlank()) "Save and continue" else "Save details", !busy && (changed || view.id.isBlank())) {
                 attempted = true
@@ -268,7 +268,7 @@ fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: Snac
         queue.forEach { v ->
             val a = v.application!!
             WorkCard(a.text("full_name").ifBlank { "Applicant" },
-                listOf("Submitted ${fmtDateTime(a.instant("submitted_at"))}", a.text("student_number").let { if (it.isBlank()) "" else "Student no. $it" }),
+                listOf("Submitted ${fmtDateTime(a.instant("submitted_at"))}", a.text("student_number").let { if (it.isBlank()) "" else "ID $it" }),
                 leading = { Initials(a.text("full_name").ifBlank { "Applicant" }, 44) },
                 status = {
                     StatusPill(v.stage.label, v.stage.tone)
@@ -313,7 +313,7 @@ fun ApplicationReviewScreen(
         RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("Full name", app.text("full_name"))
             KeyValue("Mobile", app.text("phone"))
-            KeyValue("Student no.", app.text("student_number"))
+            KeyValue("ID number", app.text("student_number"))
             KeyValue("Sex", app.text("sex"))
             KeyValue("College", app.text("college"))
             KeyValue("Program", app.text("program"))

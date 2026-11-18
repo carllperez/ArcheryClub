@@ -70,6 +70,8 @@ test('M1 renewal drafts submit once, lock for review, and require officer approv
 });
 test('M14 turnover revokes authority and keeps historical records',async()=>{
  const old=(await db.query("select id from app_private.role_assignments where user_id=$1",[ids.officer])).rows[0].id;
+ await denied(()=>command('admin','assign_role',{user_id:ids.successor,role_id:'membership_officer',position:'Membership officer',ends_at:'2035-01-01',reason:'Not a member yet'}),/Active members/);
+ await ensureMember('successor');
  await command('admin','assign_role',{user_id:ids.successor,role_id:'membership_officer',position:'Membership officer',ends_at:'2035-01-01',reason:'New term'});
  await command('admin','retire_role',{id:old,reason:'Term ended'});
  await as('officer',async()=>assert.equal((await db.query('select * from app_private.applications')).rows.length,0));
@@ -81,9 +83,16 @@ test('M14 turnover revokes authority and keeps historical records',async()=>{
 });
 
 const future=hours=>new Date(Date.now()+hours*3600000).toISOString();
+// Officer roles go only to Active members (migration 038), so role fixtures make the person a member first.
+async function ensureMember(person){
+ if((await db.query('select 1 from app_private.memberships where user_id=$1',[ids[person]])).rows.length)return;
+ await db.query("insert into app_private.memberships(user_id,category,status,student_number,approved_by) values($1,'Regular member','Active','',$2)",[ids[person],ids.admin]);
+ await db.query("update app_private.memberships set status='Active' where user_id=$1",[ids[person]]);
+}
 async function grant(person,role){
  // a person holds a role once (migration 025), so fixtures only add roles they lack
  if((await db.query('select 1 from app_private.role_assignments where user_id=$1 and role_id=$2 and retired_at is null and ends_at>now()',[ids[person],role])).rows.length)return;
+ await ensureMember(person);
  await command('admin','assign_role',{user_id:ids[person],role_id:role,position:role,ends_at:'2035-01-01',reason:'Integration fixture'});}
 async function row(table,id){return (await db.query(`select * from app_private.${table} where id=$1`,[id])).rows[0];}
 async function rpc(person,name,data,signature){return as(person,async()=> (await db.query(`select public.${name}(${signature}) as result`,data)).rows[0].result);}
@@ -122,7 +131,7 @@ test('M3/M8 published registration, capacity, QR, manual correction and ownershi
  await command('officer','publish_event',{id:e.id,version:1});
  const first=await command('applicant','register_event',{event_id:e.id});
  assert.equal((await command('applicant','register_event',{event_id:e.id})).id,first.id);
- await db.query("insert into app_private.memberships(user_id,category,status,approved_by) values($1,'Regular member','Active',$2)",[ids.successor,ids.officer]);
+ await ensureMember('successor');
  assert.equal((await command('successor','register_event',{event_id:e.id})).status,'waitlisted');
  const w=await command('officer','open_attendance',{event_id:e.id,opens_at:future(-1),closes_at:future(1)});
  const token=(await row('attendance_windows',w.id)).token;
@@ -363,10 +372,10 @@ test('M1 full profile editing validates contact, emergency contact and archery d
   program:'BS Information Technology',year_level:'3rd year',dominant_hand:'right',bow_type:'recurve',draw_weight:'26',arrow_length:'28',experience_level:'intermediate',bio:'Prefers 18 m indoor practice.'});
  const p=await row('profiles',ids.applicant);
  assert.equal(p.bow_type,'recurve');assert.equal(Number(p.draw_weight),26);assert.equal(p.emergency_contact_name,'Pat Archer');
- await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'call me'}),/valid mobile/);
- await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',emergency_contact_name:'Pat'}),/both/);
- await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',bow_type:'crossbow'}));
- await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',draw_weight:'120'}));
+ await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'call me'}),/Philippine mobile/);
+ await denied(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'0917 123 4567',emergency_contact_name:'Pat'}),/both/);
+ await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'0917 123 4567',bow_type:'crossbow'}));
+ await assert.rejects(()=>command('applicant','save_profile',{full_name:'Alex Archer',phone:'0917 123 4567',draw_weight:'120'}));
  await denied(()=>command('applicant','save_profile',{full_name:''}),/valid full_name/);
  assert.equal((await row('profiles',ids.applicant)).bow_type,'recurve','rejected saves leave the profile unchanged');
 });
@@ -444,7 +453,7 @@ test('M1 verified names: members request corrections that another membership off
  assert.equal((await db.query("select count(*)::int n from app_private.audit_log where record_id=$1 and action='review_name_correction'",[r.id])).rows[0].n,1);
 });
 test('M1 applicants without a membership still edit their own name',async()=>{
- await command('other','save_profile',{full_name:'Fresh Applicant'});
+ await command('other','save_profile',{full_name:'Fresh Applicant',phone:'+63 917 123 4567'});
  assert.equal((await row('profiles',ids.other)).full_name,'Fresh Applicant');
  await denied(()=>command('other','request_name_correction',{requested_name:'X',reason:'Y'}),/Applicants/);
 });
@@ -823,4 +832,28 @@ test('M8 announcements no longer create Notices, and an edit makes one unread ag
  await rpc('successor','mark_announcements_read',['{'+id+'}'],'$1::uuid[]');
  await command('officer','update_announcement',{id,version:1,title:'No notice please',message:'Changed time.'});
  assert.equal((await rpc('successor','club_workspace',[],'')).announcement_reads.filter(r=>r.announcement_id===id).length,0);
+});
+
+test('Testing round 18 Nov: Philippine mobiles, 8-digit ID, emails for unnamed accounts, officer roles need an Active membership',async()=>{
+ ids.fresh='00000000-0000-4000-8000-000000000098';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.fresh,'Fresh.Sign-Up@example.test']);
+ await as('fresh',()=>db.exec('select public.initialize_account()'));
+ assert.equal((await row('profiles',ids.fresh)).email,'fresh.sign-up@example.test','an account that has not applied is named by its email');
+ const call=(action,data)=>rpc('fresh','save_application_details',[action,JSON.stringify(data)],'$1,$2::jsonb');
+ const base={full_name:'Fresh Archer',phone:'09171234567',student_number:'12345678',experience:''};
+ await denied(()=>call('save_application',{...base,phone:'+1 415 555 0100'}),/Philippine mobile/);
+ await denied(()=>call('save_application',{...base,student_number:'1234567'}),/8 digits/);
+ await denied(()=>call('save_application',{...base,student_number:'123456789'}),/8 digits/);
+ await denied(()=>call('save_application',{...base,emergency_contact_name:'Mom',emergency_contact_phone:'(02) 8123 4567'}),/Philippine mobile/);
+ const a=await call('save_application',{...base,phone:'+63 917 123 4567',emergency_contact_name:'Mom',emergency_contact_phone:'0918-123-4567'});
+ await denied(()=>call('submit_application',{...base,phone:'',version:a.version,confirmed:true,sex:'Male',college:'CCS',program:'BSIT',year_level:'1st year'}),/mobile number and DLSU ID/);
+ await denied(()=>call('submit_application',{...base,student_number:'',version:a.version,confirmed:true,sex:'Male',college:'CCS',program:'BSIT',year_level:'1st year'}),/mobile number and DLSU ID/);
+ // Profile edits keep the mobile number required, and the emergency contact is a Philippine mobile too.
+ await denied(()=>command('fresh','save_profile',{full_name:'Fresh Archer',phone:''}),/Enter your mobile/);
+ await denied(()=>command('fresh','save_profile',{full_name:'Fresh Archer',phone:'09171234567',emergency_contact_name:'Mom',emergency_contact_phone:'+44 20 7946 0958'}),/Philippine mobile/);
+ await command('fresh','save_profile',{full_name:'Fresh Archer',phone:'+639171234567',emergency_contact_name:'Mom',emergency_contact_phone:'09181234567'});
+ // Officer roles go only to Active members; the Administrator role does not need one.
+ await denied(()=>command('admin','assign_role',{user_id:ids.fresh,role_id:'treasurer',position:'Treasurer',ends_at:'2035-01-01',reason:'Test'}),/Active members/);
+ assert.equal((await db.query("select count(*)::int n from app_private.role_assignments where user_id=$1",[ids.fresh])).rows[0].n,0);
+ await command('admin','assign_role',{user_id:ids.fresh,role_id:'administrator',position:'Adviser',ends_at:'2035-01-01',reason:'Adviser access'});
 });

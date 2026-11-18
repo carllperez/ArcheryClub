@@ -86,7 +86,9 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                     val source=field.text("source")
                     val options=workspace.records(source).map{row ->
                         val id=if(source=="member_directory")row.text("user_id") else if(source=="interclub_events")row.text("event_id") else row.text("id")
-                        id to recordTitle(row,workspace)
+                        // Accounts show whether they're a member, so an officer role isn't handed to a stranger.
+                        val standing=if(source=="profiles")" · "+(workspace.records("memberships").find{it.text("user_id")==id}?.text("status")?.let{if(it=="Active")"Active member" else "membership ${it.lowercase()}"}?:"not a member") else ""
+                        id to recordTitle(row,workspace)+standing
                     }
                     SelectField(label,value,if(field.text("optional")=="true")listOf("" to "None")+options else options){values[name]=it}
                     if(options.isEmpty())Text("No accessible ${human(source).lowercase()} are available yet.")
