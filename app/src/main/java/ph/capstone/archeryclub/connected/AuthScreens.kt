@@ -3,6 +3,7 @@ package ph.capstone.archeryclub.connected
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -114,7 +115,16 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     TextButton(onClick = { creating = false }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("I already have an account · Sign in") }
                 } else {
-                    if (canSignUp) SecondaryAction("New applicant? Create an account", !state.busy) { creating = true; vm.clearMessage() }
+                    // Plain text with a tappable link, so it doesn't compete with the Sign in button.
+                    if (canSignUp) Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            append("New applicant? ")
+                            pushStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
+                            append("Create an account"); pop()
+                        },
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !state.busy, role = androidx.compose.ui.semantics.Role.Button) { creating = true; vm.clearMessage() }
+                            .padding(vertical = 12.dp))
                     if (BuildConfig.EMAIL_ENABLED) {
                         TextButton(onClick = { vm.auth("recover", email, "") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Forgot password") }
                         TextButton(onClick = { showCodes = !showCodes }, modifier = Modifier.fillMaxWidth()) { Text(if (showCodes) "Hide codes" else "I have a code from an email") }
