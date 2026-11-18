@@ -2,6 +2,7 @@ package ph.capstone.archeryclub.connected
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,7 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.ScreenShell
@@ -117,6 +120,9 @@ fun ScorecardScreen(
     val user = workspace.text("user_id"); val own = card.userId == user; val row = card.row
     val editable = own && card.state in setOf(ScoreState.PERSONAL, ScoreState.RETURNED)
     var confirmSend by remember { mutableStateOf(false) }
+    // The coach's comment, written under the video and sent with Validate or Return.
+    val reviewing = coach && !own && card.state == ScoreState.PENDING
+    var comment by rememberSaveable(id) { mutableStateOf(row.text("feedback")) }
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm?.upload(context, it, 11, id, "Supporting document") } }
     val hasArrows = roundArrows(row).isNotEmpty()
@@ -126,10 +132,14 @@ fun ScorecardScreen(
             StickyButton(if (card.state == ScoreState.RETURNED) "Fix and resend" else "Send to coach", !busy, Modifier.weight(1.4f)) { confirmSend = true }
         })
         own && card.state == ScoreState.VALIDATED -> ({ CardButton("Ask for a correction", Modifier.weight(1f), enabled = !busy) { onStart("request_training_correction", row) } })
-        coach && !own && card.state == ScoreState.PENDING -> ({
+        reviewing -> ({
+            fun decide(decision: String) = onCommand("validate_training", buildJsonObject {
+                versioned(row).forEach { (k, v) -> put(k, v) }; put("validation", decision); put("feedback", comment.trim())
+            }) { onBack() } // back to the queue for the next round
+            val ready = !busy && comment.isNotBlank()
             if (hasArrows) CardButton("Edit ends", Modifier.weight(1f), enabled = !busy) { onRoute("score_entry:for:${card.userId}:$id") }
-            CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("validate_training", JsonObject(row + ("validation" to JsonPrimitive("returned_for_correction")))) }
-            StickyButton("Validate", !busy, Modifier.weight(1.3f)) { onStart("validate_training", JsonObject(row + ("validation" to JsonPrimitive("validated")))) }
+            CardButton("Return", Modifier.weight(1f), danger = true, enabled = ready) { decide("returned_for_correction") }
+            StickyButton("Validate", ready, Modifier.weight(1.3f)) { decide("validated") }
         })
         // A round scored arrow by arrow is edited end by end, so its total always matches its arrows.
         coach && !own -> ({ CardButton(if (hasArrows) "Edit ends" else "Edit official record", Modifier.weight(1f), enabled = !busy) {
@@ -145,6 +155,38 @@ fun ScorecardScreen(
             ScoreState.PENDING -> NoticeCard(if (own) "With your coach" else "Waiting for validation", if (own) "You'll get a notice when it's validated or returned." else "Check the score against the scoresheet or video before validating.", Tone.WARNING)
             ScoreState.PERSONAL -> if (own) NoticeCard("Only you can see this round", "Send it to a coach to make it part of your official record.", Tone.INFO)
             ScoreState.VALIDATED -> NoticeCard("Official record", "Validated${row.text("validated_at").takeIf { it.isNotBlank() }?.let { " on " + fmtDate(row.date("validated_at")) }.orEmpty()}. Ask for a correction if something is wrong.", Tone.POSITIVE)
+        }
+        // The video first, then the coach's comment right under it. Coaches only view files here; the archer uploads.
+        val hasFiles = workspace.records("documents").any { it.text("record_id") == id && it.text("superseded_by").isBlank() }
+        val canAttach = !(coach && !own) && canAttachDocument(11, id, workspace)
+        if (hasFiles || canAttach) {
+            DeskLabel("Video and files")
+            TrainingFiles(workspace, id, onOpenDocument)
+            if (canAttach && vm != null) RaisedCard {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Add a short form clip (MP4, up to 10 seconds) or a photo of your scoresheet. Only you and coaches can see them.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TrainingVideoCapture(id, vm, busy)
+                    CardButton("Upload a file", Modifier.fillMaxWidth(), enabled = !busy) { picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png", "video/mp4")) }
+                }
+            }
+        }
+        if (reviewing) RaisedCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("COACH COMMENT", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(comment, { comment = it.take(1000) }, modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp), enabled = !busy,
+                    placeholder = { Text(if (hasFiles) "What did you see in the video? e.g. Bow arm drops at release from 0:18." else "What should they keep or change?") })
+                Text("${memberName(workspace, card.userId).substringBefore(' ')} sees this under ${if (hasFiles) "the video" else "the round"}. Write a comment to validate or return it.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (row.text("feedback").isNotBlank() && card.state != ScoreState.RETURNED) RaisedCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val coachName = row.text("validated_by").takeIf { it.isNotBlank() }?.let { memberName(workspace, it) } ?: "Coach"
+                    Initials(coachName); Column { Text("Coach comment", style = MaterialTheme.typography.titleSmall); Text(coachName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                Text(row.text("feedback"), style = MaterialTheme.typography.bodyMedium)
+            }
         }
         // Rounds scored arrow by arrow show their ends first; the coach sees where the group sits before validating.
         val ends = roundArrows(row)
@@ -176,29 +218,6 @@ fun ScorecardScreen(
             DeleteRecordButton("Delete this round", "Delete this round?",
                 if (card.state == ScoreState.VALIDATED) "It's an official record. It's removed from ${if (own) "your" else "the archer's"} history; the activity log keeps a copy and your reason."
                 else "It's removed for good. This can't be undone.", busy, needReason = card.state == ScoreState.VALIDATED && !(own && !coach), onDelete = onDelete)
-        if (row.text("feedback").isNotBlank() && card.state != ScoreState.RETURNED) RaisedCard {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val coachName = row.text("validated_by").takeIf { it.isNotBlank() }?.let { memberName(workspace, it) } ?: "Coach"
-                    Initials(coachName); Column { Text("Coach feedback", style = MaterialTheme.typography.titleSmall); Text(coachName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-                Text(row.text("feedback"), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        val canAttach = canAttachDocument(11, id, workspace)
-        val hasFiles = workspace.records("documents").any { it.text("record_id") == id }
-        if (hasFiles || canAttach) {
-            DeskLabel("Video and files")
-            AttachedFiles(workspace, id, onOpenDocument)
-            if (canAttach && vm != null) RaisedCard {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Add a short form clip (MP4, up to 10 seconds) or a photo of your scoresheet. Only you and coaches can see them.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TrainingVideoCapture(id, vm, busy)
-                    CardButton("Upload a file", Modifier.fillMaxWidth(), enabled = !busy) { picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png", "video/mp4")) }
-                }
-            }
-        }
     }
     if (confirmSend) ConfirmDialog("Send to your coach?", "A coach checks the score and validates it or returns it with a note. You can't edit it while it's with them.",
         "Send", onConfirm = { confirmSend = false; onCommand("submit_training", versioned(row)) {} }, onDismiss = { confirmSend = false })
@@ -243,10 +262,8 @@ fun TrainingDeskScreen(
             val hasVideo = workspace.records("documents").any { it.text("record_id") == c.id && it.text("name").endsWith(".mp4", true) }
             DeskRow("$name · ${c.scoreLabel}", "${fmtDate(c.date)} · ${c.conditions}", leading = { Initials(name, 40) },
                 status = if (hasVideo) "Video" to Tone.NEUTRAL else null, onClick = { onOpen(c.id) }) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("validate_training", JsonObject(c.row + ("validation" to JsonPrimitive("returned_for_correction")))) }
-                    CardButton("Validate", Modifier.weight(1f), primary = true, enabled = !busy) { onStart("validate_training", JsonObject(c.row + ("validation" to JsonPrimitive("validated")))) }
-                }
+                // Deciding happens on the round itself, under the archer's video, so the comment is written while watching.
+                CardButton(if (hasVideo) "Watch and review" else "Review", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { onOpen(c.id) }
             }
         }
         if (corrections.isNotEmpty()) {
@@ -358,4 +375,26 @@ private fun CoachImportCard(workspace: JsonObject, busy: Boolean, vm: SystemView
             }
         }
     } }
+}
+
+/** A round's files: a video shows as a dark tile with a play mark; other files as a row. Both open with View file. */
+@Composable
+private fun TrainingFiles(workspace: JsonObject, recordId: String, onOpen: (String) -> Unit) {
+    workspace.records("documents").filter { it.text("record_id") == recordId && it.text("superseded_by").isBlank() }.forEach { d ->
+        val video = d.text("name").endsWith(".mp4", true)
+        val by = d.text("owner_id").takeIf { it.isNotBlank() }?.let { "Uploaded by " + memberName(workspace, it).substringBefore(' ') }.orEmpty()
+        RaisedCard(onClick = { onOpen(d.text("path")) }) {
+            Column {
+                if (video) Box(Modifier.fillMaxWidth().height(150.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF2B3A31), Club.forestDeep))),
+                    contentAlignment = Alignment.Center) { Text("\u25B6", color = Color.White, fontSize = 34.sp) }
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(d.text("name").ifBlank { d.text("requirement") }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (by.isNotBlank()) Text(by, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("View file", color = Club.forest, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
 }
