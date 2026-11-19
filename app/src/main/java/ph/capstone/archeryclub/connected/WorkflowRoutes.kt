@@ -99,8 +99,9 @@ fun WorkflowRoute(
         "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
-        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }) { onGo("records:14") }
+        "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "assign_roles" -> if (allowed("administration")) AssignRolesScreen(workspace, busy, snackbar, vm, onBack) else denied("Assign roles", "Only administrators assign roles.")
         "roles" -> if (allowed("administration")) RolesScreen(workspace, busy, snackbar, onBack) { onPush("role:$it") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "role" -> if (allowed("administration")) RoleEditScreen(workspace, id, busy, snackbar, vm, onBack)

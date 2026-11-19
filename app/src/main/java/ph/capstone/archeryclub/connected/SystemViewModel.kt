@@ -84,6 +84,18 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         withContext(Dispatchers.Main){onDone()}
         refreshAfterSave(null)
     }
+    /** The same action for several items in one go (e.g. several roles for one officer). Each item is its own
+     *  request, so one refusal doesn't undo the others; the result lists what saved and why the rest didn't. */
+    fun commandEach(action:String,items:List<Pair<String,JsonObject>>,onDone:(saved:List<String>,failed:List<Pair<String,String>>)->Unit)=runAction {
+        val saved=mutableListOf<String>();val failed=mutableListOf<Pair<String,String>>()
+        for((label,data) in items){
+            try{gateway.command(action,data);saved+=label}
+            catch(e:CancellationException){throw e}
+            catch(e:PostgrestRestException){if(e.statusCode==401)throw e;failed+=label to workflowErrorMessage(e.code,e.error)}
+        }
+        withContext(Dispatchers.Main){onDone(saved,failed)}
+        refreshAfterSave(null)
+    }
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
     /** An RPC that changes club data: run it, then reload the workspace so screens show the change. */
     fun save(name:String,data:JsonObject,onDone:()->Unit={})=runAction {gateway.rpc(name,data);withContext(Dispatchers.Main){onDone()};refreshAfterSave(null)}

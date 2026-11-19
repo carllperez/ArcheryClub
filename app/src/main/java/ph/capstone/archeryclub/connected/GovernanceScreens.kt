@@ -264,7 +264,7 @@ private fun termSeed(): JsonObject {
 }
 
 @Composable
-fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onRecords: () -> Unit) {
+fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -285,7 +285,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             if (done == lines.size) Text("Everything is set. Edit any part from Club setup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PillButton("Open club setup", onSetup)
         } }
-        DeskLabel("Officers and terms", "+ Assign role") { onStart("assign_role", termSeed()) }
+        DeskLabel("Officers and terms", "+ Assign roles", onAssign)
         if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
         // One row per person; tap to see each role's term and renew or retire it.
         officers.forEach { o ->
@@ -338,3 +338,81 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
 
 // ---------------------------------------------------------------- Interclub
 
+
+
+/** Give one person one or more roles at once. Each ticked role is saved as its own assignment (same term and reason),
+ *  so a role can still be renewed or retired on its own later. */
+@Composable
+fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit) {
+    val seed = remember { termSeed() }
+    var person by rememberSaveable { mutableStateOf("") }
+    var ticked by remember { mutableStateOf(listOf<String>()) }
+    var titles by remember { mutableStateOf(mapOf<String, String>()) }
+    var starts by rememberSaveable { mutableStateOf(instantOf(seed.text("starts_at")) ?: Instant.now()) }
+    var ends by rememberSaveable { mutableStateOf(instantOf(seed.text("ends_at")) ?: Instant.now().plusSeconds(180L * 86400)) }
+    var reason by rememberSaveable { mutableStateOf(seed.text("reason")) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val standings = memberStandings(workspace)
+    val people = workspace.records("profiles").map { it.text("id") to recordTitle(it, workspace) + (standings?.let { s -> " · " + standingLabel(s[it.text("id")]) } ?: "") }
+        .sortedBy { it.second.lowercase() }
+    val choices = if (person.isBlank()) emptyList() else roleChoices(workspace, person, Instant.now())
+    val name = people.find { it.first == person }?.second?.substringBefore(" · ").orEmpty()
+    val problem = when {
+        person.isBlank() -> "Pick a person."
+        ticked.isEmpty() -> "Tick at least one role."
+        !ends.isAfter(starts) -> "The term must end after it starts."
+        reason.isBlank() -> "Give a reason for the record."
+        ticked.any { titles[it]?.isBlank() == true } -> "Give each role a position title."
+        else -> null
+    }
+    ph.capstone.archeryclub.ui.ScreenShell("Assign roles", onBack, snackbar, stickyAction = {
+        if (problem != null && person.isNotBlank()) Text(problem, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        StickyButton(if (ticked.size > 1) "Assign ${ticked.size} roles" else "Assign role", !busy && problem == null && vm != null, Modifier.fillMaxWidth()) {
+            val items = ticked.mapNotNull { id -> choices.find { it.id == id } }.map { c ->
+                c.name to buildJsonObject {
+                    put("user_id", person); put("role_id", c.id); put("position", (titles[c.id] ?: c.name).trim().ifBlank { c.name })
+                    put("starts_at", starts.toString()); put("ends_at", ends.toString()); put("reason", reason.trim())
+                }
+            }
+            vm?.commandEach("assign_role", items) { saved, failed ->
+                result = assignedSummary(name, saved, failed)
+                ticked = failed.mapNotNull { f -> choices.find { it.name == f.first }?.id }
+            }
+        }
+    }) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        result?.let { NoticeCard(if (it.contains("wasn't assigned")) "Some roles weren't assigned" else "Saved", it, if (it.contains("wasn't assigned")) Tone.WARNING else Tone.POSITIVE) }
+        DeskLabel("Person")
+        SelectField("Person", person, people) { person = it; ticked = emptyList(); titles = emptyMap(); result = null }
+        if (standings != null && person.isNotBlank() && standings[person] != "Active")
+            Text("Not an Active member, so only the Administrator role can be given.", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
+        if (person.isNotBlank()) {
+            DeskLabel("Roles")
+            RowGroup { choices.forEachIndexed { i, c ->
+                val on = c.id in ticked
+                Column(Modifier.fillMaxWidth().selectable(selected = on, enabled = c.enabled && !busy, role = Role.Checkbox) {
+                    ticked = if (on) ticked - c.id else ticked + c.id
+                }.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Checkbox(checked = on, onCheckedChange = null, enabled = c.enabled)
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name, style = MaterialTheme.typography.titleSmall,
+                                color = if (c.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (c.note.isNotBlank()) Text(c.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    // The position title starts as the role's name; edit it for titles like "Vice President for External Affairs".
+                    if (on) OutlinedTextField(titles[c.id] ?: c.name, { titles = titles + (c.id to it.take(160)) }, label = { Text("Position title") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                if (i < choices.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            } }
+            DeskLabel("Term (all ticked roles)")
+            DateTimeField("Starts", starts, { starts = it })
+            DateTimeField("Ends", ends, { ends = it })
+            OutlinedTextField(reason, { reason = it.take(500) }, label = { Text("Reason for the record") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+            Text("Each role is saved on its own, so you can renew or retire one later without touching the others.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
