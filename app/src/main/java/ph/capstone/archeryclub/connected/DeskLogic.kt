@@ -233,6 +233,14 @@ fun electionStageLabel(status: String) = when (status) {
     "confirmed" -> "Results out"; "requires_revote" -> "Revote needed"; "archived" -> "Archived"; else -> human(status)
 }
 
+/** The stage as members experience it: once the candidacy or voting deadline passes, that stage reads closed
+ *  even before the election officer moves the election on. */
+fun electionStageLabel(e: JsonObject, now: Instant): String = when {
+    e.text("status") == "announced" && !electionStageOpen(e, now) -> "Candidacy closed"
+    e.text("status") == "voting" && !electionStageOpen(e, now) -> "Voting closed"
+    else -> electionStageLabel(e.text("status"))
+}
+
 /** Four-step timeline: Announced → Candidates → Voting → Results. */
 fun electionTimeline(status: String): List<Milestone> {
     val reached = when (status) { "draft" -> 0; "announced" -> 1; "voting" -> 3; "closed", "requires_revote" -> 3; "confirmed", "archived" -> 4; else -> 0 }

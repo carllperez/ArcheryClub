@@ -857,3 +857,11 @@ test('Testing round 18 Nov: Philippine mobiles, 8-digit ID, emails for unnamed a
  assert.equal((await db.query("select count(*)::int n from app_private.role_assignments where user_id=$1",[ids.fresh])).rows[0].n,0);
  await command('admin','assign_role',{user_id:ids.fresh,role_id:'administrator',position:'Adviser',ends_at:'2035-01-01',reason:'Adviser access'});
 });
+
+test('Testing round 19 Nov: administrators see each account\'s membership standing (only), members see none',async()=>{
+ const admin=await rpc('admin','club_workspace',[],'');
+ assert.ok(admin.member_standing.some(m=>m.user_id===ids.officer&&m.status==='Active'),'the role picker can tell members apart');
+ assert.deepEqual(Object.keys(admin.member_standing[0]).sort(),['status','user_id'],'standing only, no student number or category');
+ assert.ok(!admin.member_standing.some(m=>m.user_id===ids.fresh),'an account without a membership has no standing');
+ assert.deepEqual((await rpc('applicant','club_workspace',[],'')).member_standing,[]);
+});

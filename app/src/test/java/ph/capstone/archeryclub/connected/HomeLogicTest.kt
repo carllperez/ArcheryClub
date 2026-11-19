@@ -57,5 +57,7 @@ class HomeLogicTest {
         assertEquals(false, electionStageOpen(e("announced", "candidacy_closes", "2026-11-12T15:00:00Z"), now))
         assertEquals(true, electionStageOpen(e("voting", "voting_closes", "2026-11-14T15:00:00Z"), now))
         assertEquals(false, electionStageOpen(e("closed", "voting_closes", "2026-11-14T15:00:00Z"), now))
+        assertEquals("Candidacy closed", electionStageLabel(e("announced", "candidacy_closes", "2026-11-12T15:00:00Z"), now))
+        assertEquals("Voting open", electionStageLabel(e("voting", "voting_closes", "2026-11-14T15:00:00Z"), now))
     }
 }

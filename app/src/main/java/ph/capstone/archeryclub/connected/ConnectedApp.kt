@@ -296,7 +296,10 @@ fun ConnectedApp(vm:SystemViewModel){
         transitionSpec={navTransition(initialState.depth,targetState.depth)}){snapshot->Screen(snapshot)}
 }
 
-fun human(value:String)=when(value){"serviceable"->"Ready";"maintenance"->"Needs repair";else->value.replace('_',' ').replaceFirstChar{it.uppercase()}}
+/** Turns a stored code like "returned_for_correction" into words. Anything else (emails, names, notes) is shown exactly as typed. */
+fun human(value:String)=when{value=="serviceable"->"Ready";value=="maintenance"->"Needs repair"
+    CODE.matches(value)->value.replace('_',' ').replaceFirstChar{it.uppercase()};else->value}
+private val CODE=Regex("^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 fun recordTitle(row:JsonObject,workspace:JsonObject):String {
     for(key in listOf("title","shared_title","label","full_name","name","purpose","message","position","club_name","action","request","concern","summary"))if(row.text(key).isNotBlank())return row.text(key).take(120)
     // A new account that hasn't applied yet has no name: show its sign-in email instead of a generic label.

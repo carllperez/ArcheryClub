@@ -30,10 +30,10 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
                     }
                 }
                 is SessionStatus.NotAuthenticated -> { operation?.cancel();mutable.value=SystemState() }
-                is SessionStatus.RefreshFailure -> {
-                    operation?.cancel()
-                    mutable.value=SystemState(error="Your session could not be refreshed. Please sign in again.")
-                }
+                // A refresh that failed because the phone was offline or just woke up is retried by the Auth plugin
+                // on its own. Signing out here logged people out after a few minutes in another app.
+                // A session that is really gone arrives as NotAuthenticated above.
+                is SessionStatus.RefreshFailure -> Unit
                 else -> Unit
             }
         }
@@ -67,7 +67,9 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         catch(e:Exception){
             // A failed background read must not replace the last usable screen with an
             // indefinite loading page. Authority failures still discard protected data.
-            val denied=e is RestException && e.statusCode in setOf(401,403)
+            // 403 = the account really lost access. A 401 after the retry is usually the phone still reconnecting,
+            // so keep showing the last records instead of dropping to an empty screen.
+            val denied=e is RestException && e.statusCode==403
             mutable.value=mutable.value.copy(workspace=if(denied)null else mutable.value.workspace,
                 refreshError=if(denied)"Access could not be verified. Sign in again or contact your club administrator."
                 else "Could not refresh. Showing the last loaded records; reconnect and refresh before making changes.")
@@ -80,21 +82,22 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         // Close a successfully saved form even if the following read fails. Retrying that
         // form could otherwise create a duplicate payment, event or equipment request.
         withContext(Dispatchers.Main){onDone()}
-        refreshAfterSave("Saved to the club system.")
+        refreshAfterSave(null)
     }
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
     /** An RPC that changes club data: run it, then reload the workspace so screens show the change. */
-    fun save(name:String,data:JsonObject,onDone:()->Unit={})=runAction {gateway.rpc(name,data);withContext(Dispatchers.Main){onDone()};refreshAfterSave("Saved to the club system.")}
+    fun save(name:String,data:JsonObject,onDone:()->Unit={})=runAction {gateway.rpc(name,data);withContext(Dispatchers.Main){onDone()};refreshAfterSave(null)}
     fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String,onDone:()->Unit={})=runAction {
         gateway.upload(context,uri,module,record,requirement)
         withContext(Dispatchers.Main){onDone()}
         refreshAfterSave("Document uploaded.")
     }
-    private suspend fun refreshAfterSave(message:String){
-        mutable.value=mutable.value.copy(message=message)
+    /** The screen itself shows the change after a save, so plain saves show no message; uploads still say so. */
+    private suspend fun refreshAfterSave(message:String?){
+        if(message!=null)mutable.value=mutable.value.copy(message=message)
         try{mutable.value=mutable.value.copy(workspace=gateway.workspace(),refreshError=null)}
         catch(e:CancellationException){throw e}
-        catch(e:Exception){mutable.value=mutable.value.copy(error="$message Refresh to load the updated records; do not submit it again.")}
+        catch(e:Exception){mutable.value=mutable.value.copy(error="${message?:"Saved."} Pull down to load the updated records; don't submit it again.")}
     }
     /** Loads a stored image for display, scaled down so a 20 MB photo can't exhaust memory. Doesn't block other actions. */
     fun loadImage(path:String,maxPx:Int=1200,onReady:(android.graphics.Bitmap?)->Unit){
@@ -113,6 +116,16 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         }
     }
     fun openDocument(path:String,onReady:(String)->Unit)=runAction {val url=gateway.signedUrl(path);withContext(Dispatchers.Main){onReady(url)}}
+    /** A 401 that survived the gateway's retry. Sign out only if Supabase says the session itself is gone;
+     *  if the refresh just couldn't reach the server, keep the person signed in and ask them to retry. */
+    private suspend fun handleUnauthorized(){
+        val gone=try{gateway.client.auth.refreshCurrentSession();false}
+            catch(e:CancellationException){throw e}
+            catch(e:AuthRestException){true}
+            catch(e:Exception){false}
+        if(gone){gateway.client.auth.clearSession();mutable.value=SystemState(error="Your sign-in expired. Please sign in again.")}
+        else mutable.value=mutable.value.copy(error="Couldn't reach the club system. Check your connection and try again.")
+    }
     private fun runAction(block:suspend ()->Unit){
         if(operation?.isActive==true)return
         mutable.value=mutable.value.copy(busy=true,error=null,message=null)
@@ -122,10 +135,10 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
             catch(e:CancellationException){throw e}
             catch(e:AuthRestException){mutable.value=mutable.value.copy(error=authErrorMessage(e.error))}
             catch(e:PostgrestRestException){
-                if(e.statusCode==401){gateway.client.auth.clearSession();mutable.value=SystemState(error="Your session expired. Please sign in again.")}
+                if(e.statusCode==401)handleUnauthorized()
                 else mutable.value=mutable.value.copy(error=workflowErrorMessage(e.code,e.error))
             }
-            catch(e:RestException){mutable.value=mutable.value.copy(error=if(e.statusCode==401)"Your session expired. Sign in again." else "The request could not be completed. Refresh and try again.")}
+            catch(e:RestException){if(e.statusCode==401)handleUnauthorized() else mutable.value=mutable.value.copy(error="The request could not be completed. Refresh and try again.")}
             catch(e:Exception){
                 // Never expose request headers, access tokens or database internals in the UI/logs.
                 val raw=e.message.orEmpty()

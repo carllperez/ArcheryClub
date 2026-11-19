@@ -67,27 +67,29 @@ fun ElectionScreen(
         return
     }
     val eid = e.text("id"); val status = e.text("status")
+    // Deadlines count even before the election officer changes the stage: past them, candidacy and voting are closed.
+    val stageOpen = electionStageOpen(e, Instant.now())
     val positions = strings(e, "positions")
     val candidates = workspace.records("candidates").filter { it.text("election_id") == eid }
     val confirmed = candidates.filter { it.text("confirmed") == "true" }
     val eligible = workspace.records("eligible_voters").filter { it.text("election_id") == eid }
     val voted = workspace.records("voter_participation").filter { it.text("election_id") == eid }
     val iVoted = voted.any { it.text("user_id") == user }
-    val canVote = isMember && eligible.any { it.text("user_id") == user } && !iVoted && status == "voting" && e.text("method") == "digital"
+    val canVote = isMember && eligible.any { it.text("user_id") == user } && !iVoted && status == "voting" && stageOpen && e.text("method") == "digital"
     val choices = remember(eid) { mutableStateMapOf<String, String>() }
     var confirming by remember { mutableStateOf(false) }
     var summary by remember(eid) { mutableStateOf<JsonObject?>(null) }
     val resultsVisible = officer || status in setOf("confirmed", "requires_revote", "archived")
     LaunchedEffect(eid, status) { if (vm != null && resultsVisible && status in setOf("closed", "confirmed", "requires_revote", "archived")) vm.rpc("election_summary", buildJsonObject { put("p_id", eid) }) { summary = it as? JsonObject } }
     val when_ = when (status) {
-        "announced" -> "Candidacy closes ${fmtDateTime(e.instant("candidacy_closes"))}"
-        "voting" -> "Voting closes ${fmtDateTime(e.instant("voting_closes"))}"
+        "announced" -> if (stageOpen) "Candidacy closes ${fmtDateTime(e.instant("candidacy_closes"))}" else "Candidacy closed ${fmtDateTime(e.instant("candidacy_closes"))} · voting opens ${fmtDay(e.instant("voting_opens"))}"
+        "voting" -> if (stageOpen) "Voting closes ${fmtDateTime(e.instant("voting_closes"))}" else "Voting closed ${fmtDateTime(e.instant("voting_closes"))} · results coming"
         "closed" -> "Voting closed · results due ${fmtDay(e.instant("result_due"))}"
         "confirmed" -> "Results confirmed"; "draft" -> "Not announced yet · only officers see this"
         else -> electionStageLabel(status)
     }
     HeroScaffold(e.text("title"), onBack, snackbar, overlap = 44.dp, busy = busy,
-        eyebrow = { Pill("ELECTION", Color.White.copy(alpha = .16f), Color.White); Pill(electionStageLabel(status).uppercase(), Club.lime, Club.forestDeep) },
+        eyebrow = { Pill("ELECTION", Color.White.copy(alpha = .16f), Color.White); Pill(electionStageLabel(e, Instant.now()).uppercase(), if (stageOpen || status !in setOf("announced", "voting")) Club.lime else Club.amberSoft, if (stageOpen || status !in setOf("announced", "voting")) Club.forestDeep else Club.amberInk) },
         heroExtra = {
             Text(when_ + if (status == "voting" && eligible.isNotEmpty()) " · ${voted.size} of ${eligible.size} voted" else "", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
         },
@@ -97,6 +99,8 @@ fun ElectionScreen(
         when {
             iVoted -> NoticeCard("You voted", "Thank you. The club records only that you voted, never who you chose.", Tone.POSITIVE)
             status == "voting" && e.text("method") != "digital" -> NoticeCard("Voting isn't in the app this time", if (e.text("method") == "paper") "This election uses paper ballots. Ask the election officer where to vote." else "This election is run outside the app. Results are posted here once confirmed.", Tone.INFO)
+            status == "voting" && !stageOpen -> NoticeCard("Voting has closed", "The ballot closed ${fmtDateTime(e.instant("voting_closes"))}. Results appear here once the election officer confirms them.", Tone.INFO)
+            status == "announced" && !stageOpen -> NoticeCard("Candidacy has closed", "No more candidates or nominations. Voting opens ${fmtDateTime(e.instant("voting_opens"))}.", Tone.INFO)
             status == "voting" && isMember && !canVote -> NoticeCard("You're not on the voter list", "Ask the election officer to confirm your eligibility.", Tone.WARNING)
         }
         if (canVote) positions.forEach { position ->
@@ -142,9 +146,10 @@ fun ElectionScreen(
                     }
                 } }
             }
+            // Greyed out (not hidden) once candidacy closes, so members see the stage is over rather than missing.
             if (status == "announced" && isMember && candidates.none { it.text("user_id") == user }) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CardButton("Run for a position", Modifier.weight(1f), primary = true, enabled = !busy) { onStart("file_candidacy", e) }
-                CardButton("Nominate someone", Modifier.weight(1f), enabled = !busy) { onStart("nominate_candidate", e) }
+                CardButton("Run for a position", Modifier.weight(1f), primary = true, enabled = !busy && stageOpen) { onStart("file_candidacy", e) }
+                CardButton("Nominate someone", Modifier.weight(1f), enabled = !busy && stageOpen) { onStart("nominate_candidate", e) }
             }
         }
         summary?.let { s ->
@@ -182,7 +187,7 @@ fun ElectionScreen(
         val others = elections.filter { it.text("id") != eid && (officer || it.text("status") != "draft") }.sortedByDescending { it.text("voting_opens") }
         if (others.isNotEmpty()) {
             DeskLabel("Other elections")
-            others.take(5).forEach { o -> DeskRow(o.text("title"), electionStageLabel(o.text("status")), leading = { IconChip("vote", Tone.NEUTRAL) }, onClick = { onOpen(o.text("id")) }) }
+            others.take(5).forEach { o -> DeskRow(o.text("title"), electionStageLabel(o, Instant.now()), leading = { IconChip("vote", Tone.NEUTRAL) }, onClick = { onOpen(o.text("id")) }) }
         }
     }
     if (confirming) ConfirmDialog("Cast your ballot?", positions.joinToString("\n") { p -> "$p: ${confirmed.find { it.text("id") == choices[p] }?.let { memberName(workspace, it.text("user_id")) } ?: "—"}" } +
