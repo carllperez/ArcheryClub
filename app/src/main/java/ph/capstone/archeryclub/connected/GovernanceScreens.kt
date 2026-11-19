@@ -459,13 +459,18 @@ fun ActivityLogScreen(workspace: JsonObject, snackbar: SnackbarHostState, onBack
     var module by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
     var shown by rememberSaveable { mutableStateOf(60) }
-    val lines = activityLog(workspace, module.toIntOrNull(), query) { memberName(workspace, it) }
+    var signIns by rememberSaveable { mutableStateOf(false) }
+    val lines = activityLog(workspace, module.toIntOrNull(), query, signIns) { memberName(workspace, it) }
     ph.capstone.archeryclub.ui.ScreenShell("Activity log", onBack, snackbar) {
         Text("Every change recorded in the club system: who did it, when, and the reason they gave.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(query, { query = it.take(60); shown = 60 }, placeholder = { Text("Search action, person or reason") }, singleLine = true,
             shape = CircleShape, modifier = Modifier.fillMaxWidth())
         ChoiceChips(listOf("" to "All") + logModules(workspace).map { it.toString() to (LOG_MODULES[it] ?: "Module $it") }, module) { module = it; shown = 60 }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Show sign-ins", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = signIns, onCheckedChange = { signIns = it; shown = 60 })
+        }
         if (lines.isEmpty()) EmptyState("Nothing found", if (query.isBlank()) "No changes recorded here yet." else "Try another word or module.")
         // Grouped by day so a busy log stays readable.
         lines.take(shown).groupBy { fmtDay(instantOf(it.at)) }.forEach { (day, entries) ->
@@ -474,7 +479,7 @@ fun ActivityLogScreen(workspace: JsonObject, snackbar: SnackbarHostState, onBack
                 entries.forEachIndexed { i, l ->
                     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(human(l.action), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(l.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             Text(fmtTime(instantOf(l.at)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("${l.actor} · ${l.moduleName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
