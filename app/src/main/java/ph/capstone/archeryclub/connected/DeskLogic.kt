@@ -11,6 +11,8 @@ import kotlin.math.roundToInt
 fun memberName(workspace: JsonObject, userId: String): String =
     workspace.records("member_directory").find { it.text("user_id") == userId }?.text("full_name")?.takeIf { it.isNotBlank() }
         ?: workspace.records("profiles").find { it.text("id") == userId }?.text("full_name")?.takeIf { it.isNotBlank() }
+        // An account that hasn't filled in a name yet: its sign-in email says who it is better than "Club member".
+        ?: workspace.records("profiles").find { it.text("id") == userId }?.text("email")?.takeIf { it.isNotBlank() }
         ?: "Club member"
 
 fun plainNumber(v: Double): String = if (v == Math.floor(v) && !v.isInfinite()) v.toLong().toString() else ((v * 10).roundToInt() / 10.0).toString()

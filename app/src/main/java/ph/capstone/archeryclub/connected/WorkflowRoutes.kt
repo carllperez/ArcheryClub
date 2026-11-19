@@ -102,8 +102,10 @@ fun WorkflowRoute(
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
         "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles:$it") },
-            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }) { onGo("records:14") }
+            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "accounts" -> if (allowed("administration")) AccountsScreen(workspace, busy, snackbar, vm, onBack) { onPush("assign_roles:$it") }
+            else denied("Administrators only", "Only administrators manage accounts.")
         "activity_log" -> if (allowed("administration")) ActivityLogScreen(workspace, snackbar, onBack) { onGo("records:14") }
             else denied("Administrators only", "Only administrators can read the full activity log.")
         "assign_roles" -> if (allowed("administration")) AssignRolesScreen(workspace, busy, snackbar, vm, onBack, initialPerson = id) else denied("Assign roles", "Only administrators assign roles.")

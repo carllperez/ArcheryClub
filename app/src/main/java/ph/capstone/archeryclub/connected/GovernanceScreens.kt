@@ -265,7 +265,7 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -327,7 +327,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         }
         DeskLabel("Accounts and history")
         RowGroup {
-            GroupRow("users", "Accounts", "Enable or disable sign-in", onClick = onRecords)
+            GroupRow("users", "Accounts", "Membership, roles and sign-in", onClick = onAccounts)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
             GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
             GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)
@@ -491,5 +491,69 @@ fun ActivityLogScreen(workspace: JsonObject, snackbar: SnackbarHostState, onBack
         }
         if (lines.size > shown) CardButton("Show older (${lines.size - shown} more)", Modifier.fillMaxWidth()) { shown += 60 }
         TextButton(onClick = onRecords) { Text("Open the raw records") }
+    }
+}
+
+/** Administration → Accounts: everyone who can sign in, their membership standing and roles, and Enable/Disable.
+ *  Roles are given only through Assign roles (members only), so this screen never offers one to a non-member. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountsScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit, onAssign: (String) -> Unit) {
+    val me = workspace.text("user_id")
+    val all = accountViews(workspace, Instant.now())
+    var filter by rememberSaveable { mutableStateOf(AccountFilter.ALL.name) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var toggling by remember { mutableStateOf<AccountView?>(null) }
+    val shown = filterAccounts(all, AccountFilter.valueOf(filter), query)
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = busy, onRefresh = { vm?.refresh() }) {
+    ph.capstone.archeryclub.ui.ScreenShell("Accounts", onBack, snackbar) {
+        Text("Everyone who can sign in. Roles go only to Active members, through Assign roles. Pull down to refresh.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(query, { query = it.take(60) }, placeholder = { Text("Search name, email or role") }, singleLine = true,
+            shape = CircleShape, modifier = Modifier.fillMaxWidth())
+        ChoiceChips(AccountFilter.values().map { f -> f.name to "${f.label} · ${filterAccounts(all, f, "").size}" }, filter) { filter = it }
+        if (shown.isEmpty()) EmptyState("No accounts", "Try another filter or search.")
+        shown.forEach { a ->
+            val expanded = open == a.id
+            val title = a.name.ifBlank { a.email.ifBlank { "Account" } }
+            DeskRow(title,
+                listOfNotNull(a.email.takeIf { a.name.isNotBlank() && it.isNotBlank() }, accountStanding(a)).joinToString(" · "),
+                leading = { Initials(title, 40) },
+                status = when { !a.enabled -> "Disabled" to Tone.DANGER; a.roles.isNotEmpty() -> "${a.roles.size} role${if (a.roles.size == 1) "" else "s"}" to Tone.INFO; else -> null },
+                onClick = { open = if (expanded) null else a.id }) {
+                if (a.roles.isNotEmpty()) Text(a.roles.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                if (expanded) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                    KeyValue("Email", a.email)
+                    KeyValue("Membership", accountStanding(a))
+                    KeyValue("Sign-in", if (a.enabled) "Enabled" else "Disabled")
+                    KeyValue("Created", fmtDay(instantOf(a.created)))
+                    if (a.isMember && a.enabled) CardButton("Give roles", Modifier.fillMaxWidth(), enabled = !busy) { onAssign(a.id) }
+                    else Text(if (!a.enabled) "Enable the account before giving it a role."
+                        else "Not an Active member, so no roles can be given. Retire any it still holds from Administration.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (a.id == me) Text("This is your account. Ask another administrator to disable it.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else CardButton(if (a.enabled) "Disable sign-in" else "Enable sign-in", Modifier.fillMaxWidth(), danger = a.enabled, enabled = !busy) { toggling = a }
+                }
+            }
+        }
+    }
+    }
+    toggling?.let { a ->
+        var reason by remember(a.id) { mutableStateOf("") }
+        val name = a.name.ifBlank { a.email }
+        AlertDialog(onDismissRequest = { toggling = null },
+            title = { Text(if (a.enabled) "Disable $name?" else "Enable $name?") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (a.enabled) "They can't sign in until enabled again. Their records and roles are kept."
+                    else "They can sign in again with their existing password.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth())
+            } },
+            confirmButton = { TextButton(enabled = reason.isNotBlank() && !busy && vm != null, onClick = {
+                vm?.command("set_account_status", buildJsonObject { put("user_id", a.id); put("enabled", !a.enabled); put("reason", reason.trim()) }) { toggling = null }
+            }) { Text(if (a.enabled) "Disable" else "Enable", fontWeight = FontWeight.ExtraBold, color = if (a.enabled) Club.roseInk else Color.Unspecified) } },
+            dismissButton = { TextButton(onClick = { toggling = null }) { Text("Cancel") } })
     }
 }
