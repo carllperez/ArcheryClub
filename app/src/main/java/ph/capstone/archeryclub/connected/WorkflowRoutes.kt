@@ -115,7 +115,13 @@ fun WorkflowRoute(
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "setup_fees" -> if (allowed("administration") || allowed("finance")) SetupFeesScreen(workspace, busy, snackbar, perms, vm, onBack, onCommand)
             else denied("Treasurer or administrators only", "Your current role can't change fees or payment details.")
-        "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onStart) { onGo("records:15") }
+        "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onPush, onStart, onCommand) { onGo("records:15") }
+        // The steps' own pages. The database limits each to event staff, so a partner who reaches one sees nothing extra.
+        "ic_delegates" -> if (allowed("coordinator")) InterclubDelegatesScreen(workspace, id, busy, snackbar, onBack, onStart, onCommand) else denied("Delegates", "Only the event's coordinators review delegates.")
+        "ic_schedule" -> if (allowed("coordinator")) InterclubScheduleScreen(workspace, id, busy, snackbar, onBack, onStart) else denied("Schedule", "Only the event's coordinators assign targets.")
+        "ic_checkin" -> if (allowed("coordinator")) InterclubCheckinScreen(workspace, id, busy, snackbar, onBack, onCommand) else denied("Check-in", "Only the event's coordinators check archers in.")
+        "ic_results" -> if (allowed("coordinator")) InterclubResultsScreen(workspace, id, busy, snackbar, onBack, onStart, onCommand) else denied("Results", "Only the event's coordinators record results.")
+        "ic_past" -> if (allowed("coordinator")) InterclubPastScreen(workspace, busy, snackbar, onBack, onStart) else denied("Past events", "Only interclub officers keep the archive.")
         else -> ScreenShell("Not found", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }
     }
 }
