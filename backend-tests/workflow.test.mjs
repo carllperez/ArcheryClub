@@ -852,10 +852,19 @@ test('Testing round 18 Nov: Philippine mobiles, 8-digit ID, emails for unnamed a
  await denied(()=>command('fresh','save_profile',{full_name:'Fresh Archer',phone:''}),/Enter your mobile/);
  await denied(()=>command('fresh','save_profile',{full_name:'Fresh Archer',phone:'09171234567',emergency_contact_name:'Mom',emergency_contact_phone:'+44 20 7946 0958'}),/Philippine mobile/);
  await command('fresh','save_profile',{full_name:'Fresh Archer',phone:'+639171234567',emergency_contact_name:'Mom',emergency_contact_phone:'09181234567'});
- // Officer roles go only to Active members; the Administrator role does not need one.
+ // Officer roles go only to Active members; since migration 042 the Administrator role does too (no exceptions).
  await denied(()=>command('admin','assign_role',{user_id:ids.fresh,role_id:'treasurer',position:'Treasurer',ends_at:'2035-01-01',reason:'Test'}),/Active members/);
+ await denied(()=>command('admin','assign_role',{user_id:ids.fresh,role_id:'administrator',position:'Adviser',ends_at:'2035-01-01',reason:'Adviser access'}),/Active members/);
  assert.equal((await db.query("select count(*)::int n from app_private.role_assignments where user_id=$1",[ids.fresh])).rows[0].n,0);
- await command('admin','assign_role',{user_id:ids.fresh,role_id:'administrator',position:'Adviser',ends_at:'2035-01-01',reason:'Adviser access'});
+});
+
+test('Testing round 19 Nov: a non-member\'s existing role can be shortened or retired, not extended',async()=>{
+ // A role given before the rule (like a mistaken Administrator) is inserted directly, as the old rule allowed.
+ const r=(await db.query("insert into app_private.role_assignments(user_id,role_id,position,starts_at,ends_at,assigned_by,reason) values($1,'administrator','Mistake',now()-interval '1 day',now()+interval '30 days',$2,'Old rule') returning id,ends_at",[ids.fresh,ids.admin])).rows[0];
+ const edit=data=>rpc('admin','update_role_term',[JSON.stringify(data)],'$1::jsonb');
+ await denied(()=>edit({id:r.id,position:'Mistake',ends_at:'2035-01-01',reason:'Extend'}),/Only Active members/);
+ await edit({id:r.id,position:'Mistake',ends_at:new Date(Date.now()+86400000).toISOString(),reason:'Shorten'});
+ await command('admin','retire_role',{id:r.id,reason:'Not a member'});
 });
 
 test('Testing round 19 Nov: administrators see each account\'s membership standing (only), members see none',async()=>{

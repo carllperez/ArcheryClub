@@ -26,7 +26,7 @@ class RoleAssignLogicTest {
         assertEquals(true, rel.getValue("interclub_officer").enabled) // an expired term can be given again
         val stranger = roleChoices(ws(), "nobody", now).associateBy { it.id }
         assertEquals("Members only", stranger.getValue("interclub_officer").note)
-        assertEquals(true, stranger.getValue("administrator").enabled)
+        assertEquals("Members only", stranger.getValue("administrator").note) // no exception since migration 042
         assertEquals("Members only", roleChoices(ws(), "pres", now).first { it.id == "activity_officer" }.note)
         // An older database without standings: don't block on a guess; the server still checks.
         assertEquals(true, roleChoices(ws(false), "nobody", now).first { it.id == "activity_officer" }.enabled)

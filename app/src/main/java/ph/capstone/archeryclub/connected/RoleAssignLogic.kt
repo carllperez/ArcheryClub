@@ -24,11 +24,10 @@ fun roleChoices(workspace: JsonObject, userId: String, now: Instant): List<RoleC
     }.map { it.text("role_id") }.toSet()
     return workspace.records("roles").sortedBy { it.text("name") }.map { r ->
         val id = r.text("id")
-        val admin = (r["permissions"] as? JsonArray)?.any { (it as? JsonPrimitive)?.contentOrNull == "administration" } == true
         when {
             id in held -> RoleChoice(id, r.text("name"), false, "Already has this role")
-            // Mirrors the server rule (migration 038): officer roles need an Active membership; Administrator doesn't.
-            !admin && knowsStanding && standing != "Active" -> RoleChoice(id, r.text("name"), false, "Members only")
+            // Mirrors the server rule (migration 042): every role, Administrator included, needs an Active membership.
+            knowsStanding && standing != "Active" -> RoleChoice(id, r.text("name"), false, "Members only")
             else -> RoleChoice(id, r.text("name"), true, "")
         }
     }

@@ -265,7 +265,7 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -330,7 +330,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             GroupRow("users", "Accounts", "Enable or disable sign-in", onClick = onRecords)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
             GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
-            GroupRow("doc", "Full activity log", divider = false, onClick = onRecords)
+            GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)
         }
         if (log.isNotEmpty()) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("RECENT CHANGES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -450,5 +450,41 @@ fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
             Text("Each role is saved on its own, so you can renew or retire one later without touching the others.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/** "Full activity log" (M14): what happened, by whom and when, newest first. Separate from Accounts, which lists people. */
+@Composable
+fun ActivityLogScreen(workspace: JsonObject, snackbar: SnackbarHostState, onBack: () -> Unit, onRecords: () -> Unit) {
+    var module by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var shown by rememberSaveable { mutableStateOf(60) }
+    val lines = activityLog(workspace, module.toIntOrNull(), query) { memberName(workspace, it) }
+    ph.capstone.archeryclub.ui.ScreenShell("Activity log", onBack, snackbar) {
+        Text("Every change recorded in the club system: who did it, when, and the reason they gave.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(query, { query = it.take(60); shown = 60 }, placeholder = { Text("Search action, person or reason") }, singleLine = true,
+            shape = CircleShape, modifier = Modifier.fillMaxWidth())
+        ChoiceChips(listOf("" to "All") + logModules(workspace).map { it.toString() to (LOG_MODULES[it] ?: "Module $it") }, module) { module = it; shown = 60 }
+        if (lines.isEmpty()) EmptyState("Nothing found", if (query.isBlank()) "No changes recorded here yet." else "Try another word or module.")
+        // Grouped by day so a busy log stays readable.
+        lines.take(shown).groupBy { fmtDay(instantOf(it.at)) }.forEach { (day, entries) ->
+            Text(day.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            RaisedCard { Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                entries.forEachIndexed { i, l ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(human(l.action), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(fmtTime(instantOf(l.at)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("${l.actor} · ${l.moduleName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (l.note.isNotBlank()) Text("“${l.note}”", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (i < entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                }
+            } }
+        }
+        if (lines.size > shown) CardButton("Show older (${lines.size - shown} more)", Modifier.fillMaxWidth()) { shown += 60 }
+        TextButton(onClick = onRecords) { Text("Open the raw records") }
     }
 }
