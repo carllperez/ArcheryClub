@@ -369,9 +369,9 @@ private fun EditRoleDialog(r: RoleLine, person: String, busy: Boolean, onSave: (
             problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } },
         confirmButton = { TextButton(enabled = problem == null && !busy, onClick = {
-            onSave("update_role_term", buildJsonObject {
+            onSave("update_role_term", buildJsonObject { put("p_data", buildJsonObject {
                 put("id", r.assignment.text("id")); put("position", title.trim()); put("ends_at", ends.toString()); put("reason", reason.trim())
-            }) { onDismiss() }
+            }) }) { onDismiss() }
         }) { Text("Save", fontWeight = FontWeight.ExtraBold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

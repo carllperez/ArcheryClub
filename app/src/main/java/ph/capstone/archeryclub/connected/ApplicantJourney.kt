@@ -89,11 +89,12 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
         val clean = receiptReference(ref, method) ?: run { tried = true; return }
         pickAfterSave = thenPick; sendAfterSave = thenSend
         // save_payment (migration 041) saves the payment and how it was paid together; the database re-checks the reference.
-        vm.save("save_payment", buildJsonObject {
+        // RPC arguments are named: the payment goes inside p_data, or the API finds no matching function (404).
+        vm.save("save_payment", buildJsonObject { put("p_data", buildJsonObject {
             payment?.let { p -> put("id", p.text("id")); p.text("version").toLongOrNull()?.let { put("version", it) } }
             put("kind", "payment"); put("purpose", fee.fee.text("purpose")); put("amount", fee.fee.text("amount")); put("reference", clean)
             put("payment_method", method)
-        })
+        }) })
     }
     val action = payAction(ref, method, payment, proof.isNotEmpty())
     val refOk = receiptReference(ref, method) != null

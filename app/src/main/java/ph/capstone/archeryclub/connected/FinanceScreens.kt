@@ -182,7 +182,7 @@ fun PaymentsScreen(
     paying?.let { (source, existing) ->
         ReceiptReferenceDialog(source.text("purpose"), source.text("amount"), existing, busy,
             // save_payment (migration 041) keeps how it was paid; older wiring without it still saves the reference.
-            onSave = { data -> if (onSave != null) onSave("save_payment", data) { paying = null } else onCommand("save_financial_request", data) { paying = null } },
+            onSave = { data -> if (onSave != null) onSave("save_payment", buildJsonObject { put("p_data", data) }) { paying = null } else onCommand("save_financial_request", data) { paying = null } },
             onDismiss = { paying = null })
     }
     sending?.let { r -> ConfirmDialog("Send for checking?", "${kindLabel(r.text("kind"))} of ${peso(r.amount())} for \"${r.text("purpose")}\". You can't change it while the club checks it.",
