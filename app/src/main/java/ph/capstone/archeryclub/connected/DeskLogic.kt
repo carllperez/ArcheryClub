@@ -173,8 +173,40 @@ fun paymentsToLink(workspace: JsonObject): List<Pair<JsonObject, JsonObject>> {
         .mapNotNull { p -> matchingFee(p, fees)?.let { p to it } }
 }
 
-/** A receipt reference as the server stores it (spaces removed, upper case), or null when it can't be one. */
-fun receiptReference(input: String): String? = input.replace(Regex("\\s"), "").uppercase().takeIf { Regex("^[A-Z0-9-]{6,30}$").matches(it) }
+/** How the member paid (migration 041). GCash receipts have a fixed 13-digit Ref No.; Maya and bank formats vary. */
+const val PAY_GCASH = "gcash"; const val PAY_MAYA = "maya"; const val PAY_BANK = "bank"
+val PAYMENT_METHODS = listOf(PAY_GCASH to "GCash", PAY_MAYA to "Maya", PAY_BANK to "Bank transfer")
+fun paymentMethodLabel(method: String) = PAYMENT_METHODS.firstOrNull { it.first == method }?.second.orEmpty()
+
+/** A receipt reference as the server stores it (spaces removed, upper case), or null when it can't be one.
+ *  Mirrors the database trigger: GCash is exactly 13 digits; everything else is 6 to 30 letters, numbers or dashes. */
+fun receiptReference(input: String, method: String = ""): String? {
+    val clean = input.replace(Regex("\\s"), "").uppercase()
+    val rule = if (method == PAY_GCASH) Regex("^[0-9]{13}$") else Regex("^[A-Z0-9-]{6,30}$")
+    return clean.takeIf { rule.matches(it) }
+}
+
+/** What the reference box keeps while typing: GCash takes digits only (13 at most); others letters, digits and dashes (30 at most).
+ *  Spaces are kept so a number typed in groups stays readable; they don't count toward the limit. */
+fun referenceInput(typed: String, method: String): String {
+    val gcash = method == PAY_GCASH
+    val max = if (gcash) 13 else 30
+    val out = StringBuilder(); var count = 0
+    for (c in typed.uppercase()) {
+        val ok = if (gcash) c.isDigit() else (c in 'A'..'Z' || c.isDigit() || c == '-')
+        if (c == ' ' && out.isNotEmpty() && out.last() != ' ' && count < max) out.append(c)
+        else if (ok && count < max) { out.append(c); count++ }
+    }
+    return out.toString()
+}
+
+/** The line under the reference box for each method. */
+fun referenceHint(method: String, bad: Boolean): String = when (method) {
+    PAY_GCASH -> if (bad) "A GCash Ref No. is exactly 13 digits" else "The 13-digit \"Ref No.\" on your GCash receipt"
+    PAY_MAYA -> if (bad) "Use 6 to 30 letters or numbers, exactly as on the receipt" else "The reference ID on your Maya receipt"
+    PAY_BANK -> if (bad) "Use 6 to 30 letters or numbers, exactly as on the receipt" else "The transaction or reference number from your bank"
+    else -> "Choose how you paid first"
+}
 
 // ---------------------------------------------------------------- Applicant pay step
 
@@ -203,10 +235,11 @@ fun membershipFeeDue(workspace: JsonObject, userId: String, today: LocalDate): F
 
 /** What the Send button should do: save a changed reference first, then send. Null = not ready yet. */
 enum class PayAction { SAVE_REFERENCE, UPLOAD_PROOF, SEND }
-fun payAction(typedReference: String, payment: JsonObject?, hasProof: Boolean): PayAction? {
-    val clean = receiptReference(typedReference) ?: return null
+fun payAction(typedReference: String, method: String, payment: JsonObject?, hasProof: Boolean): PayAction? {
+    if (PAYMENT_METHODS.none { it.first == method }) return null
+    val clean = receiptReference(typedReference, method) ?: return null
     return when {
-        payment == null || payment.text("reference") != clean -> PayAction.SAVE_REFERENCE
+        payment == null || payment.text("reference") != clean || payment.text("payment_method") != method -> PayAction.SAVE_REFERENCE
         !hasProof -> PayAction.UPLOAD_PROOF
         else -> PayAction.SEND
     }

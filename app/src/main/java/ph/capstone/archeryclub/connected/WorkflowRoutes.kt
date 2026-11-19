@@ -90,12 +90,14 @@ fun WorkflowRoute(
         "training_desk" -> if (allowed("training")) TrainingDeskScreen(workspace, busy, snackbar, vm, onBack, { onPush("scorecard:$it") }, onStart,
             onScore = { r -> onPush("score_entry:$r") }) { onGo("records:11") }
             else denied("Coaches only", "Your current role can't validate scorecards.")
-        "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
+        "payments" -> PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload,
+            onSave = if (vm != null) ({ name, data, done -> vm.save(name, data, done) }) else null)
         "finance" -> FinanceRecordScreen(workspace, id, busy, snackbar, perms, onBack, onCommand, onStart, onUpload, onOpenDocument,
             onDelete = if (vm != null) ({ vm.save("delete_record", deleteArgs("payment_draft", id)) { onBack() } }) else null)
         "finance_desk" -> if ("finance" in perms || "president" in perms)
             FinanceDeskScreen(workspace, busy, snackbar, perms, onBack, { onPush("finance:$it") }, onCommand, onStart, { onGo("records:12") }, vm, startTab = id) { onPush("payments") }
-            else PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload)
+            else PaymentsScreen(workspace, busy, snackbar, isMember, onBack, { onPush("finance:$it") }, onCommand, onStart, onUpload,
+            onSave = if (vm != null) ({ name, data, done -> vm.save(name, data, done) }) else null)
         "elections", "election" -> ElectionScreen(workspace, id, busy, snackbar, isMember, allowed("elections"), vm, onBack, { onPush("election:$it") }, onCommand, onStart) { onGo("records:9") }
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")

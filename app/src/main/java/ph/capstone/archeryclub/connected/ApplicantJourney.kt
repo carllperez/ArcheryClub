@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
@@ -66,6 +67,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
     val payment = fee.payment
     val proof = payment?.let { p -> workspace.records("documents").filter { it.text("record_id") == p.text("id") && it.text("module") == "12" && it.text("superseded_by").isBlank() } }.orEmpty()
     var ref by rememberSaveable(payment?.text("id")) { mutableStateOf(payment?.text("reference").orEmpty()) }
+    var method by rememberSaveable(payment?.text("id")) { mutableStateOf(payment?.text("payment_method").orEmpty()) }
     var tried by remember { mutableStateOf(false) }
     var pickAfterSave by rememberSaveable { mutableStateOf(false) }
     var sendAfterSave by rememberSaveable { mutableStateOf(false) }
@@ -76,21 +78,25 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
         if (uri != null && id != null) vm.upload(context, uri, 12, id, "Receipt screenshot")
     }
     // A screenshot needs a saved payment to attach to: save the reference, wait for the refresh, then open the picker.
-    LaunchedEffect(payment?.text("id"), payment?.text("reference")) {
-        if (payment != null && payment.text("reference") == receiptReference(ref)) {
+    LaunchedEffect(payment?.text("id"), payment?.text("reference"), payment?.text("payment_method")) {
+        if (payment != null && payment.text("reference") == receiptReference(ref, method) && payment.text("payment_method") == method) {
             if (pickAfterSave) { pickAfterSave = false; picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
             if (sendAfterSave) { sendAfterSave = false; confirmSend = true }
         }
     }
     fun save(thenPick: Boolean, thenSend: Boolean = false) {
-        val clean = receiptReference(ref) ?: run { tried = true; return }
+        if (method.isBlank()) { tried = true; return }
+        val clean = receiptReference(ref, method) ?: run { tried = true; return }
         pickAfterSave = thenPick; sendAfterSave = thenSend
-        vm.command("save_financial_request", buildJsonObject {
+        // save_payment (migration 041) saves the payment and how it was paid together; the database re-checks the reference.
+        vm.save("save_payment", buildJsonObject {
             payment?.let { p -> put("id", p.text("id")); p.text("version").toLongOrNull()?.let { put("version", it) } }
             put("kind", "payment"); put("purpose", fee.fee.text("purpose")); put("amount", fee.fee.text("amount")); put("reference", clean)
+            put("payment_method", method)
         })
     }
-    val action = payAction(ref, payment, proof.isNotEmpty())
+    val action = payAction(ref, method, payment, proof.isNotEmpty())
+    val refOk = receiptReference(ref, method) != null
     // Replacing a screenshot never needs the reference saved again; a first upload needs a saved payment to attach to.
     fun screenshot() { if (payment == null) save(thenPick = true) else picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
 
@@ -105,7 +111,9 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                     }
                 }
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 12.dp, vertical = 4.dp)) {
-                    KeyValue("Amount", peso(fee.amount)); KeyValue("Reference no.", payment?.text("reference").orEmpty())
+                    KeyValue("Amount", peso(fee.amount))
+                    paymentMethodLabel(payment?.text("payment_method").orEmpty()).takeIf { it.isNotBlank() }?.let { KeyValue("Paid with", it) }
+                    KeyValue("Reference no.", payment?.text("reference").orEmpty())
                     KeyValue("Sent", fmtDate(payment?.date("created_at")))
                 }
                 proof.firstOrNull()?.let { d -> CardButton("Open my receipt", Modifier.fillMaxWidth()) { openPrivate(vm, context, d.text("path")) } }
@@ -139,15 +147,20 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                     style = MaterialTheme.typography.bodySmall)
                 if (details.hasGcash) PayToRow("money", "GCash" + details.gcashName.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), details.gcashNumber)
                 if (details.hasBank) PayToRow("settings", listOf(details.bankName, details.bankAccountName).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Bank transfer" }, details.bankAccountNumber)
-                Text("Any GCash or bank transfer works, as long as the receipt shows a reference number.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("GCash, Maya or a bank transfer all work, as long as the receipt shows a reference number.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                StepLabel("2 · Reference number on your receipt")
-                val bad = tried && receiptReference(ref) == null
-                OutlinedTextField(ref, { ref = it; tried = false }, singleLine = true, isError = bad, placeholder = { Text("e.g. 9046292514078") },
-                    supportingText = { Text(if (bad) "Use 6 to 30 letters or numbers, exactly as on the receipt" else "GCash: \"Ref No.\" · Bank: transaction or reference number") },
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth())
+                StepLabel("2 · How you paid, and the reference number")
+                ChoiceChips(PAYMENT_METHODS, method) { method = it; ref = referenceInput(ref, it); tried = false }
+                if (tried && method.isBlank()) Text("Choose GCash, Maya or Bank transfer.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                val bad = tried && method.isNotBlank() && !refOk
+                OutlinedTextField(ref, { ref = referenceInput(it, method); tried = false }, singleLine = true, isError = bad, enabled = method.isNotBlank(),
+                    placeholder = { Text(if (method == PAY_GCASH) "e.g. 9046292514078" else "Reference number") },
+                    supportingText = { Text(referenceHint(method, bad)) },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters,
+                        keyboardType = if (method == PAY_GCASH) KeyboardType.Number else KeyboardType.Text),
+                    shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth())
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -161,7 +174,7 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                     TextButton(onClick = { openPrivate(vm, context, doc.text("path")) }) { Text("Open") }
                     TextButton(onClick = { screenshot() }, enabled = !busy) { Text("Replace", fontWeight = FontWeight.ExtraBold) }
                 } else {
-                    CardButton("Upload screenshot", Modifier.fillMaxWidth(), primary = action == PayAction.UPLOAD_PROOF, enabled = !busy && receiptReference(ref) != null) { screenshot() }
+                    CardButton("Upload screenshot", Modifier.fillMaxWidth(), primary = action == PayAction.UPLOAD_PROOF, enabled = !busy && refOk) { screenshot() }
                 }
             }
 
@@ -174,7 +187,8 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                 else -> StickyLike(sendLabel, false) {}
             }
             when {
-                receiptReference(ref) == null -> Text("Enter the reference number to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                method.isBlank() -> Text("Choose how you paid to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                !refOk -> Text("Enter the reference number to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 proof.isEmpty() -> Text("Upload the screenshot to continue.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

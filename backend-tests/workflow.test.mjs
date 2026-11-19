@@ -879,3 +879,19 @@ test('Administration 19 Nov: edit a role term (title, end date) in place, with t
  const log=(await db.query("select detail from app_private.audit_log where module=14 and action='update_role_term' and record_id=$1",[a.id])).rows[0];
  assert.equal(log.detail.previous.position,a.position,'the old title is kept in the log');
 });
+
+test('Payments 19 Nov: how it was paid, and the reference number must fit (GCash 13 digits; Maya or bank 6-30 letters or numbers)',async()=>{
+ const pay=(data)=>rpc('applicant','save_payment',[JSON.stringify({purpose:'Method test',amount:'150',...data})],'$1::jsonb');
+ await denied(()=>pay({reference:'1234567890123'}),/Choose how you paid/);
+ await denied(()=>pay({payment_method:'gcash',reference:'FT24ABC123'}),/13-digit/);
+ await denied(()=>pay({payment_method:'gcash',reference:'123456789012'}),/13-digit/);
+ await denied(()=>pay({payment_method:'bank',reference:'AB1'}),/6 to 30/);
+ await denied(()=>pay({payment_method:'bank',reference:'REF#2026/11'}),/6 to 30/);
+ const g=await pay({payment_method:'gcash',reference:'5012 3456 78901'});
+ const r=await row('financial_records',g.id);
+ assert.equal(r.payment_method,'gcash'); assert.equal(r.reference,'5012345678901');
+ const b=await pay({payment_method:'bank',reference:'ft24-abc-778'});
+ assert.equal((await row('financial_records',b.id)).reference,'FT24-ABC-778','letters allowed for banks, saved in capitals');
+ // An older app saving directly still gets the general rule.
+ await denied(()=>command('applicant','save_financial_request',{kind:'payment',purpose:'Old app',amount:'10',reference:'X?'}),/6 to 30/);
+});

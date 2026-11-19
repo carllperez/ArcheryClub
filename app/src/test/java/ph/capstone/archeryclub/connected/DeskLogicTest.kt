@@ -144,6 +144,19 @@ class DeskLogicTest {
         assertEquals("9046292514078", receiptReference(" 9046 2925 14078 "))
         assertEquals("OR-12345", receiptReference("or-12345"))
         assertNull(receiptReference("12345")); assertNull(receiptReference("")); assertNull(receiptReference("ref #1234567"))
+        // GCash Ref No. is exactly 13 digits; Maya and banks keep the general rule (migration 041).
+        assertEquals("9046292514078", receiptReference("9046 2925 14078", PAY_GCASH))
+        assertNull(receiptReference("904629251407", PAY_GCASH)); assertNull(receiptReference("OR-1234567890", PAY_GCASH))
+        assertEquals("OR-12345", receiptReference("or-12345", PAY_BANK)); assertEquals("A1B2C3D4E5F6", receiptReference("a1b2c3d4e5f6", PAY_MAYA))
+    }
+
+    @Test fun referenceBoxLimitsTyping() {
+        assertEquals("9046292514078", referenceInput("90462925140789999", PAY_GCASH))
+        assertEquals("9046 2925 14078", referenceInput("9046 2925 14078", PAY_GCASH))
+        assertEquals("123", referenceInput("1a2-3", PAY_GCASH))
+        assertEquals("OR-12", referenceInput("or-1#2", PAY_BANK))
+        assertEquals(30, referenceInput("A".repeat(40), PAY_MAYA).length)
+        assertEquals("GCash", paymentMethodLabel(PAY_GCASH)); assertEquals("", paymentMethodLabel(""))
     }
 
     @Test fun applicantPayStepFollowsThePayment() {
@@ -151,16 +164,18 @@ class DeskLogicTest {
         val d = paymentDetails(settings); assertTrue(d.hasGcash); assertTrue(!d.hasBank); assertEquals("0917 000 0000", d.gcashNumber)
         assertTrue(paymentDetails(null).isEmpty)
         val fee = obj("id" to "f", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "due_on" to "2026-11-25", "payment_id" to "")
-        val draft = obj("id" to "p", "kind" to "payment", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "status" to "draft", "reference" to "9046292514078", "created_at" to "1")
+        val draft = obj("id" to "p", "kind" to "payment", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "status" to "draft", "reference" to "9046292514078", "payment_method" to "gcash", "created_at" to "1")
         val w = ws("fee_assessments" to listOf(fee), "financial_records" to listOf(draft))
         val due = membershipFeeDue(w, "me", today)!!
         assertEquals(PayStep.PAY, payStep(due))
         assertEquals(PayStep.CHECKING, payStep(FeeView(fee, obj("status" to "pending_verification"), FeeState.CHECKING)))
-        assertNull(payAction("123", null, false))
-        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514078", null, false))
-        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514079", draft, true))
-        assertEquals(PayAction.UPLOAD_PROOF, payAction("9046 2925 14078", draft, false))
-        assertEquals(PayAction.SEND, payAction("9046292514078", draft, true))
+        assertNull(payAction("123", PAY_GCASH, null, false))
+        assertNull(payAction("9046292514078", "", null, false)) // no method chosen yet
+        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514078", PAY_GCASH, null, false))
+        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514079", PAY_GCASH, draft, true))
+        assertEquals(PayAction.UPLOAD_PROOF, payAction("9046 2925 14078", PAY_GCASH, draft, false))
+        assertEquals(PayAction.SEND, payAction("9046292514078", PAY_GCASH, draft, true))
+        assertEquals(PayAction.SAVE_REFERENCE, payAction("9046292514078", PAY_BANK, draft, true)) // method changed
         assertNull(membershipFeeDue(ws("fee_assessments" to listOf(obj("purpose" to "Membership fee", "user_id" to "me", "amount" to "800", "payment_id" to "p"))), "me", today))
     }
 

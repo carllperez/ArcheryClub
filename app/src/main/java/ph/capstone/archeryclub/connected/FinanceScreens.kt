@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.ScreenShell
@@ -58,18 +59,23 @@ private fun SendSteps(workspace: JsonObject, record: JsonObject, busy: Boolean, 
 @Composable
 private fun ReceiptReferenceDialog(purpose: String, amount: String, existing: JsonObject?, busy: Boolean, onSave: (JsonObject) -> Unit, onDismiss: () -> Unit) {
     var ref by rememberSaveable { mutableStateOf(existing?.text("reference").orEmpty()) }
+    var method by rememberSaveable { mutableStateOf(existing?.text("payment_method").orEmpty()) }
     var tried by remember { mutableStateOf(false) }
-    val clean = receiptReference(ref)
+    val clean = receiptReference(ref, method)
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text("Receipt reference number") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("$purpose · ${peso(amount.toDoubleOrNull() ?: 0.0)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                Text("Copy the Ref No. from your GCash or bank receipt. The club checks it against its account, and each receipt can be used only once.",
+                Text("Choose how you paid, then copy the reference number from the receipt. The club checks it against its account, and each receipt can be used only once.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(ref, { ref = it }, label = { Text("Reference number") }, singleLine = true, isError = tried && clean == null,
-                    supportingText = { Text(if (tried && clean == null) "Use 6 to 30 letters or numbers, e.g. 9046292514078" else "e.g. 9046292514078") },
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
+                ChoiceChips(PAYMENT_METHODS, method) { method = it; ref = referenceInput(ref, it); tried = false }
+                if (tried && method.isBlank()) Text("Choose GCash, Maya or Bank transfer.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                val bad = tried && method.isNotBlank() && clean == null
+                OutlinedTextField(ref, { ref = referenceInput(it, method); tried = false }, label = { Text("Reference number") }, singleLine = true, isError = bad,
+                    enabled = method.isNotBlank(), supportingText = { Text(referenceHint(method, bad)) },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters,
+                        keyboardType = if (method == PAY_GCASH) KeyboardType.Number else KeyboardType.Text), modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
@@ -77,7 +83,7 @@ private fun ReceiptReferenceDialog(purpose: String, amount: String, existing: Js
                 tried = true
                 clean?.let { r -> onSave(buildJsonObject {
                     existing?.let { e -> put("id", e.text("id")); e.text("version").toLongOrNull()?.let { v -> put("version", v) } }
-                    put("kind", "payment"); put("purpose", purpose); put("amount", amount); put("reference", r)
+                    put("kind", "payment"); put("purpose", purpose); put("amount", amount); put("reference", r); put("payment_method", method)
                 }) }
             }) { Text("Save", fontWeight = FontWeight.ExtraBold) }
         },
@@ -88,6 +94,7 @@ private fun ReceiptReferenceDialog(purpose: String, amount: String, existing: Js
 fun PaymentsScreen(
     workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, isMember: Boolean, onBack: () -> Unit, onOpen: (String) -> Unit,
     onCommand: (String, JsonObject, () -> Unit) -> Unit, onStart: (String, JsonObject) -> Unit, onUpload: (android.net.Uri, Int, String, String) -> Unit,
+    onSave: ((String, JsonObject, () -> Unit) -> Unit)? = null,
 ) {
     val user = workspace.text("user_id")
     val fees = feeViews(workspace, user, LocalDate.now())
@@ -174,7 +181,9 @@ fun PaymentsScreen(
     }
     paying?.let { (source, existing) ->
         ReceiptReferenceDialog(source.text("purpose"), source.text("amount"), existing, busy,
-            onSave = { data -> onCommand("save_financial_request", data) { paying = null } }, onDismiss = { paying = null })
+            // save_payment (migration 041) keeps how it was paid; older wiring without it still saves the reference.
+            onSave = { data -> if (onSave != null) onSave("save_payment", data) { paying = null } else onCommand("save_financial_request", data) { paying = null } },
+            onDismiss = { paying = null })
     }
     sending?.let { r -> ConfirmDialog("Send for checking?", "${kindLabel(r.text("kind"))} of ${peso(r.amount())} for \"${r.text("purpose")}\". You can't change it while the club checks it.",
         "Send", onConfirm = { sending = null; onCommand("submit_financial_request", versionOf(r)) {} }, onDismiss = { sending = null }) }
@@ -208,6 +217,7 @@ fun FinanceRecordScreen(
         heroExtra = { Text(r.text("purpose"), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }, sticky = sticky) {
         RaisedCard { Column(Modifier.padding(16.dp)) {
             KeyValue("From", if (own) "You" else memberName(workspace, r.text("user_id")))
+            KeyValue("Paid with", paymentMethodLabel(r.text("payment_method")))
             KeyValue("Reference", r.text("reference")); KeyValue("Submitted", fmtDate(r.date("created_at")))
             KeyValue("Verified", r.date("verified_at")?.let(::fmtDate).orEmpty()); KeyValue("Remark", r.text("remark"))
         } }
@@ -264,6 +274,7 @@ private fun VerifyDialog(workspace: JsonObject, r: JsonObject, onCommand: (Strin
     val fee = if (r.text("kind") == "payment") matchingFee(r, workspace.records("fee_assessments")) else null
     ConfirmDialog("Verify ${peso(r.amount())}?", buildString {
         append("From ${memberName(workspace, r.text("user_id"))} for \"${r.text("purpose")}\"")
+        paymentMethodLabel(r.text("payment_method")).takeIf { it.isNotBlank() }?.let { append(", paid with $it") }
         if (r.text("reference").isNotBlank()) append(", ref ${r.text("reference")}")
         append(". Only verify after checking the receipt against the club's records.")
         if (fee != null) append(" It will also be recorded as payment for \"${fee.text("purpose")}\".")
@@ -323,7 +334,7 @@ fun FinanceDeskScreen(
                 toVerify.forEach { r ->
                     val missing = missingApprovals(r, approvals)
                     val proof = hasProof(workspace, r.text("id"))
-                    DeskRow(memberName(workspace, r.text("user_id")), "${r.text("purpose")}${r.text("reference").takeIf { it.isNotBlank() }?.let { " · ref $it" }.orEmpty()}",
+                    DeskRow(memberName(workspace, r.text("user_id")), "${r.text("purpose")}${paymentMethodLabel(r.text("payment_method")).takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}${r.text("reference").takeIf { it.isNotBlank() }?.let { " · ref $it" }.orEmpty()}",
                         leading = { Initials(memberName(workspace, r.text("user_id")), 40) },
                         trailing = { Text(peso(r.amount()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold) }, onClick = { onOpen(r.text("id")) }) {
                         Text(listOfNotNull(kindLabel(r.text("kind")), if (proof) "receipt attached" else "no receipt",
