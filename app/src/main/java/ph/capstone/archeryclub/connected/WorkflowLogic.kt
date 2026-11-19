@@ -214,8 +214,11 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
     if ("administration" in permissions) {
         val soon = now.plusSeconds(14 * 86400L)
         val live = workspace.records("role_assignments").filter { it.text("retired_at").isBlank() }
-        add(QueueItem("Roles expiring within 14 days", live.count { a -> a.instant("ends_at")?.let { it.isAfter(now) && it.isBefore(soon) } == true }, "module:14", Tone.WARNING))
-        add(QueueItem("Expired roles to renew", live.count { a -> a.instant("ends_at")?.let { it.isBefore(now) && it.isAfter(now.minusSeconds(60 * 86400L)) } == true }, "module:14", Tone.DANGER))
+        // Labels follow the count ("1 expired role", "2 expired roles"), since screens show "<count> <label>".
+        val expiring = live.count { a -> a.instant("ends_at")?.let { it.isAfter(now) && it.isBefore(soon) } == true }
+        val expired = live.count { a -> a.instant("ends_at")?.let { it.isBefore(now) && it.isAfter(now.minusSeconds(60 * 86400L)) } == true }
+        add(QueueItem(if (expiring == 1) "Role expiring within 14 days" else "Roles expiring within 14 days", expiring, "module:14", Tone.WARNING))
+        add(QueueItem(if (expired == 1) "Expired role to renew" else "Expired roles to renew", expired, "module:14", Tone.DANGER))
     }
     if ("membership" in permissions) {
         val pendingApps = workspace.records("applications").filter { it.text("user_id") != user && it.text("status") in setOf("pending", "under_review") }.map { it.text("id") }.toSet()

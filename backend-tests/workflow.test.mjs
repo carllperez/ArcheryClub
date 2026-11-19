@@ -865,3 +865,17 @@ test('Testing round 19 Nov: administrators see each account\'s membership standi
  assert.ok(!admin.member_standing.some(m=>m.user_id===ids.fresh),'an account without a membership has no standing');
  assert.deepEqual((await rpc('applicant','club_workspace',[],'')).member_standing,[]);
 });
+
+test('Administration 19 Nov: edit a role term (title, end date) in place, with the previous values in the audit log',async()=>{
+ const a=(await db.query("select id,position from app_private.role_assignments where user_id=$1 and retired_at is null and role_id<>'administrator' order by starts_at desc limit 1",[ids.officer])).rows[0];
+ assert.ok(a,'fixture officer has a role');
+ const edit=(person,data)=>rpc(person,'update_role_term',[JSON.stringify(data)],'$1::jsonb');
+ await denied(()=>edit('officer',{id:a.id,ends_at:'2036-01-01',position:'Officer',reason:'Self-extend'}));
+ await denied(()=>edit('admin',{id:a.id,ends_at:'2020-01-01',position:'Officer',reason:'Before start'}),/end after it starts/);
+ await edit('admin',{id:a.id,ends_at:'2036-06-30T15:59:00Z',position:'Secretary and Auditor',reason:'Term extended by the board'});
+ const after=(await db.query('select ends_at,position,reason from app_private.role_assignments where id=$1',[a.id])).rows[0];
+ assert.equal(after.position,'Secretary and Auditor'); assert.match(after.reason,/Changed: Term extended by the board/);
+ assert.equal(new Date(after.ends_at).toISOString(),'2036-06-30T15:59:00.000Z');
+ const log=(await db.query("select detail from app_private.audit_log where module=14 and action='update_role_term' and record_id=$1",[a.id])).rows[0];
+ assert.equal(log.detail.previous.position,a.position,'the old title is kept in the log');
+});

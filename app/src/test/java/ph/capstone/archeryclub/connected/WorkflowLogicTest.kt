@@ -141,6 +141,6 @@ class WorkflowLogicTest {
                 buildJsonObject { put("ends_at", at(24 * 200)) })))
         }
         val q = officerQueues(w, setOf("administration"), now).associate { it.label to it.count }
-        assertEquals(1, q["Roles expiring within 14 days"]); assertEquals(1, q["Expired roles to renew"])
+        assertEquals(1, q["Role expiring within 14 days"]); assertEquals(1, q["Expired role to renew"]) // singular labels for one
     }
 }

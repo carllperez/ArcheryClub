@@ -264,10 +264,12 @@ private fun termSeed(): JsonObject {
 }
 
 @Composable
-fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: () -> Unit = {}, onRecords: () -> Unit) {
+fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<RoleLine?>(null) }
     val log = workspace.records("audit_log").sortedByDescending { it.text("created_at") }.take(6)
     ph.capstone.archeryclub.ui.ScreenShell("Administration", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -285,7 +287,8 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             if (done == lines.size) Text("Everything is set. Edit any part from Club setup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PillButton("Open club setup", onSetup)
         } }
-        DeskLabel("Officers and terms", "+ Assign roles", onAssign)
+        editing?.let { r -> EditRoleDialog(r, officers.find { o -> o.roles.contains(r) }?.name.orEmpty(), busy, onSave) { editing = null } }
+        DeskLabel("Officers and terms", "+ Assign roles") { onAssign("") }
         if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
         // One row per person; tap to see each role's term and renew or retire it.
         officers.forEach { o ->
@@ -309,12 +312,16 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
                                     .joinToString(" · "), style = MaterialTheme.typography.bodySmall,
                                     color = when (r.state) { TermState.EXPIRED -> Club.roseInk; TermState.ENDING -> Club.amberInk; else -> MaterialTheme.colorScheme.onSurfaceVariant })
                             }
+                            // Edit changes this appointment's title or end date; a different role is added with "+ Add role" below.
+                            if (!r.duplicate) TextButton(onClick = { editing = r }, enabled = !busy) { Text("Edit", fontWeight = FontWeight.ExtraBold) }
                             TextButton(onClick = { onStart("retire_role", r.assignment) }, enabled = !busy) { Text("Retire", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
                             if (r.state != TermState.ACTIVE && !r.duplicate) TextButton(onClick = {
                                 onStart("assign_role", JsonObject(termSeed() + listOf("user_id", "role_id", "position").associateWith { k -> JsonPrimitive(r.assignment.text(k)) }))
                             }, enabled = !busy) { Text("Renew", fontWeight = FontWeight.ExtraBold) }
                         }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                    CardButton("+ Add role", Modifier.fillMaxWidth(), enabled = !busy) { onAssign(o.userId) }
                 }
             }
         }
@@ -340,12 +347,41 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
 
 
 
+/** Edit one appointment in place: its position title and end date, with a reason for the record (migration 040). */
+@Composable
+private fun EditRoleDialog(r: RoleLine, person: String, busy: Boolean, onSave: (String, JsonObject, () -> Unit) -> Unit, onDismiss: () -> Unit) {
+    var title by rememberSaveable { mutableStateOf(r.assignment.text("position").ifBlank { r.roleName }) }
+    var ends by remember { mutableStateOf(r.ends ?: Instant.now()) }
+    var reason by rememberSaveable { mutableStateOf("") }
+    val starts = r.assignment.instant("starts_at")
+    val problem = when {
+        title.isBlank() -> "Give the position a title."
+        starts != null && !ends.isAfter(starts) -> "The term must end after it starts (${fmtDay(starts)})."
+        reason.isBlank() -> "Say why it changed, for the record."
+        else -> null
+    }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Edit ${r.roleName}") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(person, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(title, { title = it.take(160) }, label = { Text("Position title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            DateTimeField("Term ends", ends, { ends = it })
+            OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason") }, placeholder = { Text("e.g. Term extended by the board") }, modifier = Modifier.fillMaxWidth())
+            problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } },
+        confirmButton = { TextButton(enabled = problem == null && !busy, onClick = {
+            onSave("update_role_term", buildJsonObject {
+                put("id", r.assignment.text("id")); put("position", title.trim()); put("ends_at", ends.toString()); put("reason", reason.trim())
+            }) { onDismiss() }
+        }) { Text("Save", fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+
 /** Give one person one or more roles at once. Each ticked role is saved as its own assignment (same term and reason),
  *  so a role can still be renewed or retired on its own later. */
 @Composable
-fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit) {
+fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit, initialPerson: String = "") {
     val seed = remember { termSeed() }
-    var person by rememberSaveable { mutableStateOf("") }
+    var person by rememberSaveable { mutableStateOf(initialPerson) }
     var ticked by remember { mutableStateOf(listOf<String>()) }
     var titles by remember { mutableStateOf(mapOf<String, String>()) }
     var starts by rememberSaveable { mutableStateOf(instantOf(seed.text("starts_at")) ?: Instant.now()) }
