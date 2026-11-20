@@ -904,3 +904,21 @@ test('Payments 19 Nov: how it was paid, and the reference number must fit (GCash
  // An older app saving directly still gets the general rule.
  await denied(()=>command('applicant','save_financial_request',{kind:'payment',purpose:'Old app',amount:'10',reference:'X?'}),/6 to 30/);
 });
+
+test('Payments 20 Nov: the "pay your fee" notice closes when the payment is sent for checking, and comes back if it is sent back',async()=>{
+ const fee=await command('officer','assess_fee',{user_id:ids.applicant,purpose:'Notice fee test',amount:'200',due_on:'2030-01-01'});
+ const open=async()=> (await db.query("select completed_at from app_private.notifications where record_id=$1 and kind='fee'",[fee.id])).rows[0].completed_at===null;
+ assert.equal(await open(),true);
+ const p=await rpc('applicant','save_payment',[JSON.stringify({purpose:'Notice fee test',amount:'200',payment_method:'gcash',reference:'5012345678911'})],'$1::jsonb');
+ assert.equal(await open(),true,'a saved draft is not a payment yet');
+ await upload('applicant',12,p.id);
+ const v=async()=>Number((await row('financial_records',p.id)).version);
+ await command('applicant','submit_financial_request',{id:p.id,version:await v()});
+ assert.equal(await open(),false,'sent for checking: the fee notice is done');
+ await command('officer','verify_financial_request',{id:p.id,version:await v(),status:'returned_for_correction',remark:'Blurry receipt'});
+ assert.equal(await open(),true,'sent back: the fee is still unpaid');
+ await command('applicant','submit_financial_request',{id:p.id,version:await v()});
+ assert.equal(await open(),false);
+ await command('officer','verify_financial_request',{id:p.id,version:await v(),status:'verified',remark:'OK'});
+ assert.equal(await open(),false,'verified stays done');
+});
