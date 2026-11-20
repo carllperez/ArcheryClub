@@ -270,7 +270,8 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
     val officers = officerViews(workspace, Instant.now())
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<RoleLine?>(null) }
-    val log = workspace.records("audit_log").sortedByDescending { it.text("created_at") }.take(6)
+    // Same lines as the full activity log (who was affected, sign-ins hidden), just the latest few.
+    val log = activityLog(workspace, null, "") { memberName(workspace, it) }.take(6)
     ph.capstone.archeryclub.ui.ScreenShell("Administration", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         // Club setup has its own screen; here, just how far along it is and what is still missing.
@@ -335,10 +336,12 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         if (log.isNotEmpty()) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("RECENT CHANGES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             log.forEach { l ->
-                Row { Text(human(l.text("action")), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Text(l.text("actor").takeIf { it.isNotBlank() }?.let { memberName(workspace, it).substringBefore(' ') }.orEmpty() + " · " + fmtDay(l.instant("created_at")),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Column {
+                    Text(l.title, style = MaterialTheme.typography.bodyMedium)
+                    Text("${l.actor} · ${fmtDay(instantOf(l.at))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+            TextButton(onClick = onLog, contentPadding = PaddingValues(0.dp)) { Text("See the full activity log") }
         } }
     }
 }
