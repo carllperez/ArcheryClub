@@ -82,6 +82,7 @@ private fun eventWhen(row:JsonObject)=dateOf(row)?.format(DateTimeFormatter.ofPa
 }
 
 /** Presentation only; destinations still use the original module catalogue and server permissions. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClubLanding(
     page:String,onPage:(String)->Unit,workspace:JsonObject,modules:List<JsonObject>,state:SystemState,
@@ -149,6 +150,8 @@ fun ClubLanding(
         MemberProfilePage(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onScan,onRefresh,onSignOut,recovery)
         return
     }
+    // Notices and All modules: pull down to reload, like the home pages (a new notice shows without leaving the page).
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing=state.busy,onRefresh=onRefresh,modifier=Modifier.fillMaxSize()){
     ScreenShell(title,snackbar=snackbar,onBack=if(page=="notices" || (page=="modules"&&(isMember||staff))){{onPage("home")}}else null,
         actions={
             TextButton(onClick={onPage("account")},modifier=Modifier.padding(end=8.dp).semantics{contentDescription="Open account"}) {
@@ -239,6 +242,7 @@ fun ClubLanding(
                 }
             }
         }
+    }
     }
 }
 

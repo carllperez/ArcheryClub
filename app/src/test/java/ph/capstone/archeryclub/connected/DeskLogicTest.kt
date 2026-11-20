@@ -480,4 +480,15 @@ class DeskLogicTest {
         assertEquals(listOf("f2", "f1"), feesToMatch(pay, fees).map { it.text("id") })
         assertEquals(listOf("same member", "same amount (₱500)", "same purpose", "fee still unpaid"), matchReasons(pay, fees[1]))
     }
+
+    @Test fun officersSeeTheirOwnUnpaidFee() {
+        val fee = obj("id" to "f1", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "due_on" to "2026-11-25", "payment_id" to "")
+        fun w(vararg payments: JsonObject) = ws("fee_assessments" to listOf(fee), "financial_records" to payments.toList())
+        val due = ownFeeReminder(w(), today)!!
+        assertEquals("Pay your ₱800 membership fee", due.title); assertEquals("payments", due.route); assertEquals("Pay now", due.action)
+        val pay = { s: String -> obj("id" to "p", "kind" to "payment", "user_id" to "me", "purpose" to "Membership fee", "amount" to "800", "status" to s, "created_at" to "1") }
+        assertNull(ownFeeReminder(w(pay("pending_verification")), today)) // being checked: nothing to do
+        assertEquals("Fix payment", ownFeeReminder(w(pay("returned_for_correction")), today)!!.action)
+        assertNull(ownFeeReminder(ws(), today))
+    }
 }

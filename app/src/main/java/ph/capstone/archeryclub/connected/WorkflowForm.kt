@@ -53,7 +53,9 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
     val leave:()->Unit={if(!busy){if(values.toMap()!=initialValues)confirmDiscard=true else onBack()}}
     BackHandler(onBack=leave)
     if(confirmDiscard)DiscardDialog(onDismiss={confirmDiscard=false},onDiscard={confirmDiscard=false;onBack()})
-    ScreenShell(form.text("label"),leave,snackbar) {
+    // Review forms follow the chosen decision: "Return" opens as "Send back for changes", not the form's "Verify" label.
+    val decision=decisionLabel(form.text("label"),values["status"].orEmpty())
+    ScreenShell(decision,leave,snackbar) {
         if(form.text("help").isNotEmpty())ph.capstone.archeryclub.ui.InfoCard("About this form",form.text("help"))
         RaisedCard{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         (form.records("fields")+if(values["status"]=="approved")correctionFields else emptyList()).forEach { field ->
@@ -131,6 +133,6 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
                     })
                 }
             }.onSuccess{error=null;onSubmit(it)}.onFailure{error=it.message?:"Review the form fields."}
-        },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(if(busy)"Saving…" else form.text("label"),fontWeight=androidx.compose.ui.text.font.FontWeight.ExtraBold)}
+        },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(if(busy)"Saving…" else decision,fontWeight=androidx.compose.ui.text.font.FontWeight.ExtraBold)}
     }
 }

@@ -66,6 +66,17 @@ fun OfficerHome(
         }) {
         state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING); SecondaryAction("Try again", !state.busy, onRefresh) }
         if (state.recovery) recovery()
+        // Their own unpaid fee comes before desk work: an officer with a pending fee otherwise only sees it in Notices.
+        ownFeeReminder(workspace, java.time.LocalDate.now())?.let { f ->
+            RaisedCard(onClick = { onRoute(f.route) }) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(f.eyebrow, style = MaterialTheme.typography.labelMedium, color = Club.amberInk)
+                    Text(f.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    if (f.detail.isNotBlank()) Text(f.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    CardButton(f.action, Modifier.fillMaxWidth(), primary = true) { onRoute(f.route) }
+                }
+            }
+        }
 
         // Officers who are members: each desk's main job is a card at the top (the first desk always, the others when
         // something waits), then the same member tiles a member sees. Officers who aren't members keep the desk grid.

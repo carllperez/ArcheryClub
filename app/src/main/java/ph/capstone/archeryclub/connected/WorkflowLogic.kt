@@ -310,3 +310,12 @@ fun electionStageOpen(e: JsonObject, now: Instant): Boolean = when (e.text("stat
     "voting" -> e.instant("voting_closes")?.isAfter(now) ?: true
     else -> false
 }
+
+/** Review forms (verify a payment, review an application, a borrowing…) open with the decision already chosen by the
+ *  button the officer tapped. The title and button follow that decision, so "Return" doesn't end on a "Verify" button. */
+fun decisionLabel(label: String, status: String): String = when (status) {
+    "returned_for_correction" -> "Send back for changes"
+    "incomplete" -> "Mark as incomplete"
+    "rejected" -> "Don't accept"
+    else -> label
+}

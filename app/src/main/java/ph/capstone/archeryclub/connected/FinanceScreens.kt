@@ -128,9 +128,9 @@ fun PaymentsScreen(
                         FeeState.DUE, FeeState.OVERDUE -> {
                             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("HOW TO PAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("1. Pay the club through GCash or the bank, as announced.\n2. Enter the Ref No. printed on your receipt and upload a screenshot of it.\n3. The club checks both against the club's account and you get a notice.", style = MaterialTheme.typography.bodySmall)
+                                Text("1. Pay the club through GCash, Maya or a bank transfer, as announced.\n2. Enter the reference number on your receipt and upload a screenshot of it.\n3. The club checks both against the club's account and you get a notice.", style = MaterialTheme.typography.bodySmall)
                             }
-                            CardButton("I've paid · enter the receipt's reference no.", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { paying = f.fee to null }
+                            CardButton("I've paid · add my receipt", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { paying = f.fee to null }
                         }
                         FeeState.DRAFT, FeeState.RETURNED -> f.payment?.let { p ->
                             SendSteps(workspace, p, busy, onEdit = { editPayment(p) }, onProof = { pickProof(p.text("id")) }, onSend = { sending = p })

@@ -118,6 +118,24 @@ fun feeViews(workspace: JsonObject, userId: String, today: LocalDate): List<FeeV
     }.sortedWith(compareBy<FeeView> { it.state == FeeState.PAID }.thenBy { it.due })
 }
 
+/** An officer's own unpaid fee, for the top of their officer home (which otherwise only shows their desks).
+ *  Null when nothing is owed or the payment is already being checked. */
+fun ownFeeReminder(workspace: JsonObject, today: LocalDate): OfficerFocus? {
+    val open = feeViews(workspace, workspace.text("user_id"), today)
+        .filter { it.state in setOf(FeeState.DUE, FeeState.OVERDUE, FeeState.DRAFT, FeeState.RETURNED) }
+    val first = open.firstOrNull() ?: return null
+    val what = first.fee.text("purpose").ifBlank { "fee" }.let { if (it.equals("Membership fee", true)) "membership fee" else it }
+    val dueText = first.due?.let { "due " + it.format(java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.ENGLISH)) }.orEmpty()
+    val detail = when (first.state) {
+        FeeState.RETURNED -> "Your payment was sent back. Fix it and send it again."
+        FeeState.OVERDUE -> "Overdue: it was $dueText."
+        FeeState.DRAFT -> "Saved but not sent yet${if (dueText.isNotEmpty()) " · $dueText" else ""}."
+        else -> dueText.replaceFirstChar { it.uppercase() }
+    } + if (open.size > 1) " · ${open.size - 1} more fee${if (open.size == 2) "" else "s"}" else ""
+    return OfficerFocus("YOUR OWN FEE", "Pay your ${peso(first.amount)} $what", detail, "payments",
+        if (first.state == FeeState.RETURNED) "Fix payment" else "Pay now")
+}
+
 /** What the member still has to act on (fees already sent for checking are not counted). */
 fun amountOwed(fees: List<FeeView>) = fees.filter { it.state in setOf(FeeState.DUE, FeeState.OVERDUE, FeeState.DRAFT, FeeState.RETURNED) }.sumOf { it.amount }
 

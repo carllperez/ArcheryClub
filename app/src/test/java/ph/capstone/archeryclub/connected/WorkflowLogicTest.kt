@@ -143,4 +143,11 @@ class WorkflowLogicTest {
         val q = officerQueues(w, setOf("administration"), now).associate { it.label to it.count }
         assertEquals(1, q["Role expiring within 14 days"]); assertEquals(1, q["Expired role to renew"]) // singular labels for one
     }
+
+    @Test fun reviewFormsFollowTheDecision() {
+        assertEquals("Send back for changes", decisionLabel("Verify financial submission", "returned_for_correction"))
+        assertEquals("Don't accept", decisionLabel("Verify financial submission", "rejected"))
+        assertEquals("Verify financial submission", decisionLabel("Verify financial submission", "verified"))
+        assertEquals("Verify financial submission", decisionLabel("Verify financial submission", ""))
+    }
 }
