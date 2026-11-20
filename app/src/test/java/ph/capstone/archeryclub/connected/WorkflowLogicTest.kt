@@ -150,4 +150,15 @@ class WorkflowLogicTest {
         assertEquals("Verify financial submission", decisionLabel("Verify financial submission", "verified"))
         assertEquals("Verify financial submission", decisionLabel("Verify financial submission", ""))
     }
+
+    @Test fun pastedControlCharactersAreRemovedBeforeSaving() {
+        assertEquals("DLSU-UP Friendly Shoot", cleanText("DLSU-UP Friendly Shoot\u0000"))
+        assertEquals("line one\nline two\tok", cleanText("line one\nline two\tok\u0007"))
+        val cleaned = withoutControlChars(buildJsonObject {
+            put("title", "Shoot\u0000"); put("capacity", 20)
+            put("tags", JsonArray(listOf(JsonPrimitive("a\u001Bb"))))
+        }) as JsonObject
+        assertEquals("Shoot", cleaned.text("title")); assertEquals("20", cleaned.text("capacity"))
+        assertEquals("ab", ((cleaned["tags"] as JsonArray)[0] as JsonPrimitive).content)
+    }
 }

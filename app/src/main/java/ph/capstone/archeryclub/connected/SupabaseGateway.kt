@@ -83,7 +83,8 @@ class SupabaseGateway {
         Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
     }
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })
-    suspend fun rpc(name:String,data:JsonObject):JsonElement = Json.parseToJsonElement(client.postgrest.rpc(name,data).data)
+    // Text is cleaned before sending: a pasted invisible control character (e.g. \u0000) makes Postgres reject the whole save.
+    suspend fun rpc(name:String,data:JsonObject):JsonElement = Json.parseToJsonElement(client.postgrest.rpc(name,withoutControlChars(data) as JsonObject).data)
     suspend fun signedUrl(path:String):String = client.storage.from("club-documents").createSignedUrl(path,5.minutes)
     /** The file itself, for showing an image inside the app (Storage still checks the caller may read it). */
     suspend fun download(path:String):ByteArray = client.storage.from("club-documents").downloadAuthenticated(path)

@@ -168,7 +168,9 @@ internal fun workflowErrorMessage(code:String?,message:String):String=when(code)
     "23503"->"A related record is missing or no longer available. Refresh and choose it again."
     "23514","23502","22P02","22007","22008","22003"->"Check the required fields, amounts and dates before saving."
     "P0001"->message.lineSequence().firstOrNull()?.take(240)?.takeUnless{it.contains("Bearer",true)||it.contains("apikey",true)}?:"Check your entries and try again."
-    else->"The request could not be completed. Refresh and try again."
+    "22P05","22021"->"A pasted character couldn't be saved. Retype the text instead of pasting it, then try again."
+    // The code lets the team look up the exact server error in the logs instead of guessing.
+    else->"The request could not be completed. Refresh and try again."+(code?.takeIf{Regex("^[A-Z0-9]{5}$").matches(it)}?.let{" (error $it)"}?:"")
 }
 internal fun authErrorMessage(code:String):String=when(code){
     "invalid_credentials"->"The email or password is incorrect. Please try again."

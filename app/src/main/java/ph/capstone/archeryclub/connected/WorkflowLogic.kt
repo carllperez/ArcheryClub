@@ -1,6 +1,6 @@
 package ph.capstone.archeryclub.connected
 
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.*
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -319,3 +319,13 @@ fun decisionLabel(label: String, status: String): String = when (status) {
     "rejected" -> "Don't accept"
     else -> label
 }
+
+/** Removes invisible control characters (null, bell, escape…) from every text value, keeping tabs and line breaks.
+ *  Pasted text can carry them, and Postgres refuses \u0000 outright ("cannot be converted to text"). */
+fun withoutControlChars(e: JsonElement): JsonElement = when (e) {
+    is JsonObject -> JsonObject(e.mapValues { withoutControlChars(it.value) })
+    is JsonArray -> JsonArray(e.map { withoutControlChars(it) })
+    is JsonPrimitive -> if (e.isString) JsonPrimitive(cleanText(e.content)) else e
+    else -> e
+}
+fun cleanText(s: String): String = s.filter { c -> c == '\t' || c == '\n' || c == '\r' || (c >= ' ' && c != '\u007F') }
