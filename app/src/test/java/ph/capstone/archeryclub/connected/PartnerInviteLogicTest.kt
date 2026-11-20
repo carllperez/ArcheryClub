@@ -42,4 +42,14 @@ class PartnerInviteLogicTest {
         assertEquals(listOf("e1"), partnerEvents(ws).map { it.text("event_id") })
         assertTrue(inviteMessage("DLSU-UP Friendly Shoot", "UP Archery Club", "7KQ2-9F01", "Wed, Nov 25").contains("7KQ2-9F01"))
     }
+
+    @Test fun aUsedCodeShowsTheNameTheRepGave() {
+        val now = java.time.Instant.parse("2026-11-21T00:00:00Z")
+        val w = buildJsonObject {
+            put("partner_clubs", JsonArray(listOf(buildJsonObject { put("id", "up"); put("name", "UP Archery Club") })))
+            put("partner_invites", JsonArray(listOf(buildJsonObject { put("id", "i"); put("code", "DAA2-2516"); put("event_id", "e"); put("partner_id", "up")
+                put("claimed_by", "u"); put("claimed_name", "Uma Reyes"); put("expires_at", "2026-11-25T00:00:00Z") })))
+        }
+        assertEquals("Uma Reyes", inviteViews(w, "e", now) { "Club member" }.single().claimedBy)
+    }
 }

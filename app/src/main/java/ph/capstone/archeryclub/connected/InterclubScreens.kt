@@ -101,8 +101,27 @@ fun InterclubScreen(
     if (e == null) {
         HeroScaffold("Interclub", onBack, snackbar, overlap = 44.dp, busy = busy, eyebrow = { Pill("INTERCLUB", Color.White.copy(alpha = .16f), Color.White) },
             heroExtra = { Text("Share a club activity with partner clubs, collect their delegates and publish verified results.", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
-            EmptyState("No shared events yet", "Post the activity first (Events desk), then share it here with partner clubs.",
-                if (interclubOfficer) "Share an activity" else null) { onStart("share_interclub_event", buildJsonObject {}) }
+            EmptyState("No shared events yet", "Post the activity first (Events desk), then share it here with partner clubs.")
+            // A filled button: the outlined one in the empty card read as disabled (21 Nov testing).
+            if (interclubOfficer) CardButton("Share an activity", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { onStart("share_interclub_event", buildJsonObject {}) }
+            // The clubs already added, so the officer can see them before sharing an event (they weren't listed anywhere).
+            val clubs = workspace.records("partner_clubs").sortedBy { it.text("name") }
+            if (interclubOfficer) {
+                DeskLabel("Partner clubs · ${clubs.size}")
+                if (clubs.isEmpty()) Text("No partner clubs yet. Add one, then share an activity with it.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else RowGroup { clubs.forEachIndexed { i, c ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ClubBadge(c.text("name"), c.text("id"))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.text("name"), style = MaterialTheme.typography.titleSmall)
+                            if (c.text("official_channel").isNotBlank()) Text(c.text("official_channel"), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    if (i < clubs.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
+                } }
+            }
             if (interclubOfficer) RowGroup {
                 GroupRow("users", "Add a partner club") { onStart("save_partner", buildJsonObject {}) }
                 GroupRow("calendar", "Past events", "${events.count { it.text("status") == "archived" }} archived", divider = false) { onPush("ic_past:") }
@@ -133,18 +152,38 @@ fun InterclubScreen(
                 color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
             StepTracker(step)
         }) {
+        // A partner rep sees their own delegation's numbers; the officer sees the event's.
+        val targeted = icAssignments(workspace, eid).map { it.text("delegate_id") }.toSet()
+        val stats = if (coordinator) listOf("${partners.size}" to "Partner clubs", "${delegates.size}" to "Delegates", "$toReview" to "To review")
+            else listOf("${delegates.size}" to "Delegates", "${delegates.count { it.text("status") in setOf("eligible", "checked_in") }}" to "Approved",
+                "${delegates.count { it.text("id") in targeted }}" to "With a target")
         RaisedCard {
             Row(Modifier.padding(vertical = 14.dp)) {
-                listOf("${partners.size}" to "Partner clubs", "${delegates.size}" to "Delegates", "$toReview" to "To review").forEachIndexed { i, (v, l) ->
+                stats.forEachIndexed { i, (v, l) ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(v, style = MaterialTheme.typography.headlineSmall, color = if (i == 2 && toReview > 0) Club.amberInk else MaterialTheme.colorScheme.onSurface)
+                        Text(v, style = MaterialTheme.typography.headlineSmall, color = if (coordinator && i == 2 && toReview > 0) Club.amberInk else MaterialTheme.colorScheme.onSurface)
                         Text(l, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
         // The current step's job, on top, so whoever opens the event knows the one thing to do.
-        if (coordinator && next != null) Surface(onClick = {
+        // An open concern from a partner club comes before the step's own job (21 Nov testing: the card kept saying
+        // "Waiting for delegations" while a concern sat further down the page).
+        val firstConcern = concerns.firstOrNull()
+        if (coordinator && firstConcern != null) Surface(onClick = { onStart("resolve_concern", firstConcern) },
+            shape = RoundedCornerShape(16.dp), color = Club.forestDeep, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("THIS STEP · CONCERNS", color = Club.lime, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
+                    Text(if (concerns.size == 1) "Reply to ${partnerName[firstConcern.text("partner_id")] ?: "a partner club"}"
+                        else "Reply to ${concerns.size} concerns", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                    Text(firstConcern.text("concern"), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Text("›", color = Color.White, fontSize = 22.sp)
+            }
+        }
+        else if (coordinator && next != null) Surface(onClick = {
             when { next.route != null -> onPush(next.route); next.step == IC_INVITE -> newInvite = true
                 next.step == IC_ARCHIVE -> onStart("archive_interclub", e) }
         }, shape = RoundedCornerShape(16.dp), color = Club.forestDeep, modifier = Modifier.fillMaxWidth()) {
@@ -162,9 +201,16 @@ fun InterclubScreen(
             "preparation" -> if (step >= IC_SCHEDULE) CardButton("Start the event day", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { confirmStage = "active" }
             "active" -> CardButton("Finish the event", Modifier.fillMaxWidth(), enabled = !busy) { confirmStage = "completed" }
         }
-        DeskLabel("Partner clubs", if (interclubOfficer && status == "preparation") "Invite" else null) { newInvite = true }
-        if (partners.isEmpty()) EmptyState("No partner clubs yet", "Create an invite code for a club's representative. They only ever see this event.")
-        else RowGroup { partners.forEachIndexed { i, p ->
+        if (coordinator) concerns.forEach { c ->
+            NoticeCard("Concern from ${partnerName[c.text("partner_id")] ?: "a partner"}", c.text("concern"), Tone.WARNING)
+            CardButton("Reply to this concern", Modifier.fillMaxWidth(), enabled = !busy) { onStart("resolve_concern", c) }
+        }
+        // A partner rep's page is their delegation, their concerns and the published results; the officer's step pages
+        // (review, schedule, check-in, results) only ever told them "only the coordinators can do this".
+        if (!coordinator) PartnerDelegation(workspace, eid, busy, onStart)
+        if (coordinator) DeskLabel("Partner clubs", if (interclubOfficer && status == "preparation") "Invite" else null) { newInvite = true }
+        if (coordinator && partners.isEmpty()) EmptyState("No partner clubs yet", "Create an invite code for a club's representative. They only ever see this event.")
+        else if (coordinator) RowGroup { partners.forEachIndexed { i, p ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ClubBadge(p.partner.text("name"), p.partner.text("id"))
                 Column(Modifier.weight(1f)) {
@@ -178,25 +224,20 @@ fun InterclubScreen(
         } }
         // Invite codes replace inviting by email: holding the code, not the email address, makes someone the rep.
         if (coordinator) PartnerInvites(workspace, e, busy, vm, interclubOfficer && status == "preparation", newInvite) { newInvite = false }
-        concerns.forEach { c ->
-            NoticeCard("Concern from ${partnerName[c.text("partner_id")] ?: "a partner"}", c.text("concern"), Tone.WARNING)
-            if (coordinator) CardButton("Reply and close", Modifier.fillMaxWidth(), enabled = !busy) { onStart("resolve_concern", c) }
-        }
         // Each step's page.
-        DeskLabel("Steps")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (coordinator) DeskLabel("Steps")
+        if (coordinator) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(Triple("Delegates", "$toReview to review", "ic_delegates:$eid"), Triple("Schedule", "${icAssignments(workspace, eid).size} assigned", "ic_schedule:$eid")).forEach { (t, s, r) ->
                 StepTile(t, s, Modifier.weight(1f)) { onPush(r) }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (coordinator) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val here = delegates.count { it.text("status") == "checked_in" }
             val verified = icResults(workspace, eid).count { it.text("verified_by").isNotBlank() }
             listOf(Triple("Check-in", "$here here", "ic_checkin:$eid"), Triple("Results", "$verified verified", "ic_results:$eid")).forEach { (t, s, r) ->
                 StepTile(t, s, Modifier.weight(1f)) { onPush(r) }
             }
         }
-        if (!coordinator) PartnerDelegation(workspace, eid, busy, onStart)
         if (interclubOfficer) {
             DeskLabel("Interclub officer")
             RowGroup {
@@ -253,6 +294,16 @@ private fun PartnerDelegation(workspace: JsonObject, eid: String, busy: Boolean,
             onStart("save_delegate", buildJsonObject { put("event_id", eid); put("partner_id", partnerId) }) }
         CardButton("Raise a concern", Modifier.weight(1f), enabled = !busy) { onStart("raise_concern", buildJsonObject { put("event_id", eid) }) }
     }
+    // Concerns this rep raised: waiting ones, and answered ones with DLSU's reply (migration 045 also sends a notice).
+    val myConcerns = workspace.records("interclub_concerns").filter { it.text("event_id") == eid && it.text("submitted_by") == workspace.text("user_id") }
+        .sortedByDescending { it.text("created_at") }
+    if (myConcerns.isNotEmpty()) {
+        DeskLabel("Your concerns")
+        myConcerns.forEach { c ->
+            if (c.text("status") == "open") NoticeCard("Waiting for DLSU's reply", c.text("concern"), Tone.WARNING)
+            else NoticeCard("DLSU replied", "${c.text("resolution")}\n\nYou asked: ${c.text("concern")}", Tone.POSITIVE)
+        }
+    }
     val published = icResults(workspace, eid).filter { it.text("verified_by").isNotBlank() }
     if (published.isNotEmpty()) {
         DeskLabel("Published results")
@@ -284,24 +335,27 @@ fun InterclubDelegatesScreen(workspace: JsonObject, eid: String, busy: Boolean, 
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Initials(d.text("full_name"), 40)
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(d.text("full_name"), style = MaterialTheme.typography.titleSmall)
                             Text(listOf(d.text("category"), d.text("affiliation")).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            ClubTag(workspace, d.text("partner_id"))
                         }
-                        ClubTag(workspace, d.text("partner_id"))
                     }
                     if (d.text("requirements").isNotBlank()) Text("Requirements: ${d.text("requirements")}", style = MaterialTheme.typography.bodySmall)
                     listOf("Needs" to d.text("logistical_needs"), "Equipment" to d.text("equipment_needs")).filter { it.second.isNotBlank() }.forEach { (k, v) ->
                         Text("$k: $v", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (d.text("remark").isNotBlank() && tab != "review") Text("Note: ${d.text("remark")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     when (tab) {
-                        "review" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CardButton("Not eligible", Modifier.weight(1f), danger = true, enabled = !busy) {
-                                decide = Decide("Mark ${d.text("full_name")} not eligible?", "Not eligible", "", true) { onCommand("review_delegate", delegateCommand(d, "rejected", it)) {} } }
-                            CardButton("Return", Modifier.weight(1f), enabled = !busy) {
-                                decide = Decide("What's missing?", "Return to fix", "", false) { onCommand("review_delegate", delegateCommand(d, "incomplete", it)) {} } }
-                            CardButton("Approve", Modifier.weight(1f), primary = true, enabled = !busy) {
+                        // Approve on its own row: three buttons side by side were cut to "Not" and "Appro" on a small phone.
+                        "review" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CardButton("Approve", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
                                 decide = Decide("Approve ${d.text("full_name")}?", "Approve", "Requirements checked", false) { onCommand("review_delegate", delegateCommand(d, "eligible", it)) {} } }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CardButton("Return to fix", Modifier.weight(1f), enabled = !busy) {
+                                    decide = Decide("What's missing?", "Return to fix", "", false) { onCommand("review_delegate", delegateCommand(d, "incomplete", it)) {} } }
+                                CardButton("Not eligible", Modifier.weight(1f), danger = true, enabled = !busy) {
+                                    decide = Decide("Mark ${d.text("full_name")} not eligible?", "Not eligible", "", true) { onCommand("review_delegate", delegateCommand(d, "rejected", it)) {} } }
+                            }
                         }
                         "approved" -> if (d.text("status") in setOf("eligible", "checked_in"))
                             CardButton("Substitute", Modifier.fillMaxWidth(), enabled = !busy) { onStart("substitute_delegate", d) }
@@ -328,8 +382,9 @@ fun InterclubScheduleScreen(workspace: JsonObject, eid: String, busy: Boolean, s
         if (waiting.isNotEmpty()) {
             NoticeCard("${waiting.size} archer${if (waiting.size == 1) "" else "s"} without a target", "Give each approved delegate a flight and target. Two archers can't share a target at the same time.", Tone.WARNING)
             waiting.sortedBy { it.text("full_name") }.forEach { d ->
-                DeskRow(d.text("full_name"), d.text("category"), leading = { Initials(d.text("full_name"), 36) },
-                    trailing = { ClubTag(workspace, d.text("partner_id")) }) {
+                // The club tag goes under the name: beside it, it squeezed names to one word per line (21 Nov testing).
+                DeskRow(d.text("full_name"), d.text("category"), leading = { Initials(d.text("full_name"), 36) }) {
+                    ClubTag(workspace, d.text("partner_id"))
                     if (editable) CardButton("Assign a target", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
                         onStart("assign_delegate", buildJsonObject { put("event_id", eid); put("delegate_id", d.text("id"))
                             e?.let { put("starts_at", it.text("shared_start")); put("ends_at", it.text("shared_end")) } }) }
@@ -344,11 +399,11 @@ fun InterclubScheduleScreen(workspace: JsonObject, eid: String, busy: Boolean, s
                 val d = byId[a.text("delegate_id")]
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(a.text("target_group"), Modifier.width(64.dp), style = MaterialTheme.typography.titleSmall, color = Club.forest)
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(d?.text("full_name") ?: "Delegate", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                         if (a.text("responsibility").isNotBlank()) Text(a.text("responsibility"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        d?.let { ClubTag(workspace, it.text("partner_id")) }
                     }
-                    d?.let { ClubTag(workspace, it.text("partner_id")) }
                 }
                 if (i < rows.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
             } }

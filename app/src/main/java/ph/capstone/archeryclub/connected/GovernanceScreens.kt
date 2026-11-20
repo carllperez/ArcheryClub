@@ -414,8 +414,10 @@ fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
                 }
             }
             vm?.commandEach("assign_role", items) { saved, failed ->
-                result = assignedSummary(name, saved, failed)
-                ticked = failed.mapNotNull { f -> choices.find { it.name == f.first }?.id }
+                val summary = assignedSummary(name, saved, failed)
+                // All saved: say so and close the form (21 Nov testing: it stayed open with the note scrolled out of view).
+                if (failed.isEmpty()) { vm.notify(summary); onBack() }
+                else { result = summary; vm.error(summary); ticked = failed.mapNotNull { f -> choices.find { it.name == f.first }?.id } }
             }
         }
     }) {
@@ -424,7 +426,7 @@ fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
         DeskLabel("Person")
         SelectField("Person", person, people) { person = it; ticked = emptyList(); titles = emptyMap(); result = null }
         if (standings != null && person.isNotBlank() && standings[person] != "Active")
-            Text("Not an Active member, so only the Administrator role can be given.", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
+            Text("Not an Active member, so no roles can be given. Every role, including Administrator, needs an Active membership.", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
         if (person.isNotBlank()) {
             DeskLabel("Roles")
             RowGroup { choices.forEachIndexed { i, c ->

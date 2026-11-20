@@ -2994,7 +2994,7 @@
     },
     "assign_delegate": {
       "action": "assign_delegate",
-      "label": "Assign target or group",
+      "label": "Assign a target",
       "fields": [
         {
           "name": "starts_at",
@@ -3014,7 +3014,7 @@
         },
         {
           "name": "target_group",
-          "label": "Target group",
+          "label": "Target",
           "type": "text",
           "options": [],
           "source": "",
@@ -3022,11 +3022,11 @@
         },
         {
           "name": "responsibility",
-          "label": "Responsibility",
+          "label": "Note for the archer",
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": true
         }
       ],
       "permission": "coordinator",
@@ -3067,11 +3067,11 @@
     },
     "resolve_concern": {
       "action": "resolve_concern",
-      "label": "Resolve concern",
+      "label": "Reply to concern",
       "fields": [
         {
           "name": "resolution",
-          "label": "Resolution",
+          "label": "Your reply",
           "type": "long",
           "options": [],
           "source": "",
@@ -3086,7 +3086,7 @@
       "states": [
         "open"
       ],
-      "help": ""
+      "help": "The representative who raised it gets your reply as a notice, and the concern closes."
     },
     "record_result": {
       "action": "record_result",

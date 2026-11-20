@@ -208,6 +208,17 @@ fun profileCompleteness(profile: JsonObject?): Int {
 
 data class QueueItem(val label: String, val count: Int, val route: String, val tone: Tone)
 
+/** "1 draft activity", "3 draft activities": the queue labels are plural, so with a count of one the first plural
+ *  noun is made singular ("1 partner concerns" and "1 draft activities" in 21 Nov testing). */
+fun countedLabel(count: Int, label: String): String {
+    val text = label.lowercase()
+    if (count != 1) return "$count $text"
+    val words = text.split(" ").toMutableList()
+    val i = words.indexOfFirst { it.length > 3 && it.endsWith("s") && !it.endsWith("ss") }
+    if (i >= 0) words[i] = words[i].let { if (it.endsWith("ies")) it.dropLast(3) + "y" else it.dropLast(1) }
+    return "1 " + words.joinToString(" ")
+}
+
 /** Live counts from the same records the workflows change; each tile opens its queue. */
 fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant = Instant.now()): List<QueueItem> = buildList {
     val user = workspace.text("user_id")
@@ -329,3 +340,23 @@ fun withoutControlChars(e: JsonElement): JsonElement = when (e) {
     else -> e
 }
 fun cleanText(s: String): String = s.filter { c -> c == '\t' || c == '\n' || c == '\r' || (c >= ' ' && c != '\u007F') }
+
+/** What a form is about, shown above its fields (21 Nov testing: "Resolve concern" and "Assign target" didn't say which
+ *  concern or which archer). Returns a title and a line, or null for forms that need no context. */
+fun formContext(action: String, initial: JsonObject, workspace: JsonObject): Pair<String, String>? {
+    val clubs = workspace.records("partner_clubs").associate { it.text("id") to it.text("name") }
+    return when (action) {
+        "resolve_concern" -> initial.text("concern").takeIf { it.isNotBlank() }?.let {
+            "Concern from ${clubs[initial.text("partner_id")] ?: "a partner club"}" to it }
+        "assign_delegate" -> workspace.records("delegates").find { it.text("id") == initial.text("delegate_id") }?.let { d ->
+            d.text("full_name") to listOf(clubs[d.text("partner_id")].orEmpty(), d.text("category")).filter { it.isNotBlank() }.joinToString(" · ") }
+        else -> null
+    }
+}
+
+/** The purpose-built page to continue on after saving these forms from the generic records view. */
+fun afterSaveRoute(action: String): String? = when (action) {
+    "save_event", "publish_event" -> "officer_activities"
+    "share_interclub_event", "save_partner" -> "interclub"
+    else -> null
+}

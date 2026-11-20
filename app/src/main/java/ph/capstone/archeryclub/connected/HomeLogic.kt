@@ -6,6 +6,12 @@ import java.time.temporal.ChronoUnit
 
 /* Wording for the member home. Pure functions so they are unit-tested on the JVM. */
 
+/** The club runs on Philippine time. MainActivity makes this the app's default zone at start-up, so every date,
+ *  deadline and greeting reads in Manila time even on a phone (or emulator) set to another zone (21 Nov testing:
+ *  the emulator was on GMT and said "Good evening" at 7:39 AM). */
+const val CLUB_ZONE_ID = "Asia/Manila"
+val CLUB_ZONE: ZoneId = ZoneId.of(CLUB_ZONE_ID)
+
 fun greetingFor(hour: Int): String = when (hour) { in 0..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
 
 fun firstName(fullName: String): String = fullName.trim().split(Regex("\\s+")).firstOrNull().orEmpty()

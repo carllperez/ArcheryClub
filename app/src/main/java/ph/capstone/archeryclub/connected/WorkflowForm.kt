@@ -56,6 +56,7 @@ fun WorkflowForm(form:JsonObject, initial:JsonObject, workspace:JsonObject, busy
     // Review forms follow the chosen decision: "Return" opens as "Send back for changes", not the form's "Verify" label.
     val decision=decisionLabel(form.text("label"),values["status"].orEmpty())
     ScreenShell(decision,leave,snackbar) {
+        formContext(form.text("action"),initial,workspace)?.let{(t,line)->ph.capstone.archeryclub.ui.InfoCard(t,line)}
         if(form.text("help").isNotEmpty())ph.capstone.archeryclub.ui.InfoCard("About this form",form.text("help"))
         RaisedCard{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         (form.records("fields")+if(values["status"]=="approved")correctionFields else emptyList()).forEach { field ->

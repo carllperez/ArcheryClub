@@ -130,7 +130,7 @@ fun ClubLanding(
         return
     }
     if(partnerRep&&page=="home"){
-        PartnerHome(workspace,fullName,state.busy,snackbar,bottomBar,onRoute){onRoute("partner_claim")}
+        PartnerHome(workspace,fullName,state.busy,snackbar,bottomBar,onRoute,notices,onAcknowledge){onRoute("partner_claim")}
         return
     }
     if(applicant&&page=="account"){

@@ -42,7 +42,8 @@ fun inviteViews(workspace: JsonObject, eventId: String, now: Instant, nameOf: (S
     return workspace.records("partner_invites").filter { it.text("event_id") == eventId }.sortedByDescending { it.text("created_at") }.map { v ->
         val by = v.text("claimed_by")
         InviteView(v.text("id"), v.text("code"), v.text("partner_id"), clubs[v.text("partner_id")] ?: "Partner club", inviteState(v, now),
-            if (by.isBlank()) "" else nameOf(by), instantOf(v.text("expires_at")))
+            // claimed_name (migration 045): officers can't read a partner rep's profile, so the invite keeps the name.
+            if (by.isBlank()) "" else v.text("claimed_name").ifBlank { nameOf(by) }, instantOf(v.text("expires_at")))
     }
 }
 

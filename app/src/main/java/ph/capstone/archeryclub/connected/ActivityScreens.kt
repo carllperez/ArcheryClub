@@ -141,17 +141,20 @@ fun ActivityDetailScreen(
     val v = activityView(event, workspace)
     var confirm by remember { mutableStateOf<String?>(null) }
     var celebrate by remember { mutableStateOf(false) }
+    val draft = event.text("published") != "true"
+    // A draft has no Register bar (members can't see it yet) and Publish sits on top, not under Officer tools (21 Nov testing).
     HeroScaffold(event.text("title"), onBack, snackbar, busy = busy,
-        sticky = if (isMember) ({ ActivitySticky(v, busy) { confirm = it } }) else null,
+        sticky = if (isMember && !draft) ({ ActivitySticky(v, busy) { confirm = it } }) else null,
         eyebrow = {
             StatusPill(v.status.label.uppercase(), v.status.tone())
             if (isOfficer && event.text("published") != "true") StatusPill("DRAFT", Tone.NEUTRAL)
         }) {
-        if (isOfficer && event.text("published") != "true" && onDelete != null) RaisedCard {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Draft: members can't see it yet. Publish it, or delete it if it isn't needed.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-                DeleteRecordButton("Delete draft", "Delete this draft?", "It was never published, so nobody registered. This can't be undone.", busy) { onDelete() }
+        if (isOfficer && draft) RaisedCard {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Draft: members can't see it yet. Publish it when the details are final${if (onDelete != null) ", or delete it if it isn't needed" else ""}.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                CardButton("Publish to members", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { confirm = "publish" }
+                if (onDelete != null) DeleteRecordButton("Delete draft", "Delete this draft?", "It was never published, so nobody registered. This can't be undone.", busy) { onDelete() }
             }
         }
         RaisedCard {
@@ -195,7 +198,6 @@ fun ActivityDetailScreen(
             SectionHeader("Officer tools")
             RowGroup {
                 GroupRow("users", "Manage participants", "${v.registered}", onClick = onRoster)
-                if (event.text("published") != "true") GroupRow("share", "Publish to members", onClick = { if (!busy) confirm = "publish" })
                 GroupRow("settings", "Edit activity details", onClick = { onEdit(event) })
                 if (event.text("published") == "true") GroupRow("bell", "Post an announcement", divider = false, onClick = { onAnnounce(event) })
             }

@@ -278,7 +278,7 @@ class DeskLogicTest {
         val tiles = deskTiles(w, setOf("training", "equipment"), rolesNow)
         assertEquals(listOf("Equipment", "Coach desk"), tiles.map { it.title })
         assertEquals(1, tiles[0].waiting)
-        assertEquals("1 borrowing requests", tiles[0].detail)
+        assertEquals("1 borrowing request", tiles[0].detail)
         assertEquals(0, tiles[1].waiting)
         assertEquals("Check training rounds", tiles[1].detail)
         assertEquals("training_desk", tiles[1].route)
@@ -490,5 +490,17 @@ class DeskLogicTest {
         assertNull(ownFeeReminder(w(pay("pending_verification")), today)) // being checked: nothing to do
         assertEquals("Fix payment", ownFeeReminder(w(pay("returned_for_correction")), today)!!.action)
         assertNull(ownFeeReminder(ws(), today))
+    }
+
+    @Test fun anExpiredCopyOfARoleHeldAgainDoesNotMakeTheRowExpired() {
+        val now = Instant.parse("2026-11-21T00:00:00Z")
+        val w = ws("roles" to listOf(obj("id" to "interclub", "name" to "Interclub officer")),
+            "member_directory" to listOf(obj("user_id" to "r", "full_name" to "Riane")),
+            "role_assignments" to listOf(
+                obj("id" to "old", "user_id" to "r", "role_id" to "interclub", "position" to "", "ends_at" to "2026-11-10T00:00:00Z", "retired_at" to ""),
+                obj("id" to "new", "user_id" to "r", "role_id" to "interclub", "position" to "", "ends_at" to "2027-06-30T00:00:00Z", "retired_at" to "")))
+        val riane = officerViews(w, now).single()
+        assertEquals(TermState.ACTIVE, riane.worst)
+        assertEquals(1, riane.duplicates)
     }
 }

@@ -343,8 +343,11 @@ data class RoleLine(val assignment: JsonObject, val roleName: String, val title:
 
 /** Everyone with an officer role, once each, with the roles they hold. */
 data class OfficerView(val userId: String, val name: String, val roles: List<RoleLine>) {
-    val worst: TermState get() = TermState.values()[roles.maxOf { it.state.ordinal }]
-    val nearestEnd: Instant? get() = roles.filter { it.state == worst }.mapNotNull { it.ends }.minOrNull()
+    /** The row's status comes from the terms that count: an expired copy of a role the person holds again (a duplicate)
+     *  made the row say "Expired" although the current term was fine (21 Nov testing). */
+    private val current: List<RoleLine> get() = roles.filter { !it.duplicate }.ifEmpty { roles }
+    val worst: TermState get() = TermState.values()[current.maxOf { it.state.ordinal }]
+    val nearestEnd: Instant? get() = current.filter { it.state == worst }.mapNotNull { it.ends }.minOrNull()
     val roleNames: List<String> get() = roles.map { it.roleName }.distinct()
     val duplicates: Int get() = roles.count { it.duplicate }
 }
@@ -492,7 +495,7 @@ fun deskTiles(workspace: JsonObject, permissions: Set<String>, now: Instant): Li
         val queues = officerQueues(workspace, setOf(p), now).filter { it.count > 0 }
         val desk = DESKS.first { it.permission == p }
         DeskTile(p, desk.title, deskRoute(p), queues.sumOf { it.count },
-            if (queues.isEmpty()) desk.detail else queues.take(2).joinToString(" · ") { "${it.count} ${it.label.lowercase()}" },
+            if (queues.isEmpty()) desk.detail else queues.take(2).joinToString(" · ") { countedLabel(it.count, it.label) },
             queues.any { it.tone == Tone.DANGER })
     }
 
@@ -529,7 +532,7 @@ fun officerFocus(workspace: JsonObject, permissions: Set<String>, now: Instant):
                 (workspace.records("equipment").find { it.text("id") == b.text("equipment_id") }?.text("label") ?: "Club equipment") +
                     " · from ${day(b.instant("starts_at"))}$more", "equipment", "Review request") }
         else -> null
-    } ?: OfficerFocus("NEEDS YOU FIRST", "${q.count} ${q.label.lowercase()}", deskFor(q.route).takeIf { it.isNotEmpty() }?.let(::deskTitle) ?: "Your desk", q.route, "Open")
+    } ?: OfficerFocus("NEEDS YOU FIRST", countedLabel(q.count, q.label), deskFor(q.route).takeIf { it.isNotEmpty() }?.let(::deskTitle) ?: "Your desk", q.route, "Open")
 }
 
 private fun deskFor(route: String): String = when (route) {

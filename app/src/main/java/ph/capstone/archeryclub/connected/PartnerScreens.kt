@@ -84,7 +84,7 @@ fun PartnerClaimScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarH
 /** A partner representative's Home: the events they were invited to, and nothing from the club's own records. */
 @Composable
 fun PartnerHome(workspace: JsonObject, fullName: String, busy: Boolean, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit,
-                onRoute: (String) -> Unit, onPartner: () -> Unit) {
+                onRoute: (String) -> Unit, updates: List<JsonObject> = emptyList(), onAcknowledge: (JsonObject) -> Unit = {}, onPartner: () -> Unit) {
     val me = workspace.text("user_id")
     val events = partnerEvents(workspace)
     val clubs = workspace.records("partner_clubs").associate { it.text("id") to it.text("name") }
@@ -93,6 +93,12 @@ fun PartnerHome(workspace: JsonObject, fullName: String, busy: Boolean, snackbar
     HeroScaffold(if (fullName.isBlank() || fullName == "Club account") "Welcome" else "Welcome, ${firstName(fullName)}", snackbar = snackbar, busy = busy, bottomBar = bottomBar,
         eyebrow = { Pill(("PARTNER REPRESENTATIVE" + if (myClub.isNotBlank()) " · ${myClub.uppercase()}" else ""), Club.lime, Club.forestDeep) },
         heroExtra = { Text("DLSU Archery Club events you're representing your club at.", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
+        // Replies from DLSU (a resolved concern, migration 045) and other notices, on top so they are not missed.
+        if (updates.isNotEmpty()) {
+            DeskLabel("Updates from DLSU")
+            updates.forEach { n -> NoticeItem(n, busy, onOpen = { onAcknowledge(n); onRoute("interclub:${n.text("record_id")}") }, onAcknowledge = { onAcknowledge(n) }) }
+            DeskLabel("Your events")
+        }
         if (events.isEmpty()) EmptyState("No events yet", "Your invitation may have been withdrawn. Ask the host club for a new code.", "Enter another code", onPartner)
         events.forEach { e ->
             val mine = icDelegates(workspace, e.text("event_id")).size

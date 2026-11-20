@@ -174,7 +174,12 @@ fun ConnectedApp(vm:SystemViewModel){
         val route=routeStack.substringAfterLast('|')
         editing?.let{(form,initial)->
             WorkflowForm(form,initial,workspace,state.busy,onBack={editingVar=null},onSubmit={payload->
-                vm.command(form.text("action"),payload){editingVar=null;leaveRecord()}
+                vm.command(form.text("action"),payload){
+                    editingVar=null;leaveRecord()
+                    // Saved from the generic records view: continue on the purpose-built page instead of the raw
+                    // record list ("Refresh records"), which is where a new activity used to land (21 Nov testing).
+                    if(moduleVar!=0&&stackVar.isEmpty())afterSaveRoute(form.text("action"))?.let{moduleVar=0;selectedVar=null;returnToLanding=false;stackVar=it}
+                }
             },snackbar=snackbar)
             return
         }

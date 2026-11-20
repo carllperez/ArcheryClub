@@ -161,4 +161,30 @@ class WorkflowLogicTest {
         assertEquals("Shoot", cleaned.text("title")); assertEquals("20", cleaned.text("capacity"))
         assertEquals("ab", ((cleaned["tags"] as JsonArray)[0] as JsonPrimitive).content)
     }
+
+    @Test fun countsReadAsSingularForOne() {
+        assertEquals("1 draft activity", countedLabel(1, "Draft activities"))
+        assertEquals("1 partner concern", countedLabel(1, "Partner concerns"))
+        assertEquals("1 delegate to review", countedLabel(1, "Delegates to review"))
+        assertEquals("1 overdue return", countedLabel(1, "Overdue returns"))
+        assertEquals("3 draft activities", countedLabel(3, "Draft activities"))
+        assertEquals("1 ready to hand over", countedLabel(1, "Ready to hand over"))
+    }
+
+    @Test fun formsSayWhichConcernOrArcherTheyAreFor() {
+        val w = buildJsonObject {
+            put("partner_clubs", JsonArray(listOf(buildJsonObject { put("id", "up"); put("name", "UP Archery Club") })))
+            put("delegates", JsonArray(listOf(buildJsonObject { put("id", "d1"); put("partner_id", "up"); put("full_name", "Ana Dela Cruz"); put("category", "Recurve") })))
+        }
+        assertEquals("Concern from UP Archery Club" to "Arrive at 8:30?",
+            formContext("resolve_concern", buildJsonObject { put("partner_id", "up"); put("concern", "Arrive at 8:30?") }, w))
+        assertEquals("Ana Dela Cruz" to "UP Archery Club · Recurve", formContext("assign_delegate", buildJsonObject { put("delegate_id", "d1") }, w))
+        assertNull(formContext("save_event", buildJsonObject {}, w))
+    }
+
+    @Test fun savingFromRecordsContinuesOnTheRightPage() {
+        assertEquals("officer_activities", afterSaveRoute("save_event"))
+        assertEquals("interclub", afterSaveRoute("share_interclub_event"))
+        assertNull(afterSaveRoute("save_profile"))
+    }
 }

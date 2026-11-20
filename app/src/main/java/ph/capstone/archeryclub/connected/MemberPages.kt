@@ -184,6 +184,7 @@ fun NoticeItem(notice: JsonObject, busy: Boolean, onOpen: () -> Unit, onAcknowle
         "9" -> NoticeStyle("ELECTIONS", "vote", Club.roseSoft, Club.roseInk)
         "11", "4" -> NoticeStyle("TRAINING", "target", Club.mint, Club.forest)
         "12" -> NoticeStyle("FEES", "money", Club.amberSoft, Club.amberInk)
+        "15" -> NoticeStyle("INTERCLUB", "users", Club.mint, Club.forest)
         else -> NoticeStyle("CLUB", "bell", Club.mint, Club.forest)
     }
     RaisedCard(radius = 18.dp) {

@@ -961,3 +961,32 @@ test('Interclub 20 Nov: partner reps join with a single-use invite code, not the
  // The officer sees the codes; the rep sees only their own.
  await as('uprep',async()=>assert.equal((await db.query('select * from app_private.partner_invites')).rows.length,1));
 });
+test('Interclub 21 Nov: a concern\'s reply reaches the rep, responsibility is optional, the invite keeps the rep\'s name',async()=>{
+ ids.uprep3='00000000-0000-4000-8000-000000000095';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.uprep3,'third.rep@example.test']);
+ await as('uprep3',()=>db.exec('select public.initialize_account()'));
+ const e=await command('officer','save_event',{title:'Concern reply fixture',description:'Synthetic',venue:'Range',starts_at:future(48),ends_at:future(52),registration_opens:future(-1),registration_closes:future(40),capacity:20});
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e.id,shared_details:'Shared',requirements:'School ID',registration_closes:future(30),rules:'Rules'});
+ const p=await command('officer','save_partner',{name:'Concern Reply College',official_channel:'crc@example.test'});
+ const call=(person,name,data)=>rpc(person,name,[JSON.stringify(data)],'$1::jsonb');
+ const inv=await call('officer','create_partner_invite',{event_id:e.id,partner_id:p.id});
+ assert.equal((await call('uprep3','claim_partner_invite',{full_name:'Rita Rep',university:'Concern Reply College',phone:'09171234567',code:inv.code})).ok,true);
+ // The officer can't read the rep's profile, so the invite keeps the name the rep gave.
+ await as('officer',async()=>assert.equal((await db.query('select claimed_name from app_private.partner_invites where id=$1',[inv.id])).rows[0].claimed_name,'Rita Rep'));
+ // An archer's target needs no "responsibility".
+ const d=await command('uprep3','save_delegate',{event_id:e.id,partner_id:p.id,full_name:'Ben Bowman',affiliation:'CRC',category:'Recurve',requirements:'School ID'});
+ await command('officer','review_delegate',{event_id:e.id,id:d.id,version:1,status:'eligible',remark:'Requirements checked'});
+ const ev=(await db.query('select shared_start,shared_end from app_private.interclub_events where event_id=$1',[e.id])).rows[0];
+ const a=await command('officer','assign_delegate',{event_id:e.id,delegate_id:d.id,starts_at:ev.shared_start.toISOString(),ends_at:ev.shared_end.toISOString(),target_group:'Target 3A'});
+ assert.equal((await row('interclub_assignments',a.id)).responsibility,'');
+ // The rep's concern, answered: the rep gets a notice with the reply and still sees the answered concern.
+ const c=await command('uprep3','raise_concern',{event_id:e.id,concern:'Can Ben arrive at 8:30 for equipment check?'});
+ await command('officer','resolve_concern',{event_id:e.id,id:c.id,resolution:'Yes, the range opens at 8:30.'});
+ await as('uprep3',async()=>{
+  const n=(await db.query("select message from app_private.notifications where user_id=$1 and kind='interclub'",[ids.uprep3])).rows;
+  assert.equal(n.length,1); assert.match(n[0].message,/Concern reply fixture: Yes, the range opens at 8:30\./);
+  const mine=(await db.query('select status,resolution from app_private.interclub_concerns where id=$1',[c.id])).rows[0];
+  assert.equal(mine.status,'resolved'); assert.equal(mine.resolution,'Yes, the range opens at 8:30.');
+ });
+});
