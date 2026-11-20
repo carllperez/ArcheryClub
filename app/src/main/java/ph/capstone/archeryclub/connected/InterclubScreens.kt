@@ -94,7 +94,7 @@ private fun delegateCommand(d: JsonObject, status: String, note: String) = build
 fun InterclubScreen(
     workspace: JsonObject, id: String, busy: Boolean, snackbar: SnackbarHostState, coordinator: Boolean, interclubOfficer: Boolean,
     onBack: () -> Unit, onOpen: (String) -> Unit, onPush: (String) -> Unit, onStart: (String, JsonObject) -> Unit,
-    onCommand: (String, JsonObject, () -> Unit) -> Unit, onRecords: () -> Unit,
+    onCommand: (String, JsonObject, () -> Unit) -> Unit, onRecords: () -> Unit, vm: SystemViewModel? = null,
 ) {
     val events = workspace.records("interclub_events")
     val e = if (id.isNotBlank()) events.find { it.text("event_id") == id } else featuredInterclub(events.filter { it.text("status") != "archived" }, Instant.now())
@@ -124,6 +124,7 @@ fun InterclubScreen(
         listOf("shared_details", "shared_venue", "shared_start", "shared_end").forEach { put(it, e.text(it)) }
     }) {}
     var confirmStage by remember { mutableStateOf<String?>(null) }
+    var newInvite by remember { mutableStateOf(false) }
     HeroScaffold(e.text("shared_title"), onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("INTERCLUB", Color.White.copy(alpha = .16f), Color.White)
             Pill(when (status) { "preparation" -> "PREPARATION"; "active" -> "EVENT DAY"; "completed" -> "FINISHED"; else -> "ARCHIVED" }, Club.amberSoft, Club.amberInk) },
@@ -144,7 +145,7 @@ fun InterclubScreen(
         }
         // The current step's job, on top, so whoever opens the event knows the one thing to do.
         if (coordinator && next != null) Surface(onClick = {
-            when { next.route != null -> onPush(next.route); next.step == IC_INVITE -> onStart("invite_partner", buildJsonObject { put("event_id", eid) })
+            when { next.route != null -> onPush(next.route); next.step == IC_INVITE -> newInvite = true
                 next.step == IC_ARCHIVE -> onStart("archive_interclub", e) }
         }, shape = RoundedCornerShape(16.dp), color = Club.forestDeep, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -161,8 +162,8 @@ fun InterclubScreen(
             "preparation" -> if (step >= IC_SCHEDULE) CardButton("Start the event day", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { confirmStage = "active" }
             "active" -> CardButton("Finish the event", Modifier.fillMaxWidth(), enabled = !busy) { confirmStage = "completed" }
         }
-        DeskLabel("Partner clubs", if (interclubOfficer && status == "preparation") "Invite" else null) { onStart("invite_partner", buildJsonObject { put("event_id", eid) }) }
-        if (partners.isEmpty()) EmptyState("No partner clubs yet", "Invite a club's representative. They only ever see this event.")
+        DeskLabel("Partner clubs", if (interclubOfficer && status == "preparation") "Invite" else null) { newInvite = true }
+        if (partners.isEmpty()) EmptyState("No partner clubs yet", "Create an invite code for a club's representative. They only ever see this event.")
         else RowGroup { partners.forEachIndexed { i, p ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ClubBadge(p.partner.text("name"), p.partner.text("id"))
@@ -175,6 +176,8 @@ fun InterclubScreen(
             }
             if (i < partners.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
         } }
+        // Invite codes replace inviting by email: holding the code, not the email address, makes someone the rep.
+        if (coordinator) PartnerInvites(workspace, e, busy, vm, interclubOfficer && status == "preparation", newInvite) { newInvite = false }
         concerns.forEach { c ->
             NoticeCard("Concern from ${partnerName[c.text("partner_id")] ?: "a partner"}", c.text("concern"), Tone.WARNING)
             if (coordinator) CardButton("Reply and close", Modifier.fillMaxWidth(), enabled = !busy) { onStart("resolve_concern", c) }

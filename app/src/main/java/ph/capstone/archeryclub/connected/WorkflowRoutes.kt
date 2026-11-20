@@ -104,6 +104,7 @@ fun WorkflowRoute(
         "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles:$it") },
             onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "partner_claim" -> PartnerClaimScreen(workspace, busy, snackbar, vm, onBack) { onBack() }
         "accounts" -> if (allowed("administration")) AccountsScreen(workspace, busy, snackbar, vm, onBack) { onPush("assign_roles:$it") }
             else denied("Administrators only", "Only administrators manage accounts.")
         "activity_log" -> if (allowed("administration")) ActivityLogScreen(workspace, snackbar, onBack) { onGo("records:14") }
@@ -123,7 +124,7 @@ fun WorkflowRoute(
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "setup_fees" -> if (allowed("administration") || allowed("finance")) SetupFeesScreen(workspace, busy, snackbar, perms, vm, onBack, onCommand)
             else denied("Treasurer or administrators only", "Your current role can't change fees or payment details.")
-        "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onPush, onStart, onCommand) { onGo("records:15") }
+        "interclub" -> InterclubScreen(workspace, id, busy, snackbar, allowed("coordinator"), allowed("interclub"), onBack, { onPush("interclub:$it") }, onPush, onStart, onCommand, { onGo("records:15") }, vm)
         // The steps' own pages. The database limits each to event staff, so a partner who reaches one sees nothing extra.
         "ic_delegates" -> if (allowed("coordinator")) InterclubDelegatesScreen(workspace, id, busy, snackbar, onBack, onStart, onCommand) else denied("Delegates", "Only the event's coordinators review delegates.")
         "ic_schedule" -> if (allowed("coordinator")) InterclubScheduleScreen(workspace, id, busy, snackbar, onBack, onStart) else denied("Schedule", "Only the event's coordinators assign targets.")

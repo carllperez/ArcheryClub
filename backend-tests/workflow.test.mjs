@@ -922,3 +922,42 @@ test('Payments 20 Nov: the "pay your fee" notice closes when the payment is sent
  await command('officer','verify_financial_request',{id:p.id,version:await v(),status:'verified',remark:'OK'});
  assert.equal(await open(),false,'verified stays done');
 });
+
+test('Interclub 20 Nov: partner reps join with a single-use invite code, not the DLSU application',async()=>{
+ ids.uprep='00000000-0000-4000-8000-000000000097';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.uprep,'up.rep@example.test']);
+ await as('uprep',()=>db.exec('select public.initialize_account()'));
+ const e=await command('officer','save_event',{title:'Invite code fixture',description:'Synthetic',venue:'Range',starts_at:future(48),ends_at:future(52),registration_opens:future(-1),registration_closes:future(40),capacity:20});
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e.id,shared_details:'Shared',requirements:'School ID',registration_closes:future(30),rules:'Rules'});
+ const p=await command('officer','save_partner',{name:'Invite Code University',official_channel:'icu@example.test'});
+ const call=(person,name,data)=>rpc(person,name,[JSON.stringify(data)],'$1::jsonb');
+ await denied(()=>call('applicant','create_partner_invite',{event_id:e.id,partner_id:p.id}),/interclub staff/);
+ const inv=await call('officer','create_partner_invite',{event_id:e.id,partner_id:p.id});
+ assert.match(inv.code,/^[0-9A-F]{4}-[0-9A-F]{4}$/);
+ const details={full_name:'Uma Partner',university:'Invite Code University',phone:'0917 123 4567'};
+ // A DLSU member or applicant can't become another club's representative (one person, one club).
+ await denied(()=>call('applicant','claim_partner_invite',{...details,code:inv.code}),/member or applicant/);
+ await denied(()=>call('uprep','claim_partner_invite',{...details,phone:'8123-4567',code:inv.code}),/Philippine mobile/);
+ assert.equal((await call('uprep','claim_partner_invite',{...details,code:'0000-0000'})).ok,false);
+ const ok=await call('uprep','claim_partner_invite',{...details,code:inv.code.toLowerCase().replace('-',' ')});
+ assert.equal(ok.ok,true); assert.equal(ok.event_id,e.id);
+ const prof=await row('profiles',ids.uprep);
+ assert.equal(prof.account_type,'partner'); assert.equal(prof.university,'Invite Code University'); assert.equal(prof.full_name,'Uma Partner');
+ // The code is now spent for anyone else, and the rep can add delegates for their own club only.
+ ids.uprep2='00000000-0000-4000-8000-000000000096';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.uprep2,'second.rep@example.test']);
+ await as('uprep2',()=>db.exec('select public.initialize_account()'));
+ assert.equal((await call('uprep2','claim_partner_invite',{...details,code:inv.code})).ok,false);
+ await command('uprep','save_delegate',{event_id:e.id,partner_id:p.id,full_name:'Ana Archer',affiliation:'ICU',category:'Recurve',requirements:'School ID'});
+ // A cancelled code can't be claimed; a used one can't be cancelled.
+ const second=await call('officer','create_partner_invite',{event_id:e.id,partner_id:p.id});
+ await call('officer','revoke_partner_invite',{id:second.id});
+ assert.equal((await call('uprep','claim_partner_invite',{...details,code:second.code})).ok,false);
+ await denied(()=>call('officer','revoke_partner_invite',{id:inv.id}),/already used/);
+ // Guessing is limited: 8 wrong codes in an hour locks claiming.
+ for(let k=0;k<6;k++) await call('uprep','claim_partner_invite',{...details,code:'FFFF-000'+k});
+ await denied(()=>call('uprep','claim_partner_invite',{...details,code:'FFFF-0009'}),/Too many/);
+ // The officer sees the codes; the rep sees only their own.
+ await as('uprep',async()=>assert.equal((await db.query('select * from app_private.partner_invites')).rows.length,1));
+});

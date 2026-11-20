@@ -114,8 +114,10 @@ fun ClubLanding(
     val applicant=!staff&&!isMember&&!hasModule(15)
     // Officers who are members keep the member tabs; their desks live on Home. Officers without a membership get Home and Profile.
     // Gear and Announcements open from cards on Home (Borrow Club Gear, View all announcements), each with a back arrow.
+    // Partner representatives (invite code, migration 044) only ever see the events they were invited to.
+    val partnerRep=!staff&&!isMember&&partnerEvents(workspace).isNotEmpty()
     val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","account" to "Profile")
-        else if(applicant||staff)listOf("home" to "Home","account" to "Profile")
+        else if(applicant||staff||partnerRep)listOf("home" to "Home","account" to "Profile")
         else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
         ClubBottomBar(tabs,page,mapOf("account" to notices.size)){onPage(it)}
@@ -125,6 +127,10 @@ fun ClubLanding(
     if(isMember&&!welcomed&&page=="home"&&workspace.records("applications").any{it.text("user_id")==user}){
         val paid=workspace.records("fee_assessments").find{it.text("user_id")==user&&it.text("purpose")=="Membership fee"&&it.text("payment_id").isNotBlank()}
         WelcomeActive(firstName(fullName),paid?.let{peso(it.amount())}){context.clubPrefs().edit().putBoolean(welcomedKey(user),true).apply();welcomed=true}
+        return
+    }
+    if(partnerRep&&page=="home"){
+        PartnerHome(workspace,fullName,state.busy,snackbar,bottomBar,onRoute){onRoute("partner_claim")}
         return
     }
     if(applicant&&page=="account"){
@@ -143,7 +149,7 @@ fun ClubLanding(
         return
     }
     if(applicant&&page!="notices"){
-        ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery,vm)
+        ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery,vm){onRoute("partner_claim")}
         return
     }
     if(isMember&&page=="account"){

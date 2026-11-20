@@ -216,7 +216,7 @@ private fun Modifier.verticalScrollable() = this.verticalScroll(androidx.compose
 fun ApplicantHome(
     workspace: JsonObject, fullName: String, noticeCount: Int, state: SystemState, snackbar: SnackbarHostState, bottomBar: @Composable () -> Unit,
     onPage: (String) -> Unit, onModule: (Int) -> Unit, onCommand: (String, JsonObject) -> Unit, recovery: @Composable () -> Unit,
-    vm: SystemViewModel? = null,
+    vm: SystemViewModel? = null, onPartner: () -> Unit = {},
 ) {
     val user = workspace.text("user_id")
     val membership = workspace.records("memberships").find { it.text("user_id") == user }
@@ -266,6 +266,8 @@ fun ApplicantHome(
                 }
             }
         }
+        // Someone here for another university's club leaves the DLSU application for the invite-code path (migration 044).
+        if (membership == null && view.stage in setOf(ApplicationStage.NOT_STARTED, ApplicationStage.DRAFT)) PartnerChoiceCard(onPartner)
         // Notices live in Profile (its tab shows the count), so Home keeps only the application.
         if (view.stage != ApplicationStage.NOT_STARTED && (pendingPayment || !view.stage.editable))
             TextButton(onClick = { onModule(2) }, modifier = Modifier.fillMaxWidth()) { Text("View what I submitted") }

@@ -99,6 +99,9 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     fun rpc(name:String,data:JsonObject,onDone:(JsonElement)->Unit)=runAction {val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onDone(result)}}
     /** An RPC that changes club data: run it, then reload the workspace so screens show the change. */
     fun save(name:String,data:JsonObject,onDone:()->Unit={})=runAction {gateway.rpc(name,data);withContext(Dispatchers.Main){onDone()};refreshAfterSave(null)}
+    /** Like save, but hands back what the server returned (e.g. a new invite code, or {ok:false,message} for a wrong code). */
+    fun saveForResult(name:String,data:JsonObject,onResult:(JsonElement)->Unit)=runAction {
+        val result=gateway.rpc(name,data);withContext(Dispatchers.Main){onResult(result)};refreshAfterSave(null)}
     fun upload(context:Context,uri:Uri,module:Int,record:String,requirement:String,onDone:()->Unit={})=runAction {
         gateway.upload(context,uri,module,record,requirement)
         withContext(Dispatchers.Main){onDone()}
