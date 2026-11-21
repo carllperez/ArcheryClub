@@ -3189,7 +3189,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "What was held, when, who took part, the final standings in one line."
         },
         {
           "name": "procedures",
@@ -3197,7 +3198,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "How the day ran: registration, equipment check, flights, scoring."
         },
         {
           "name": "agreements",
@@ -3205,7 +3207,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "What DLSU and the partner clubs agreed on (venue, costs, rules)."
         },
         {
           "name": "approval_references",
@@ -3213,7 +3216,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Approval or permit numbers, e.g. the OSA activity approval."
         },
         {
           "name": "minutes",
@@ -3221,7 +3225,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Where the meeting minutes are kept, or a short note of decisions."
         },
         {
           "name": "issues",
@@ -3229,7 +3234,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Problems on the day and how they were handled. \"None\" if there were none."
         },
         {
           "name": "evaluation",
@@ -3237,7 +3243,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "What went well and what didn't."
         },
         {
           "name": "recommendations",
@@ -3245,7 +3252,8 @@
           "type": "long",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "What to do differently next time."
         }
       ],
       "permission": "coordinator",
@@ -3256,7 +3264,7 @@
       "states": [
         "completed"
       ],
-      "help": ""
+      "help": "This is what the next officers will read when they plan the same event. A line or two per box is enough; write \"None\" where nothing applies."
     }
   }
 }

@@ -131,11 +131,18 @@ fun OfficerHome(
                             Text(session.event.text("title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text("${fmtTime(session.start)} · ${session.event.text("venue")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (session.capacity > 0) SlotBar(session.registered, session.capacity)
-                            Text(if (live) "${session.present} of ${session.registered} checked in" else "${session.registered} of ${session.capacity} registered",
+                            // A shared interclub event has two check-ins: DLSU members here, partner delegates on the
+                            // Interclub page. Say whose count this is (21 Nov testing: "0 of 0" looked like a missed step).
+                            val shared = workspace.records("interclub_events").any { it.text("event_id") == session.id }
+                            Text((if (shared) "DLSU members: " else "") + (if (live) "${session.present} of ${session.registered} checked in" else "${session.registered} of ${session.capacity} registered"),
                                 style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            if (shared) Text("Partner clubs' delegates check in on the Interclub page.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     PillButton(if (live) "Take attendance" else "Manage participants", { onRoute("activity:${session.id}|roster:${session.id}") })
+                    if (workspace.records("interclub_events").any { it.text("event_id") == session.id } && "interclub" in permissions)
+                        TextButton(onClick = { onRoute("interclub:${session.id}") }) { Text("Open the interclub check-in") }
                 }
             }
         }

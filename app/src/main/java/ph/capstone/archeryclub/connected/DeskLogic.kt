@@ -352,7 +352,7 @@ data class OfficerView(val userId: String, val name: String, val roles: List<Rol
      *  officer with a valid role doesn't read as expired (21 Nov testing: Riane's Interclub role runs to May). */
     fun expiredLabel(day: (Instant?) -> String): String {
         val lapsed = current.count { it.state == TermState.EXPIRED }
-        return if (lapsed == current.size) "Expired ${day(nearestEnd)}" else "$lapsed role${if (lapsed == 1) "" else "s"} expired ${day(nearestEnd)}"
+        return if (lapsed == current.size) "Expired ${day(nearestEnd)}" else "$lapsed expired ${day(nearestEnd)}"
     }
     val roleNames: List<String> get() = roles.map { it.roleName }.distinct()
     val duplicates: Int get() = roles.count { it.duplicate }

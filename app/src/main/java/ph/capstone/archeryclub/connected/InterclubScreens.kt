@@ -460,6 +460,7 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
         val unverified = results.count { it.text("verified_by").isBlank() }
         val cats = results.mapNotNull { byId[it.text("delegate_id")]?.text("category") }.distinct().sorted()
         var cat by rememberSaveable { mutableStateOf("") }
+        var confirmVerify by remember { mutableStateOf<JsonObject?>(null) }
         val shown = if (cat.isBlank()) results else results.filter { byId[it.text("delegate_id")]?.text("category") == cat }
         val (bannerTitle, bannerTone) = resultsBanner(results)
         NoticeCard(bannerTitle, "A result shows to partner clubs only after someone other than the person who recorded it verifies it against the signed scoresheet.", bannerTone)
@@ -481,7 +482,8 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
                     verified -> Text("✓ Verified", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Club.forest)
                     // The recorder can't verify their own entry (the server refuses), so say who does instead of a button.
                     recordedByMe(r, workspace) -> Text("Another officer\nverifies", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Club.amberInk, textAlign = TextAlign.End)
-                    else -> TextButton(onClick = { onCommand("verify_result", buildJsonObject { put("event_id", eid); put("id", r.text("id")) }) {} }, enabled = !busy,
+                    // Verifying publishes the result to the partner clubs, so it asks first (21 Nov testing).
+                    else -> TextButton(onClick = { confirmVerify = r }, enabled = !busy,
                         contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Verify", fontWeight = FontWeight.ExtraBold) }
                 }
             }
@@ -496,6 +498,12 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
             }
         }
         if (results.isEmpty() && toRecord.isEmpty()) EmptyState("No results yet", "Archers who checked in appear here to have their score recorded.")
+        confirmVerify?.let { r ->
+            val who = byId[r.text("delegate_id")]?.text("full_name") ?: "this archer"
+            ConfirmDialog("Verify $who's result?", "${r.text("result")}\n\nCheck it against the signed scoresheet. Once verified, the partner clubs see it.",
+                "Verify", onConfirm = { confirmVerify = null; onCommand("verify_result", buildJsonObject { put("event_id", eid); put("id", r.text("id")) }) {} },
+                onDismiss = { confirmVerify = null })
+        }
     }
 
 // ---------------------------------------------------------------- Past events

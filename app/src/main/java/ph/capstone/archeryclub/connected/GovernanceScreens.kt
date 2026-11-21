@@ -295,7 +295,8 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         officers.forEach { o ->
             val open = expanded == o.userId
             val (label, tone) = when (o.worst) {
-                TermState.EXPIRED -> o.expiredLabel(::fmtDay) to Tone.DANGER
+                // Short date ("Nov 20") so the label leaves room for the officer's name.
+                TermState.EXPIRED -> o.expiredLabel { it?.atZone(java.time.ZoneId.systemDefault())?.format(java.time.format.DateTimeFormatter.ofPattern("MMM d")).orEmpty() } to Tone.DANGER
                 TermState.ENDING -> "Ends ${fmtDay(o.nearestEnd)}" to Tone.WARNING
                 TermState.ACTIVE -> "${o.roleNames.size} role${if (o.roleNames.size == 1) "" else "s"}" to Tone.NEUTRAL
             }

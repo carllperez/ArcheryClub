@@ -146,12 +146,13 @@ fun ActivityDetailScreen(
     HeroScaffold(event.text("title"), onBack, snackbar, busy = busy,
         sticky = if (isMember && !draft) ({ ActivitySticky(v, busy) { confirm = it } }) else null,
         eyebrow = {
-            StatusPill(v.status.label.uppercase(), v.status.tone())
-            if (isOfficer && event.text("published") != "true") StatusPill("DRAFT", Tone.NEUTRAL)
+            // A draft shows only DRAFT: "OPEN" next to it suggested members could already register (21 Nov testing).
+            if (draft) StatusPill("DRAFT", Tone.NEUTRAL) else StatusPill(v.status.label.uppercase(), v.status.tone())
         }) {
         if (isOfficer && draft) RaisedCard {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Draft: members can't see it yet. Publish it when the details are final${if (onDelete != null) ", or delete it if it isn't needed" else ""}.",
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Not published yet", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                Text("Members can't see it. Publish it when the details are final${if (onDelete != null) ", or delete it if it isn't needed" else ""}.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 CardButton("Publish to members", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { confirm = "publish" }
                 if (onDelete != null) DeleteRecordButton("Delete draft", "Delete this draft?", "It was never published, so nobody registered. This can't be undone.", busy) { onDelete() }
@@ -355,10 +356,13 @@ fun OfficerActivitiesContent(workspace: JsonObject, onOpen: (String) -> Unit, on
     val drafts = all.filter { it.event.text("published") != "true" }.sortedBy { it.start }
     val upcoming = all.filter { it.event.text("published") == "true" && it.end?.isAfter(now) == true }.sortedBy { it.start }
     val past = all.filter { it.event.text("published") == "true" && it.end?.isAfter(now) != true }.sortedByDescending { it.start }
+    // A new activity starts as a draft: show the Drafts tab when one is added, so it's in view after saving (21 Nov testing).
+    var draftCount by rememberSaveable { mutableStateOf(drafts.size) }
+    LaunchedEffect(drafts.size) { if (drafts.size > draftCount) tab = "drafts"; draftCount = drafts.size }
     PrimaryAction("Create activity", onClick = onCreate)
     TileRow {
         StatTile("${upcoming.size}", "Upcoming", Modifier.weight(1f).fillMaxHeight()) { tab = "upcoming" }
-        StatTile("${upcoming.sumOf { it.registered }}", "Registrations", Modifier.weight(1f).fillMaxHeight())
+        StatTile("${upcoming.sumOf { it.registered }}", "Signed up", Modifier.weight(1f).fillMaxHeight())
         StatTile("${drafts.size}", "Drafts", Modifier.weight(1f).fillMaxHeight(), if (drafts.isNotEmpty()) Tone.WARNING else Tone.NEUTRAL) { tab = "drafts" }
     }
     ChoiceChips(listOf("upcoming" to "Upcoming", "drafts" to "Drafts", "past" to "Past"), tab) { tab = it }

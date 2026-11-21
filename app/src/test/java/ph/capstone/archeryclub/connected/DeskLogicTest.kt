@@ -507,7 +507,7 @@ class DeskLogicTest {
             "role_assignments" to listOf(
                 obj("id" to "a", "user_id" to "r", "role_id" to "interclub", "position" to "", "ends_at" to "2027-05-31T00:00:00Z", "retired_at" to ""),
                 obj("id" to "b", "user_id" to "r", "role_id" to "membership", "position" to "", "ends_at" to "2026-11-20T00:00:00Z", "retired_at" to "")))
-        assertEquals("1 role expired Nov 20", officerViews(w2, now).single().expiredLabel { "Nov 20" })
+        assertEquals("1 expired Nov 20", officerViews(w2, now).single().expiredLabel { "Nov 20" })
         assertEquals(1, riane.duplicates)
     }
 }
