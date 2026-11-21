@@ -41,4 +41,4 @@ fun filterAccounts(accounts: List<AccountView>, filter: AccountFilter, query: St
 }
 
 /** "Active member", "Pending payment", "Not a member" — the line under each name. */
-fun accountStanding(a: AccountView): String = when (a.standing) { null -> "Not a member"; "Active" -> "Active member"; else -> a.standing }
+fun accountStanding(a: AccountView): String = when (a.standing) { null -> "Not a member"; "Active" -> "Active member"; DEVELOPER -> "Developer account (testing)"; else -> a.standing }

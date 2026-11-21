@@ -11,7 +11,12 @@ import java.time.Instant
 fun memberStandings(workspace: JsonObject): Map<String, String>? =
     (workspace["member_standing"] as? JsonArray)?.mapNotNull { it as? JsonObject }?.associate { it.text("user_id") to it.text("status") }
 
-fun standingLabel(status: String?) = when (status) { null -> "not a member"; "Active" -> "Active member"; else -> "membership ${status.lowercase()}" }
+fun standingLabel(status: String?) = when (status) { null -> "not a member"; "Active" -> "Active member"; DEVELOPER -> "developer account (testing)"; else -> "membership ${status.lowercase()}" }
+
+/** The developer's own account (migration 047): may hold roles for testing without a membership. Set only in the database. */
+const val DEVELOPER = "Developer"
+/** Who can be given a role: Active members, and the developer account while testing (migration 047). */
+fun canHoldRoles(standing: String?) = standing == "Active" || standing == DEVELOPER
 
 /** One role on the form: whether it can be ticked for this person, and why not. */
 data class RoleChoice(val id: String, val name: String, val enabled: Boolean, val note: String)
@@ -26,8 +31,8 @@ fun roleChoices(workspace: JsonObject, userId: String, now: Instant): List<RoleC
         val id = r.text("id")
         when {
             id in held -> RoleChoice(id, r.text("name"), false, "Already has this role")
-            // Mirrors the server rule (migration 042): every role, Administrator included, needs an Active membership.
-            knowsStanding && standing != "Active" -> RoleChoice(id, r.text("name"), false, "Members only")
+            // Mirrors the server rule (migrations 042, 047): every role needs an Active membership (or the developer account).
+            knowsStanding && !canHoldRoles(standing) -> RoleChoice(id, r.text("name"), false, "Members only")
             else -> RoleChoice(id, r.text("name"), true, "")
         }
     }

@@ -295,7 +295,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         officers.forEach { o ->
             val open = expanded == o.userId
             val (label, tone) = when (o.worst) {
-                TermState.EXPIRED -> "Expired ${fmtDay(o.nearestEnd)}" to Tone.DANGER
+                TermState.EXPIRED -> o.expiredLabel(::fmtDay) to Tone.DANGER
                 TermState.ENDING -> "Ends ${fmtDay(o.nearestEnd)}" to Tone.WARNING
                 TermState.ACTIVE -> "${o.roleNames.size} role${if (o.roleNames.size == 1) "" else "s"}" to Tone.NEUTRAL
             }
@@ -425,7 +425,7 @@ fun AssignRolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHo
         result?.let { NoticeCard(if (it.contains("wasn't assigned")) "Some roles weren't assigned" else "Saved", it, if (it.contains("wasn't assigned")) Tone.WARNING else Tone.POSITIVE) }
         DeskLabel("Person")
         SelectField("Person", person, people) { person = it; ticked = emptyList(); titles = emptyMap(); result = null }
-        if (standings != null && person.isNotBlank() && standings[person] != "Active")
+        if (standings != null && person.isNotBlank() && !canHoldRoles(standings[person]))
             Text("Not an Active member, so no roles can be given. Every role, including Administrator, needs an Active membership.", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
         if (person.isNotBlank()) {
             DeskLabel("Roles")
@@ -534,7 +534,7 @@ fun AccountsScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostS
                     KeyValue("Membership", accountStanding(a))
                     KeyValue("Sign-in", if (a.enabled) "Enabled" else "Disabled")
                     KeyValue("Created", fmtDay(instantOf(a.created)))
-                    if (a.isMember && a.enabled) CardButton("Give roles", Modifier.fillMaxWidth(), enabled = !busy) { onAssign(a.id) }
+                    if (canHoldRoles(a.standing) && a.enabled) CardButton("Give roles", Modifier.fillMaxWidth(), enabled = !busy) { onAssign(a.id) }
                     else Text(if (!a.enabled) "Enable the account before giving it a role."
                         else "Not an Active member, so no roles can be given. Retire any it still holds from Administration.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

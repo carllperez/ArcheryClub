@@ -501,6 +501,13 @@ class DeskLogicTest {
                 obj("id" to "new", "user_id" to "r", "role_id" to "interclub", "position" to "", "ends_at" to "2027-06-30T00:00:00Z", "retired_at" to "")))
         val riane = officerViews(w, now).single()
         assertEquals(TermState.ACTIVE, riane.worst)
+        // A second role that really lapsed: the row says which, not "Expired" as if nothing were valid.
+        val w2 = ws("roles" to listOf(obj("id" to "interclub", "name" to "Interclub officer"), obj("id" to "membership", "name" to "Membership officer")),
+            "member_directory" to listOf(obj("user_id" to "r", "full_name" to "Riane")),
+            "role_assignments" to listOf(
+                obj("id" to "a", "user_id" to "r", "role_id" to "interclub", "position" to "", "ends_at" to "2027-05-31T00:00:00Z", "retired_at" to ""),
+                obj("id" to "b", "user_id" to "r", "role_id" to "membership", "position" to "", "ends_at" to "2026-11-20T00:00:00Z", "retired_at" to "")))
+        assertEquals("1 role expired Nov 20", officerViews(w2, now).single().expiredLabel { "Nov 20" })
         assertEquals(1, riane.duplicates)
     }
 }

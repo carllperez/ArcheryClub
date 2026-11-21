@@ -40,4 +40,12 @@ class RoleAssignLogicTest {
         assertEquals("Ana now has 1 new role: Treasurer. Coach wasn't assigned: Officer roles can only go to Active members.",
             assignedSummary("Ana", listOf("Treasurer"), listOf("Coach" to "Officer roles can only go to Active members.")))
     }
+
+    @Test fun theDeveloperAccountCanHoldRolesForTesting() {
+        val w = buildJsonObject { ws().forEach { (k, v) -> if (k != "member_standing") put(k, v) }
+            put("member_standing", JsonArray(listOf(buildJsonObject { put("user_id", "dev"); put("status", DEVELOPER) }))) }
+        assertEquals(true, roleChoices(w, "dev", now).first { it.id == "interclub_officer" }.enabled)
+        assertEquals("developer account (testing)", standingLabel(DEVELOPER))
+        assertEquals(false, canHoldRoles("Pending payment")); assertEquals(true, canHoldRoles("Active"))
+    }
 }

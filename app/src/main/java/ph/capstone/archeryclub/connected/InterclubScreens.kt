@@ -480,7 +480,7 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
                 when {
                     verified -> Text("✓ Verified", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Club.forest)
                     // The recorder can't verify their own entry (the server refuses), so say who does instead of a button.
-                    recordedByMe(r, workspace) -> Text("Another officer\nverifies", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                    recordedByMe(r, workspace) -> Text("Another officer\nverifies", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Club.amberInk, textAlign = TextAlign.End)
                     else -> TextButton(onClick = { onCommand("verify_result", buildJsonObject { put("event_id", eid); put("id", r.text("id")) }) {} }, enabled = !busy,
                         contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Verify", fontWeight = FontWeight.ExtraBold) }
                 }

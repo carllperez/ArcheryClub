@@ -1000,3 +1000,17 @@ test('Interclub 21 Nov: each result keeps who recorded it, and that officer stil
  assert.equal((await row('interclub_results',r.id)).recorded_by,ids.officer);
  await denied(()=>command('officer','verify_result',{event_id:e,id:r.id}),/Another officer must verify/);
 });
+test('Developer accounts 21 Nov: the flagged developer account can hold roles without a membership; nobody else can',async()=>{
+ ids.devacct='00000000-0000-4000-8000-000000000094';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.devacct,'dev.account@example.test']);
+ await as('devacct',()=>db.exec('select public.initialize_account()'));
+ const give=()=>command('admin','assign_role',{user_id:ids.devacct,role_id:'interclub_officer',position:'Interclub officer',ends_at:future(24*90),reason:'Testing'});
+ await denied(give,/Active members/);
+ await db.query('update app_private.profiles set developer=true where id=$1',[ids.devacct]);
+ await give();
+ // The role picker sees the account as "Developer", not "not a member".
+ await as('admin',async()=>{
+  const s=(await db.query('select app_private.member_standing() s')).rows[0].s;
+  assert.ok(s.some(x=>x.user_id===ids.devacct&&x.status==='Developer'));
+ });
+});
