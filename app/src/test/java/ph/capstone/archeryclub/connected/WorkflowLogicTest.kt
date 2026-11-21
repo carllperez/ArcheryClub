@@ -179,6 +179,7 @@ class WorkflowLogicTest {
         assertEquals("Concern from UP Archery Club" to "Arrive at 8:30?",
             formContext("resolve_concern", buildJsonObject { put("partner_id", "up"); put("concern", "Arrive at 8:30?") }, w))
         assertEquals("Ana Dela Cruz" to "UP Archery Club · Recurve", formContext("assign_delegate", buildJsonObject { put("delegate_id", "d1") }, w))
+        assertEquals("Ana Dela Cruz" to "UP Archery Club · Recurve", formContext("record_result", buildJsonObject { put("delegate_id", "d1") }, w))
         assertNull(formContext("save_event", buildJsonObject {}, w))
     }
 

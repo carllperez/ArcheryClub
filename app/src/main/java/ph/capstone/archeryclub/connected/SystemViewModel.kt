@@ -166,7 +166,9 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
 }
 internal fun workflowErrorMessage(code:String?,message:String):String=when(code){
     "PT409"->"This record changed. Refresh before trying again."
-    "42501"->"Your account does not have permission for this action."
+    // A rule the server words itself ("Another officer must verify a result you recorded.") is shown as written; only
+    // the bare "permission denied" kinds get the generic sentence (21 Nov testing hid the real reason).
+    "42501"->message.lineSequence().firstOrNull()?.trim()?.takeIf{permissionReason(it)}?:"Your account does not have permission for this action."
     "23505"->"This record already exists. Refresh to view it."
     "23503"->"A related record is missing or no longer available. Refresh and choose it again."
     "23514","23502","22P02","22007","22008","22003"->"Check the required fields, amounts and dates before saving."
@@ -175,6 +177,9 @@ internal fun workflowErrorMessage(code:String?,message:String):String=when(code)
     // The code lets the team look up the exact server error in the logs instead of guessing.
     else->"The request could not be completed. Refresh and try again."+(code?.takeIf{Regex("^[A-Z0-9]{5}$").matches(it)}?.let{" (error $it)"}?:"")
 }
+/** True when a 42501 message explains a club rule rather than just saying "permission denied". */
+internal fun permissionReason(message:String):Boolean=message.length in 12..240&&message.first().isUpperCase()&&message.endsWith(".")&&
+    !message.startsWith("permission denied",true)&&!message.contains("Bearer",true)&&!message.contains("apikey",true)
 internal fun authErrorMessage(code:String):String=when(code){
     "invalid_credentials"->"The email or password is incorrect. Please try again."
     "email_not_confirmed"->"Verify your email before signing in."

@@ -46,4 +46,26 @@ class InterclubLogicTest {
         assertEquals(listOf("612/720", "598", "590", "DNF"), icRanked(r).map { it.text("result") })
         assertEquals("NR", clubInitials("North Range Archers")); assertEquals("UA", clubInitials("UP Archery"))
     }
+
+    @Test fun everyoneHereLeadsToResultsNotAnEmptyCheckIn() {
+        val next = interclubNext(ev("active"), ws(delegates = listOf("a" to "checked_in")), now)!!
+        assertEquals("Everyone is checked in", next.title); assertEquals("ic_results:E", next.route)
+    }
+
+    @Test fun theRecorderIsToldSomeoneElseVerifies() {
+        fun w(recorder: String) = buildJsonObject {
+            put("user_id", "me")
+            put("delegates", JsonArray(listOf(buildJsonObject { put("id", "a"); put("event_id", "E"); put("status", "checked_in") })))
+            put("interclub_results", JsonArray(listOf(buildJsonObject { put("id", "r"); put("event_id", "E"); put("delegate_id", "a"); put("recorded_by", recorder) })))
+        }
+        assertEquals("Another officer verifies your result", resultsNext(w("me"), "E").first)
+        assertEquals("Verify 1 result", resultsNext(w("someone"), "E").first)
+        assertEquals(true, recordedByMe((w("me")["interclub_results"] as JsonArray)[0] as JsonObject, w("me")))
+    }
+
+    @Test fun theResultsBannerSaysNothingIsRecordedYet() {
+        assertEquals("No results recorded yet" to Tone.NEUTRAL, resultsBanner(emptyList()))
+        assertEquals("1 not verified yet" to Tone.WARNING, resultsBanner(listOf(buildJsonObject { put("id", "r") })))
+        assertEquals(Tone.POSITIVE, resultsBanner(listOf(buildJsonObject { put("id", "r"); put("verified_by", "U") })).second)
+    }
 }

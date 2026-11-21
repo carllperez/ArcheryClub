@@ -62,10 +62,11 @@ fun interclubNext(e: JsonObject, workspace: JsonObject, now: Instant): IcNext? {
         IC_SCHEDULE -> approved.count { it.text("id") !in assigned }.let { left ->
             if (left > 0) IcNext(step, "Assign $left archer${if (left == 1) "" else "s"} to targets", "Every approved delegate needs a flight and target.", "ic_schedule:$id")
             else IcNext(step, "Schedule is ready", "Start the event day to open check-in.", "ic_schedule:$id") }
+        // Once everyone is here, the job is recording results, so the card opens Results, not an empty check-in list (21 Nov testing).
         IC_CHECKIN -> approved.count { it.text("status") == "eligible" }.let { left ->
-            IcNext(step, if (left > 0) "Check in $left archer${if (left == 1) "" else "s"}" else "Everyone is checked in", "Record results as flights finish.", "ic_checkin:$id") }
-        IC_RESULTS -> icResults(workspace, id).count { it.text("verified_by").isBlank() }.let { left ->
-            IcNext(step, if (left > 0) "Verify $left result${if (left == 1) "" else "s"}" else "Record results", "Partners and members see a result only after it's verified.", "ic_results:$id") }
+            if (left > 0) IcNext(step, "Check in $left archer${if (left == 1) "" else "s"}", "Record results as flights finish.", "ic_checkin:$id")
+            else IcNext(step, "Everyone is checked in", "Record each archer's result as their flight finishes.", "ic_results:$id") }
+        IC_RESULTS -> resultsNext(workspace, id).let { (title, detail) -> IcNext(step, title, detail, "ic_results:$id") }
         IC_ARCHIVE -> IcNext(step, "Archive the event", "Keep the agreement, minutes and lessons for the next officers.", null)
         else -> null
     }
@@ -80,3 +81,35 @@ fun icRanked(results: List<JsonObject>): List<JsonObject> =
 
 /** Short club initials for the coloured badge, e.g. "North Range Archers" -> "NR". */
 fun clubInitials(name: String) = name.split(Regex("\\s+")).filter { it.firstOrNull()?.isLetter() == true }.take(2).joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }
+
+/** Results still to record or verify, worded for the person looking: the officer who recorded a result can't verify it
+ *  (the server refuses), so they are told someone else has to instead of being asked to "Verify" (21 Nov testing). */
+fun resultsNext(workspace: JsonObject, eventId: String): Pair<String, String> {
+    val results = icResults(workspace, eventId)
+    val recorded = results.map { it.text("delegate_id") }.toSet()
+    val toRecord = icDelegates(workspace, eventId).count { it.text("status") == "checked_in" && it.text("id") !in recorded }
+    val unverified = results.filter { it.text("verified_by").isBlank() }
+    val forMe = unverified.count { !recordedByMe(it, workspace) }
+    fun n(k: Int, word: String) = "$k $word${if (k == 1) "" else "s"}"
+    return when {
+        forMe > 0 -> "Verify ${n(forMe, "result")}" to "Check each against the signed scoresheet. Partners see a result only after it's verified."
+        toRecord > 0 -> "Record ${n(toRecord, "result")}" to "Enter each archer's score as their flight finishes."
+        unverified.isNotEmpty() -> "Another officer verifies ${if (unverified.size == 1) "your result" else "your ${unverified.size} results"}" to
+            "You recorded ${if (unverified.size == 1) "it" else "them"}, so someone else checks against the signed scoresheet. Ask another interclub officer."
+        results.isEmpty() -> "Record results" to "Enter each archer's score as their flight finishes."
+        else -> "Every result is verified" to "Partners can see them now."
+    }
+}
+
+/** The banner on the Results page: nothing recorded, some waiting for verification, or all verified. */
+fun resultsBanner(results: List<JsonObject>): Pair<String, Tone> {
+    val unverified = results.count { it.text("verified_by").isBlank() }
+    return when {
+        results.isEmpty() -> "No results recorded yet" to Tone.NEUTRAL
+        unverified > 0 -> "$unverified not verified yet" to Tone.WARNING
+        else -> "Every recorded result is verified" to Tone.POSITIVE
+    }
+}
+
+/** Whether the person looking recorded this result (and so can't verify it). */
+fun recordedByMe(result: JsonObject, workspace: JsonObject) = result.text("recorded_by").isNotBlank() && result.text("recorded_by") == workspace.text("user_id")

@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
@@ -199,7 +200,9 @@ fun InterclubScreen(
         // Moving the event on: preparation → event day → finished. Archiving has its own form (the lessons to keep).
         if (coordinator) when (status) {
             "preparation" -> if (step >= IC_SCHEDULE) CardButton("Start the event day", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { confirmStage = "active" }
-            "active" -> CardButton("Finish the event", Modifier.fillMaxWidth(), enabled = !busy) { confirmStage = "completed" }
+            // Not offered from the first minute of event day: once results are being recorded, or the scheduled end has passed.
+            "active" -> if (step >= IC_RESULTS || e.instant("shared_end")?.isBefore(now) == true)
+                CardButton("Finish the event", Modifier.fillMaxWidth(), enabled = !busy) { confirmStage = "completed" }
         }
         if (coordinator) concerns.forEach { c ->
             NoticeCard("Concern from ${partnerName[c.text("partner_id")] ?: "a partner"}", c.text("concern"), Tone.WARNING)
@@ -208,7 +211,9 @@ fun InterclubScreen(
         // A partner rep's page is their delegation, their concerns and the published results; the officer's step pages
         // (review, schedule, check-in, results) only ever told them "only the coordinators can do this".
         if (!coordinator) PartnerDelegation(workspace, eid, busy, onStart)
-        if (coordinator) DeskLabel("Partner clubs", if (interclubOfficer && status == "preparation") "Invite" else null) { newInvite = true }
+        // Inviting stops when partner sign-ups close (the server refuses new codes then; 21 Nov testing still showed "Invite").
+        val signupsOpen = status == "preparation" && (e.instant("registration_closes")?.let { now.isBefore(it) } ?: true)
+        if (coordinator) DeskLabel("Partner clubs", if (interclubOfficer && signupsOpen) "Invite" else null) { newInvite = true }
         if (coordinator && partners.isEmpty()) EmptyState("No partner clubs yet", "Create an invite code for a club's representative. They only ever see this event.")
         else if (coordinator) RowGroup { partners.forEachIndexed { i, p ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -223,7 +228,7 @@ fun InterclubScreen(
             if (i < partners.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
         } }
         // Invite codes replace inviting by email: holding the code, not the email address, makes someone the rep.
-        if (coordinator) PartnerInvites(workspace, e, busy, vm, interclubOfficer && status == "preparation", newInvite) { newInvite = false }
+        if (coordinator) PartnerInvites(workspace, e, busy, vm, interclubOfficer && signupsOpen, newInvite) { newInvite = false }
         // Each step's page.
         if (coordinator) DeskLabel("Steps")
         if (coordinator) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -456,8 +461,8 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
         val cats = results.mapNotNull { byId[it.text("delegate_id")]?.text("category") }.distinct().sorted()
         var cat by rememberSaveable { mutableStateOf("") }
         val shown = if (cat.isBlank()) results else results.filter { byId[it.text("delegate_id")]?.text("category") == cat }
-        NoticeCard(if (unverified > 0) "$unverified not verified yet" else "Every recorded result is verified",
-            "A result shows to partner clubs only after someone other than the person who recorded it verifies it against the signed scoresheet.", if (unverified > 0) Tone.WARNING else Tone.POSITIVE)
+        val (bannerTitle, bannerTone) = resultsBanner(results)
+        NoticeCard(bannerTitle, "A result shows to partner clubs only after someone other than the person who recorded it verifies it against the signed scoresheet.", bannerTone)
         if (cats.size > 1) ChoiceChips(listOf("" to "All") + cats.map { it to it }, cat) { cat = it }
         if (shown.isNotEmpty()) RowGroup { icRanked(shown).forEachIndexed { i, r ->
             val d = byId[r.text("delegate_id")]; val verified = r.text("verified_by").isNotBlank()
@@ -465,14 +470,18 @@ fun InterclubResultsScreen(workspace: JsonObject, eid: String, busy: Boolean, sn
                 val medal = when (i) { 0 -> Color(0xFFE8C547); 1 -> Color(0xFFC9CFD3); 2 -> Color(0xFFD9A066); else -> Club.mint }
                 Box(Modifier.size(28.dp).clip(CircleShape).background(if (icScore(r.text("result")) != null) medal else Club.mint), contentAlignment = Alignment.Center) {
                     Text("${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }
+                // The result sits under the name: beside it, a long result ("612 / 720 (72 arrows, 70m)") squeezed the
+                // name to one letter per line (21 Nov testing).
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(d?.text("full_name") ?: "Delegate", style = MaterialTheme.typography.titleSmall)
+                    Text(r.text("result"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     d?.let { ClubTag(workspace, it.text("partner_id")) }
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(r.text("result"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                    if (verified) Text("✓ Verified", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Club.forest)
-                    else TextButton(onClick = { onCommand("verify_result", buildJsonObject { put("event_id", eid); put("id", r.text("id")) }) {} }, enabled = !busy,
+                when {
+                    verified -> Text("✓ Verified", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Club.forest)
+                    // The recorder can't verify their own entry (the server refuses), so say who does instead of a button.
+                    recordedByMe(r, workspace) -> Text("Another officer\nverifies", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                    else -> TextButton(onClick = { onCommand("verify_result", buildJsonObject { put("event_id", eid); put("id", r.text("id")) }) {} }, enabled = !busy,
                         contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Verify", fontWeight = FontWeight.ExtraBold) }
                 }
             }

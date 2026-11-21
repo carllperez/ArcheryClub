@@ -25,4 +25,10 @@ class AuthErrorMessageTest {
         assertTrue(workflowErrorMessage("22P05","\\u0000 cannot be converted").startsWith("A pasted character"))
         for(code in listOf("23514","23505","42501",null))assertFalse(workflowErrorMessage(code,"private table details").contains("private"))
     }
+
+    @Test fun aClubRuleRefusalIsShownAsTheServerWordsIt() {
+        assertEquals("Another officer must verify a result you recorded.", workflowErrorMessage("42501", "Another officer must verify a result you recorded."))
+        assertEquals("Your account does not have permission for this action.", workflowErrorMessage("42501", "Permission denied."))
+        assertEquals("Your account does not have permission for this action.", workflowErrorMessage("42501", "permission denied for table profiles"))
+    }
 }

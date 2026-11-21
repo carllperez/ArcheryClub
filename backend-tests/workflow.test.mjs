@@ -990,3 +990,13 @@ test('Interclub 21 Nov: a concern\'s reply reaches the rep, responsibility is op
   assert.equal(mine.status,'resolved'); assert.equal(mine.resolution,'Yes, the range opens at 8:30.');
  });
 });
+test('Interclub 21 Nov: each result keeps who recorded it, and that officer still cannot verify it',async()=>{
+ const e=(await db.query("select event_id from app_private.interclub_events where shared_title='Concern reply fixture'")).rows[0].event_id;
+ const d=(await db.query("select id,version from app_private.delegates where event_id=$1 and full_name='Ben Bowman'",[e])).rows[0];
+ await command('officer','update_shared_event',{event_id:e,version:(await db.query('select version from app_private.interclub_events where event_id=$1',[e])).rows[0].version,status:'active',
+  ...Object.fromEntries(Object.entries((await db.query('select shared_details,shared_venue,shared_start,shared_end from app_private.interclub_events where event_id=$1',[e])).rows[0]).map(([k,v])=>[k,v instanceof Date?v.toISOString():v]))});
+ await command('officer','review_delegate',{event_id:e,id:d.id,version:d.version,status:'checked_in',remark:'Checked in at the range'});
+ const r=await command('officer','record_result',{event_id:e,delegate_id:d.id,result:'612 / 720'});
+ assert.equal((await row('interclub_results',r.id)).recorded_by,ids.officer);
+ await denied(()=>command('officer','verify_result',{event_id:e,id:r.id}),/Another officer must verify/);
+});

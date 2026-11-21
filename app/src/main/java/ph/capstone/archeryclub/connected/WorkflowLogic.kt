@@ -348,7 +348,7 @@ fun formContext(action: String, initial: JsonObject, workspace: JsonObject): Pai
     return when (action) {
         "resolve_concern" -> initial.text("concern").takeIf { it.isNotBlank() }?.let {
             "Concern from ${clubs[initial.text("partner_id")] ?: "a partner club"}" to it }
-        "assign_delegate" -> workspace.records("delegates").find { it.text("id") == initial.text("delegate_id") }?.let { d ->
+        "assign_delegate", "record_result" -> workspace.records("delegates").find { it.text("id") == initial.text("delegate_id") }?.let { d ->
             d.text("full_name") to listOf(clubs[d.text("partner_id")].orEmpty(), d.text("category")).filter { it.isNotBlank() }.joinToString(" · ") }
         else -> null
     }
