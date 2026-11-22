@@ -266,7 +266,7 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onJoinCodes: () -> Unit = {}, onClubs: () -> Unit = {}, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onJoinCodes: () -> Unit = {}, onClubs: () -> Unit = {}, onFeatures: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     // Same lines as the full activity log (who was affected, sign-ins hidden), just the latest few.
@@ -330,6 +330,8 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
                     tint = if (waiting > 0) Club.amberInk else Club.forest, onClick = onClubs)
             }
             GroupRow("qr", "Join codes", "For alumni and others without a school email", onClick = onJoinCodes)
+            val off = disabledFeatures(workspace).size
+            GroupRow("modules", "Club features", if (off == 0) "Everything is on" else "$off turned off for everyone", onClick = onFeatures)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
             GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
             GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)

@@ -87,20 +87,22 @@ fun OfficerHome(
             val main = desks.firstOrNull()
             // Swipe through the desk jobs and, last, the officer's own next session, like the member's Home card.
             val jobs = desks.filter { it == main || it.waiting > 0 }
-            val mine = landingEvents(workspace, registeredOnly = true).firstOrNull()
+            val sessionsOn = featureOn(workspace, "activities")
+            val mine = if (sessionsOn) landingEvents(workspace, registeredOnly = true).firstOrNull() else null
             val sessionCard = mine?.let { e -> activityView(e, workspace, now).let { v -> SessionCardData(e.text("title"), v.start, e.text("venue"), v.status.label) } }
-            val pager = rememberPagerState { jobs.size + 1 }
+            val pages = jobs.size + if (sessionsOn) 1 else 0
+            val pager = rememberPagerState { pages }
             HorizontalPager(pager, pageSpacing = 12.dp, verticalAlignment = Alignment.Top) { i ->
                 if (i < jobs.size) DeskJobCard(jobs[i], officerFocus(workspace, setOf(jobs[i].permission), now)) { onRoute(it) }
                 else NextSessionCard(sessionCard, onOpen = { mine?.let { onRoute("activity:${it.text("id")}") } }, onBrowse = { onPage("activities") })
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                repeat(jobs.size + 1) { i ->
+                if (pages > 1) repeat(pages) { i ->
                     Box(Modifier.padding(horizontal = 3.dp).size(if (pager.currentPage == i) 18.dp else 7.dp, 7.dp).clip(CircleShape)
                         .background(if (pager.currentPage == i) Club.forest else Club.mint))
                 }
             }
-            AnnouncementsCard(workspace, vm, state.busy, onViewAll = { onPage("announcements") })
+            if (sessionsOn) AnnouncementsCard(workspace, vm, state.busy, onViewAll = { onPage("announcements") })
             val quiet = desks.filter { it != main && it.waiting == 0 }
             if (quiet.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Other desks", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -180,19 +182,20 @@ fun OfficerHome(
             val user = workspace.text("user_id")
             val open = memberActivities(workspace).count { !it.status.isMine }
             val borrowed = workspace.records("borrowings").count { it.text("user_id") == user && it.text("status") in setOf("pending", "approved", "released") }
-            TileRow {
-                HomeTile("target", "$open", if (open == 1) "Open Activity" else "Open Activities", Modifier.weight(1f).fillMaxHeight()) { onPage("activities") }
-                HomeTile("box", "$borrowed", if (borrowed == 1) "Borrow Request" else "Borrow Requests", Modifier.weight(1f).fillMaxHeight()) { onPage("gear") }
+            val activitiesOn = featureOn(workspace, "activities"); val gearOn = featureOn(workspace, "equipment")
+            if (activitiesOn || gearOn) TileRow {
+                if (activitiesOn) HomeTile("target", "$open", if (open == 1) "Open Activity" else "Open Activities", Modifier.weight(1f).fillMaxHeight()) { onPage("activities") }
+                if (gearOn) HomeTile("box", "$borrowed", if (borrowed == 1) "Borrow Request" else "Borrow Requests", Modifier.weight(1f).fillMaxHeight()) { onPage("gear") }
             }
-            HomeRow("arrows", "Borrow Club Gear", "Bows, arrows and accessories") { onPage("gear") }
-            landingEvents(workspace, registeredOnly = true).firstOrNull()?.let { e ->
+            if (gearOn) HomeRow("arrows", "Borrow Club Gear", "Bows, arrows and accessories") { onPage("gear") }
+            if (activitiesOn) landingEvents(workspace, registeredOnly = true).firstOrNull()?.let { e ->
                 val v = activityView(e, workspace, now)
                 HomeRow("calendar", e.text("title"), "${fmtDay(v.start)} · ${fmtTime(v.start)} · ${v.status.label}") { onRoute("activity:${e.text("id")}") }
             } ?: HomeRow("calendar", "Activities", "Register for a session") { onPage("activities") }
-            HomeRow("target", "My training", scoreCards(workspace, user).firstOrNull()?.let { "Last round ${it.scoreLabel} · ${it.state.label}" } ?: "Log rounds, get coach feedback") { onModule(4) }
+            if (featureOn(workspace, "training")) HomeRow("target", "My training", scoreCards(workspace, user).firstOrNull()?.let { "Last round ${it.scoreLabel} · ${it.state.label}" } ?: "Log rounds, get coach feedback") { onModule(4) }
             val owed = amountOwed(feeViews(workspace, user, java.time.LocalDate.now()))
             if (owed > 0) HomeRow("money", "Payments", "${peso(owed)} due") { onModule(12) }
-            featuredElection(workspace.records("elections"), false)?.takeIf { electionStageOpen(it, now) }?.let { e ->
+            if (featureOn(workspace, "elections")) featuredElection(workspace.records("elections"), false)?.takeIf { electionStageOpen(it, now) }?.let { e ->
                 HomeRow("vote", e.text("title"), if (e.text("status") == "voting") "Voting open" else "Candidacy open") { onModule(9) }
             }
         }

@@ -116,7 +116,7 @@ fun ClubLanding(
     // Gear and Announcements open from cards on Home (Borrow Club Gear, View all announcements), each with a back arrow.
     // Partner representatives (invite code, migration 044) only ever see the events they were invited to.
     val partnerRep=!staff&&!isMember&&partnerEvents(workspace).isNotEmpty()
-    val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","account" to "Profile")
+    val tabs=if(isMember)listOf("home" to "Home","activities" to "Activities","account" to "Profile").filter{it.first!="activities"||featureOn(workspace,"activities")}
         else if(applicant||staff||partnerRep)listOf("home" to "Home","account" to "Profile")
         else listOf("home" to "Home","modules" to "Services","account" to "Profile")
     val bottomBar:@Composable ()->Unit={
@@ -290,19 +290,20 @@ private fun MemberHome(
                 approvalNotice(workspace)?.let{n->ApprovalCard(n,state.busy){onAcknowledge(n)}}
                 state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
                 if(state.recovery)recovery()
-                AnnouncementsCard(workspace,vm,state.busy,onViewAll={onPage("announcements")})
-                NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
-                TileRow {
-                    HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
-                    HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
+                val activitiesOn=featureOn(workspace,"activities");val gearOn=featureOn(workspace,"equipment")
+                if(activitiesOn)AnnouncementsCard(workspace,vm,state.busy,onViewAll={onPage("announcements")})
+                if(activitiesOn)NextSessionCard(session,onOpen={next?.let{onRoute("activity:${it.text("id")}")}},onBrowse={onPage("activities")})
+                if(activitiesOn||gearOn)TileRow {
+                    if(activitiesOn)HomeTile("target","$open",if(open==1)"Open Activity" else "Open Activities",Modifier.weight(1f).fillMaxHeight()){onPage("activities")}
+                    if(gearOn)HomeTile("box","$borrowed",if(borrowed==1)"Borrow Request" else "Borrow Requests",Modifier.weight(1f).fillMaxHeight()){onPage("gear")}
                 }
-                featuredElection(workspace.records("elections"),false)?.takeIf{electionStageOpen(it,java.time.Instant.now())}?.let{e->
+                if(featureOn(workspace,"elections"))featuredElection(workspace.records("elections"),false)?.takeIf{electionStageOpen(it,java.time.Instant.now())}?.let{e->
                     HomeRow("vote",e.text("title"),if(e.text("status")=="voting")"Voting open · closes ${fmtDay(e.instant("voting_closes"))}" else "Candidacy open · closes ${fmtDay(e.instant("candidacy_closes"))}"){onModule(9)}
                 }
                 val owed=amountOwed(feeViews(workspace,user,java.time.LocalDate.now()))
                 if(owed>0)HomeRow("money","Payments","${peso(owed)} due"){onModule(12)}
-                HomeRow("target","My Training",scoreCards(workspace,user).firstOrNull()?.let{"Last round ${it.scoreLabel} · ${it.state.label}"}?:"Log rounds, get coach feedback"){onModule(4)}
-                HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
+                if(featureOn(workspace,"training"))HomeRow("target","My Training",scoreCards(workspace,user).firstOrNull()?.let{"Last round ${it.scoreLabel} · ${it.state.label}"}?:"Log rounds, get coach feedback"){onModule(4)}
+                if(gearOn)HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
             }
         }

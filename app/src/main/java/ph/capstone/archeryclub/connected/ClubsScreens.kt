@@ -269,3 +269,44 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
     }
 }
 
+
+/** Administration → Club features (migration 055): switch whole features off for everyone in this club. */
+@Composable
+fun ClubFeaturesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, vm: SystemViewModel?) {
+    val saved = disabledFeatures(workspace)
+    var picked by rememberSaveable { mutableStateOf(saved.joinToString(",")) }
+    val off = picked.split(',').filter { it.isNotBlank() }.toSet()
+    var confirming by remember { mutableStateOf(false) }
+    val turningOff = CLUB_FEATURES.filter { it.key in off && it.key !in saved }
+    fun save() = vm?.save("set_club_features", buildJsonObject { put("p_disabled", JsonArray(off.sorted().map(::JsonPrimitive))) }) { confirming = false; onBack() }
+    ScreenShell("Club features", onBack, snackbar, stickyAction = {
+        Button(onClick = { if (turningOff.isEmpty()) save() else confirming = true }, enabled = !busy && vm != null && off != saved,
+            modifier = Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ph.capstone.archeryclub.ui.Club.forestDeep)) {
+            Text("Save changes", fontWeight = FontWeight.ExtraBold)
+        }
+    }) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text("Turn off what ${clubName(workspace)} doesn't use. It disappears for every member and officer here, and the server refuses it too. Other clubs aren't affected, and records are kept for when you turn it back on.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RowGroup {
+            CLUB_FEATURES.forEachIndexed { i, f ->
+                val on = f.key !in off
+                val toggle = { picked = (if (on) off + f.key else off - f.key).joinToString(",") }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(f.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                        Text(f.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(on, { toggle() }, enabled = !busy, colors = SwitchDefaults.colors(checkedTrackColor = ph.capstone.archeryclub.ui.Club.forest))
+                }
+                if (i < CLUB_FEATURES.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            }
+        }
+        InfoCard("Always on", "Membership and applications, payments, and Administration can't be turned off: without them nobody could join, pay or manage the club.")
+    }
+    if (confirming) ConfirmDialog("Turn off ${turningOff.joinToString(" and ") { it.title.lowercase() }}?",
+        "Members and officers of ${clubName(workspace)} won't see it any more, and anything in progress there pauses until you turn it back on.",
+        "Turn off", onConfirm = { save() }, onDismiss = { confirming = false }, destructive = true)
+}

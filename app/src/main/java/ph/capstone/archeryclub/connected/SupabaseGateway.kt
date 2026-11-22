@@ -80,7 +80,7 @@ class SupabaseGateway {
     suspend fun initialize() { awaitSession(); authenticatedRead({renewSession()}) { client.postgrest.rpc("initialize_account") } }
     suspend fun workspace(): JsonObject = authenticatedRead({renewSession()}) {
         awaitSession()
-        Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject
+        withFeatureSwitches(Json.parseToJsonElement(client.postgrest.rpc("club_workspace").data).jsonObject)
     }
     suspend fun command(action:String,data:JsonObject):JsonElement = rpc("club_command",buildJsonObject { put("p_action",action);put("p_data",data) })
     // Text is cleaned before sending: a pasted invisible control character (e.g. \u0000) makes Postgres reject the whole save.

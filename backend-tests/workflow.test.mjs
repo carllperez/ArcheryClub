@@ -1245,3 +1245,27 @@ test('Join codes 23 Nov: an alumnus with a personal email joins a club only with
  assert.ok(aw.join_codes.some(j=>j.id===c.id&&j.used_by===ids.alum));
  await db.query('update app_private.clubs set email_domain=null');
 });
+
+test('M14 a club turns features off for its members and officers, and back on',async()=>{
+ await grant('officer','equipment_officer');
+ const eq=await command('officer','save_equipment',{label:'Recurve 77',category:'Bow',specifications:'Training',handedness:'right',draw_weight:24,bow_setup:'recurve',condition:'serviceable'});
+ const req={equipment_id:eq.id,starts_at:future(300),ends_at:future(302),handedness:'right',maximum_draw_weight:28,bow_setup:'recurve',purpose:'Practice'};
+ const can=async(person,p)=>as(person,async()=>(await db.query('select app_private.can($1) c',[p])).rows[0].c);
+ assert.equal(await can('officer','equipment'),true);
+ // Only an administrator; core features can't be switched off.
+ await denied(()=>rpc('applicant','set_club_features',['{equipment}'],'$1::text[]'),/Permission/);
+ await denied(()=>rpc('admin','set_club_features',['{membership}'],'$1::text[]'),/can.t be turned off/);
+ await rpc('admin','set_club_features',['{equipment}'],'$1::text[]');
+ // Off: the member can't borrow, the officer's desk answers no, and the app sees the switch.
+ await denied(()=>command('applicant','request_borrowing',req),/turned off equipment borrowing/);
+ await denied(()=>command('officer','save_equipment',{label:'Recurve 78',category:'Bow',specifications:'x',handedness:'right',draw_weight:24,bow_setup:'recurve',condition:'serviceable'}),/turned off/);
+ assert.equal(await can('officer','equipment'),false);
+ const w=await as('admin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.deepEqual(w.settings[0].disabled_features,['equipment']);
+ // Other features keep working, and turning it back on restores everything.
+ assert.equal(await can('admin','administration'),true);
+ await rpc('admin','set_club_features',['{}'],'$1::text[]');
+ assert.equal(await can('officer','equipment'),true);
+ const b=await command('applicant','request_borrowing',req);
+ assert.ok(b.id);
+});

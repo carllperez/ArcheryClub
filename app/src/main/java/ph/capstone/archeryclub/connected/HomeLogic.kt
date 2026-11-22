@@ -66,6 +66,28 @@ fun needsClub(workspace: JsonObject): Boolean {
 }
 fun isPlatformAdmin(workspace: JsonObject): Boolean =
     workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }?.text("platform_admin") == "true"
+/** A feature a club can switch off for everyone in it (migration 055). Membership, payments and administration always stay on. */
+data class ClubFeature(val key: String, val title: String, val detail: String, val icon: String)
+val CLUB_FEATURES = listOf(
+    ClubFeature("activities", "Activities & announcements", "Sessions, registration, attendance and announcements", "calendar"),
+    ClubFeature("equipment", "Equipment borrowing", "Borrow Club Gear, the gear desk and inventory", "box"),
+    ClubFeature("training", "Training", "Training logs and the coach desk", "target"),
+    ClubFeature("elections", "Elections", "Candidacy, voting and results", "vote"),
+    ClubFeature("interclub", "Partner clubs", "Interclub events with other schools", "users"),
+    ClubFeature("reports", "Reports & goals", "Club goals and dashboards", "chart"),
+)
+fun disabledFeatures(workspace: JsonObject): Set<String> =
+    (workspace.records("settings").firstOrNull()?.get("disabled_features") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet()
+fun featureOn(workspace: JsonObject, key: String) = key !in disabledFeatures(workspace)
+/** The feature a module belongs to, or null when it can't be switched off. */
+fun featureForModule(n: Int): String? = when (n) { 3, 8 -> "activities"; 4, 11 -> "training"; 5, 10 -> "equipment"; 9 -> "elections"; 13 -> "reports"; 15 -> "interclub"; else -> null }
+/** Desks of switched-off features are dropped as the workspace arrives, so every screen that reads "permissions" agrees with the server's can(). */
+fun withFeatureSwitches(workspace: JsonObject): JsonObject {
+    val off = disabledFeatures(workspace)
+    if (off.isEmpty()) return workspace
+    val perms = (workspace["permissions"] as? JsonArray).orEmpty().filter { (it as? JsonPrimitive)?.contentOrNull !in off }
+    return JsonObject(workspace + ("permissions" to JsonArray(perms)))
+}
 /** Role definitions are shared by every club (migration 050): with several clubs only the platform administrator edits them. */
 fun rolesLocked(workspace: JsonObject): Boolean = allClubs(workspace).size > 1 && !isPlatformAdmin(workspace)
 /** The club's own name for headings and messages, falling back to the club's settings. */

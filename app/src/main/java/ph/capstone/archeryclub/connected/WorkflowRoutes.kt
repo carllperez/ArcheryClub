@@ -104,8 +104,10 @@ fun WorkflowRoute(
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
         "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles:$it") },
-            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }, onOfficers = { onPush("officers:$it") }, onJoinCodes = { onPush("join_codes") }, onClubs = { onPush("platform_clubs") }) { onGo("records:14") }
+            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }, onOfficers = { onPush("officers:$it") }, onJoinCodes = { onPush("join_codes") }, onClubs = { onPush("platform_clubs") }, onFeatures = { onPush("club_features") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "club_features" -> if (allowed("administration")) ClubFeaturesScreen(workspace, busy, snackbar, onBack, vm)
+            else denied("Administrators only", "Only an administrator turns club features on and off.")
         "platform_clubs" -> if (isPlatformAdmin(workspace)) PlatformClubsScreen(workspace, busy, snackbar, onBack, vm)
             else denied("Platform administrator only", "Only the platform administrator creates clubs.")
         "officers" -> if (allowed("administration")) OfficersScreen(workspace, busy, snackbar, id, onBack, onStart, onAssign = { onPush("assign_roles:$it") },
