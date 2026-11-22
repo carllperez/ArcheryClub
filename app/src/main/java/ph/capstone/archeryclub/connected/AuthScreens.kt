@@ -110,7 +110,7 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
                         // an interclub invite code (partner representatives). Migration 053.
                         AnimatedVisibility(creating && isPersonalEmail(email.trim())) {
                             AuthField("Join or invite code", code, { code = it.uppercase().take(12) }, KeyboardType.Text, null,
-                                "A personal email needs a code from the club that invited you, like 7F3A-91C2. With a school email you don't need one.")
+                                "Ask the club for its join code, like 7F3A-91C2. With a school email you don't need one.")
                         }
                         state.error?.let { NoticeCard("Couldn't continue", it, Tone.DANGER) }
                         state.message?.let { NoticeCard("Check this", it, Tone.INFO) }

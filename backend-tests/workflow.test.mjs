@@ -1050,7 +1050,7 @@ test('Other schools 23 Nov: an application records the school; DLSU keeps the 8-
 });
 test('Clubs 23 Nov: a second club is created by the platform administrator and kept completely apart from DLSU',async()=>{
  const dlsu='00000000-0000-4000-8000-00000000d150';
- ids.upadmin='00000000-0000-4000-8000-0000000000c1'; ids.upnew='00000000-0000-4000-8000-0000000000c2';
+ ids.upadmin='00000000-0000-4000-8000-00000000cc01'; ids.upnew='00000000-0000-4000-8000-00000000cc02';
  for(const n of ['upadmin','upnew'])await db.query('insert into auth.users values($1,$2,now())',[ids[n],n+'@up.example.test']);
  await as('upadmin',()=>db.exec('select public.initialize_account()'));
  // Only the platform administrator creates clubs.
@@ -1268,4 +1268,39 @@ test('M14 a club turns features off for its members and officers, and back on',a
  assert.equal(await can('officer','equipment'),true);
  const b=await command('applicant','request_borrowing',req);
  assert.ok(b.id);
+});
+
+test('Club join code 23 Nov: one shared code per club lets any personal email in, never another school',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ await db.query("update app_private.clubs set email_domain='example.test' where id=$1",[dlsu]);
+ await db.query("update app_private.clubs set email_domain='up.example.test' where id=$1",[up]);
+ const codeOf=async club=>(await db.query('select join_code from app_private.settings where club_id=$1',[club])).rows[0].join_code;
+ const code=await codeOf(dlsu);
+ assert.match(code,/^[0-9A-F]{4}-[0-9A-F]{4}$/); assert.notEqual(code,await codeOf(up));
+ const check=async(c,email)=>(await db.query('select public.check_signup_code($1,$2) r',[c,email])).rows[0].r;
+ const dlsuName=(await db.query('select name from app_private.clubs where id=$1',[dlsu])).rows[0].name;
+ assert.deepEqual(await check(code.toLowerCase().replace('-',''),'anyone@gmail.test'),{kind:'join',club:dlsuName});
+ assert.equal((await check(code,'juan@up.example.test')).kind,null,'another school stays out');
+ // Two strangers sign up with the same code; officers see both; the domain guard accepts them.
+ for(const [k,id,email] of [['cc1','00000000-0000-4000-8000-0000000c0de1','first@gmail.test'],['cc2','00000000-0000-4000-8000-0000000c0de2','second@yahoo.test']]){
+  ids[k]=id; await db.query('insert into auth.users values($1,$2,now())',[id,email]);
+  await as(k,()=>db.exec('select public.initialize_account()'));
+  await rpc(k,'claim_join_code',[JSON.stringify({code})],'$1::jsonb');
+  assert.equal((await db.query('select club_id from app_private.profiles where id=$1',[id])).rows[0].club_id,dlsu);
+ }
+ const aw=await as('admin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(aw.join_codes.filter(j=>j.reason==='Signed up with the club code').length,2);
+ assert.equal(aw.settings[0].join_code,code);
+ // A UP student can't claim DLSU's code; a member can't change it; an officer can, and the old one stops working.
+ ids.ccup='00000000-0000-4000-8000-0000000c0de3';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.ccup,'pedro@up.example.test']);
+ await db.query('insert into app_private.profiles(id,email) values($1,$2) on conflict do nothing',[ids.ccup,'pedro@up.example.test']);
+ await db.query('update app_private.profiles set club_id=null where id=$1',[ids.ccup]);
+ await denied(()=>rpc('ccup','claim_join_code',[JSON.stringify({code})],'$1::jsonb'),/belongs to UP|already belongs/);
+ await denied(()=>rpc('cc1','reset_club_join_code',[],''),/Membership officer or an Administrator/);
+ const fresh=(await rpc('admin','reset_club_join_code',[],'')).code;
+ assert.notEqual(fresh,code); assert.equal(await codeOf(dlsu),fresh);
+ assert.equal((await check(code,'late@gmail.test')).kind,null);
+ await db.query('update app_private.clubs set email_domain=null');
 });

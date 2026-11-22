@@ -34,9 +34,19 @@ fun ChooseClubScreen(workspace: JsonObject, state: SystemState, vm: SystemViewMo
         heroExtra = { Text(if (personal) "Each club is only for its own school's email." else "You can ask for one: the club would be for every @$domain account.",
             color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
         when {
-            personal -> NoticeCard("${email.ifBlank { "This email" }} isn't a school email",
-                "Sign out and create an account with your school email" + (if (domains.isNotEmpty()) ": " + domains.joinToString(", ") + "." else ".") +
-                    " Partner club representatives can still join an event with the invite code the host club sent.", Tone.INFO)
+            personal -> {
+                NoticeCard("${email.ifBlank { "This email" }} isn't a school email",
+                    "Alumni and others without a school email join with the club's join code: ask an officer of the club for it." +
+                        " Students: sign out and use your school email" + (if (domains.isNotEmpty()) " (" + domains.joinToString(", ") + ")." else ".") , Tone.INFO)
+                var joinCode by rememberSaveable { mutableStateOf("") }
+                RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(joinCode, { joinCode = it.uppercase().take(12) }, label = { Text("Club join code") }, placeholder = { Text("e.g. 7F3A-91C2") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                    CardButton("Join with code", Modifier.fillMaxWidth(), primary = true, enabled = !state.busy && joinCode.count { it.isLetterOrDigit() } == 8) {
+                        vm.save("claim_join_code", buildJsonObject { put("p_data", buildJsonObject { put("code", joinCode.trim()) }) })
+                    }
+                } }
+            }
             request?.text("status") == "pending" -> NoticeCard("Request sent: ${request.text("name")}",
                 "The platform administrator will approve it or say why not. You'll get a notice, and once approved, this app opens your new club with you as its administrator.",
                 Tone.WARNING)
@@ -215,11 +225,32 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
     }
     val codes = workspace.records("join_codes")
     val now = java.time.Instant.now()
+    val clubCode = workspace.records("settings").firstOrNull()?.text("join_code").orEmpty()
+    var changing by remember { mutableStateOf(false) }
+    var personal by rememberSaveable { mutableStateOf(false) }
     ScreenShell("Join codes", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        NoticeCard("For people without a school email", "Alumni, coaches or faculty who only have a personal email can join $club with a code you make for their email. They still apply and are reviewed as usual.", Tone.INFO)
-        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("NEW CODE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Migration 056: one shared code for the whole club. Post it where alumni are; the application is still reviewed.
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("CLUB JOIN CODE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(clubCode.ifBlank { "—" }, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Text("Post this where your alumni are: the group chat or Facebook page. Anyone with a personal email signs up with it, joins $club and sends an application, which you still approve. Students from other schools can't use it.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CardButton("Share", Modifier.weight(1f), primary = true, enabled = clubCode.isNotBlank()) {
+                    val message = "Join $club in the Archery Club app.\n1. Install the app and tap Create an account.\n" +
+                        "2. Sign up with your email. With a personal email (like Gmail), enter this join code: $clubCode\n3. Send your membership application."
+                    context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, message) }, "Share the join code"))
+                }
+                CardButton("Copy", Modifier.weight(1f), enabled = clubCode.isNotBlank()) { clipboard.setText(androidx.compose.ui.text.AnnotatedString(clubCode)) }
+            }
+            TextButton(onClick = { changing = true }, enabled = !busy) { Text("Change code", fontWeight = FontWeight.ExtraBold) }
+        } }
+        TextButton(onClick = { personal = !personal }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (personal) "Hide one-person code" else "Or make a code for one person's email", fontWeight = FontWeight.ExtraBold) }
+        if (personal) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("ONE-PERSON CODE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(name, { name = it.take(160) }, label = { Text("Their name") }, singleLine = true,
                 isError = attempted && "name" in errors, supportingText = { if (attempted) errors["name"]?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(email, { email = it.trim().take(254) }, label = { Text("Their email") }, placeholder = { Text("e.g. ana.cruz@gmail.com") }, singleLine = true,
@@ -236,8 +267,8 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
                 }
             }
         } }
-        DeskLabel("Codes · ${codes.size}")
-        if (codes.isEmpty()) EmptyState("No codes yet", "Codes you make appear here, with who used them.")
+        DeskLabel("Joined with a code · ${codes.count { it.text("used_by").isNotBlank() }}")
+        if (codes.isEmpty()) EmptyState("Nobody yet", "People who sign up with a code appear here.")
         codes.forEach { j ->
             val status = when {
                 j.text("used_by").isNotBlank() -> "Used" to Tone.POSITIVE
@@ -245,7 +276,7 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
                 (j.instant("expires_at") ?: now).isBefore(now) -> "Expired" to Tone.NEUTRAL
                 else -> "Waiting" to Tone.WARNING
             }
-            DeskRow(j.text("full_name"), "${j.text("email")} · ${j.text("code")}", leading = { Initials(j.text("full_name"), 36) }, status = status) {
+            DeskRow(j.text("full_name"), "${j.text("email")} · ${j.text("code").substringBefore(':')}", leading = { Initials(j.text("full_name"), 36) }, status = status) {
                 Text(j.text("reason"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (status.first == "Waiting") CardButton("Cancel code", Modifier.fillMaxWidth(), danger = true, enabled = !busy) { cancelling = j }
             }
@@ -263,6 +294,8 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
                     type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, message) }, "Send the join code"))
             }, onDismiss = { made = null })
     }
+    if (changing) ConfirmDialog("Change the join code?", "$clubCode stops working at once. People who already joined stay in $club. Share the new code wherever you posted the old one.",
+        "Change code", destructive = true, onConfirm = { changing = false; vm?.save("reset_club_join_code", buildJsonObject { }) }, onDismiss = { changing = false })
     cancelling?.let { j ->
         ConfirmDialog("Cancel ${j.text("code")}?", "${j.text("full_name")} won't be able to use it.", "Cancel code", destructive = true,
             onConfirm = { cancelling = null; vm?.save("revoke_join_code", buildJsonObject { put("p_data", buildJsonObject { put("id", j.text("id")) }) }) },
