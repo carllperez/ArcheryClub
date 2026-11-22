@@ -265,11 +265,9 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
-    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
-    var editing by remember { mutableStateOf<RoleLine?>(null) }
     // Same lines as the full activity log (who was affected, sign-ins hidden), just the latest few.
     val log = activityLog(workspace, null, "") { memberName(workspace, it) }.take(6)
     ph.capstone.archeryclub.ui.ScreenShell("Administration", onBack, snackbar) {
@@ -288,20 +286,101 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
             if (done == lines.size) Text("Everything is set. Edit any part from Club setup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PillButton("Open club setup", onSetup)
         } }
-        editing?.let { r -> EditRoleDialog(r, officers.find { o -> o.roles.contains(r) }?.name.orEmpty(), busy, onSave) { editing = null } }
+        // One compact card instead of a card per officer: with 30 officers the page became a long scroll
+        // before Accounts (22 Nov). The full list, with search and filters, is its own screen.
+        val summary = officerSummary(officers)
         DeskLabel("Officers and terms", "+ Assign roles") { onAssign("") }
         if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
-        // One row per person; tap to see each role's term and renew or retire it.
-        officers.forEach { o ->
-            val open = expanded == o.userId
-            val (label, tone) = when (o.worst) {
-                // Short date ("Nov 20") so the label leaves room for the officer's name.
-                TermState.EXPIRED -> o.expiredLabel { it?.atZone(java.time.ZoneId.systemDefault())?.format(java.time.format.DateTimeFormatter.ofPattern("MMM d")).orEmpty() } to Tone.DANGER
-                TermState.ENDING -> "Ends ${fmtDay(o.nearestEnd)}" to Tone.WARNING
-                TermState.ACTIVE -> "${o.roleNames.size} role${if (o.roleNames.size == 1) "" else "s"}" to Tone.NEUTRAL
+        else RaisedCard(onClick = { onOfficers("") }) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // A few faces so the card reads as "people", then the counts.
+                Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
+                    officers.take(4).forEach { o -> Box(Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)) { Initials(o.name, 32) } }
+                    if (officers.size > 4) Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
+                        Text("+${officers.size - 4}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(summary.line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             }
+            // Only the people who need something done; everyone else is one tap away.
+            val attention = officers.filter { it.worst != TermState.ACTIVE }
+            attention.take(3).forEach { o ->
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(o.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                        Text(o.roleNames.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    val (label, tone) = officerStatus(o)
+                    StatusPill(label, tone)
+                }
+            }
+            if (attention.size > 3) Text("and ${attention.size - 3} more to renew", style = MaterialTheme.typography.bodySmall, color = Club.amberInk, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (summary.needsRenewal > 0) CardButton("Renew terms", Modifier.weight(1f), primary = true) { onOfficers("renew") }
+                CardButton("See all ${summary.total}", Modifier.weight(1f)) { onOfficers("") }
+            }
+        } }
+        DeskLabel("Accounts and history")
+        RowGroup {
+            GroupRow("users", "Accounts", "Membership, roles and sign-in", onClick = onAccounts)
+            GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
+            GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
+            GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)
+        }
+        if (log.isNotEmpty()) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("RECENT CHANGES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            log.forEach { l ->
+                Column {
+                    Text(l.title, style = MaterialTheme.typography.bodyMedium)
+                    Text("${l.actor} · ${fmtDay(instantOf(l.at))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            TextButton(onClick = onLog, contentPadding = PaddingValues(0.dp)) { Text("See the full activity log") }
+        } }
+    }
+}
+
+// ---------------------------------------------------------------- Interclub
+
+
+
+/** The row's pill: "Expired Nov 20" / "Ends Dec 3" / "2 roles". Short date so the pill leaves room for the name. */
+private fun officerStatus(o: OfficerView): Pair<String, Tone> = when (o.worst) {
+    TermState.EXPIRED -> o.expiredLabel { it?.atZone(java.time.ZoneId.systemDefault())?.format(java.time.format.DateTimeFormatter.ofPattern("MMM d")).orEmpty() } to Tone.DANGER
+    TermState.ENDING -> "Ends ${fmtDay(o.nearestEnd)}" to Tone.WARNING
+    TermState.ACTIVE -> "${o.roleNames.size} role${if (o.roleNames.size == 1) "" else "s"}" to Tone.NEUTRAL
+}
+
+/** Administration -> Officers: every officer, searchable and filterable; tap a person to edit, retire or renew a term. */
+@Composable
+fun OfficersScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, startFilter: String, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit,
+                   onAssign: (String) -> Unit, onSave: (String, JsonObject, () -> Unit) -> Unit) {
+    val officers = officerViews(workspace, Instant.now())
+    var query by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf(if (startFilter == "renew") OfficerFilter.RENEW else OfficerFilter.ALL) }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<RoleLine?>(null) }
+    val summary = officerSummary(officers)
+    val shown = filterOfficers(officers, query, filter)
+    ph.capstone.archeryclub.ui.ScreenShell("Officers and terms", onBack, snackbar) {
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        editing?.let { r -> EditRoleDialog(r, officers.find { o -> o.roles.contains(r) }?.name.orEmpty(), busy, onSave) { editing = null } }
+        OutlinedTextField(query, { query = it }, placeholder = { Text("Search a name or role") }, singleLine = true, shape = CircleShape,
+            leadingIcon = { ClubIcon("search", Modifier.size(18.dp)) },
+            colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth())
+        ChoiceChips(listOf(OfficerFilter.ALL.name to "All ${summary.total}", OfficerFilter.RENEW.name to "Needs renewal ${summary.needsRenewal}",
+            OfficerFilter.ACTIVE.name to "Current ${summary.total - summary.needsRenewal}"), filter.name) { filter = OfficerFilter.valueOf(it) }
+        DeskLabel(if (shown.size == officers.size) "Everyone" else "${shown.size} shown", "+ Assign roles") { onAssign("") }
+        if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
+        else if (shown.isEmpty()) EmptyState("No one matches", if (query.isNotBlank()) "Try another name or role." else "Nothing in this filter right now.")
+        shown.forEach { o ->
+            val open = expanded == o.userId
             DeskRow(o.name, o.roleNames.joinToString(" · ") + if (o.duplicates > 0) " · ${o.duplicates} duplicate${if (o.duplicates == 1) "" else "s"}" else "",
-                leading = { Initials(o.name, 40) }, status = label to tone, onClick = { expanded = if (open) null else o.userId }) {
+                leading = { Initials(o.name, 40) }, status = officerStatus(o), onClick = { expanded = if (open) null else o.userId }) {
                 if (open) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     o.roles.forEach { r ->
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
@@ -327,29 +406,8 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
                 }
             }
         }
-        DeskLabel("Accounts and history")
-        RowGroup {
-            GroupRow("users", "Accounts", "Membership, roles and sign-in", onClick = onAccounts)
-            GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
-            GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
-            GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)
-        }
-        if (log.isNotEmpty()) RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("RECENT CHANGES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            log.forEach { l ->
-                Column {
-                    Text(l.title, style = MaterialTheme.typography.bodyMedium)
-                    Text("${l.actor} · ${fmtDay(instantOf(l.at))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            TextButton(onClick = onLog, contentPadding = PaddingValues(0.dp)) { Text("See the full activity log") }
-        } }
     }
 }
-
-// ---------------------------------------------------------------- Interclub
-
-
 
 /** Edit one appointment in place: its position title and end date, with a reason for the record (migration 040). */
 @Composable

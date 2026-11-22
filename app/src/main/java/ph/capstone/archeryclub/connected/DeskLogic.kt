@@ -372,6 +372,32 @@ fun officerViews(workspace: JsonObject, now: Instant): List<OfficerView> {
     }.sortedWith(compareByDescending<OfficerView> { it.worst.ordinal }.thenBy { it.name })
 }
 
+/** Officers page filter: everyone, only those whose terms need attention, or only those fully current. */
+enum class OfficerFilter { ALL, RENEW, ACTIVE }
+
+/** Counts for the compact "Officers and terms" card on Administration (one card instead of one card per person). */
+data class OfficerSummary(val total: Int, val expired: Int, val ending: Int) {
+    val needsRenewal: Int get() = expired + ending
+    val line: String get() = listOfNotNull(
+        "$total officer${if (total == 1) "" else "s"}",
+        "$expired expired".takeIf { expired > 0 },
+        "$ending ending soon".takeIf { ending > 0 },
+        "all terms current".takeIf { total > 0 && needsRenewal == 0 },
+    ).joinToString(" · ")
+}
+
+fun officerSummary(officers: List<OfficerView>) = OfficerSummary(
+    officers.size, officers.count { it.worst == TermState.EXPIRED }, officers.count { it.worst == TermState.ENDING })
+
+/** Search matches a name or any role/title ("treas" finds the Treasurer); the filter then narrows by term state. */
+fun filterOfficers(officers: List<OfficerView>, query: String, filter: OfficerFilter): List<OfficerView> {
+    val q = query.trim()
+    return officers.filter { o ->
+        (q.isEmpty() || o.name.contains(q, true) || o.roles.any { it.roleName.contains(q, true) || it.title.contains(q, true) }) &&
+            when (filter) { OfficerFilter.ALL -> true; OfficerFilter.RENEW -> o.worst != TermState.ACTIVE; OfficerFilter.ACTIVE -> o.worst == TermState.ACTIVE }
+    }
+}
+
 data class SetupItem(val title: String, val detail: String, val done: Boolean)
 fun clubSetup(settings: JsonObject?, applicationRequirements: List<String>, categories: List<String>): List<SetupItem> {
     val fee = settings?.amount("membership_fee") ?: 0.0

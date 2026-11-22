@@ -102,7 +102,10 @@ fun WorkflowRoute(
         "reports" -> if (allowed("reports")) ReportsScreen(workspace, busy, snackbar, vm, onBack, onStart) { onGo("records:13") }
             else denied("Reports officers only", "Your current role can't open club reports.")
         "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles:$it") },
-            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }) { onGo("records:14") }
+            onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }, onOfficers = { onPush("officers:$it") }) { onGo("records:14") }
+            else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "officers" -> if (allowed("administration")) OfficersScreen(workspace, busy, snackbar, id, onBack, onStart, onAssign = { onPush("assign_roles:$it") },
+            onSave = { name, data, done -> vm?.save(name, data, done) })
             else denied("Administrators only", "Your current role can't change club settings or roles.")
         "partner_claim" -> PartnerClaimScreen(workspace, busy, snackbar, vm, onBack) { onBack() }
         "accounts" -> if (allowed("administration")) AccountsScreen(workspace, busy, snackbar, vm, onBack) { onPush("assign_roles:$it") }

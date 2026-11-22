@@ -510,4 +510,26 @@ class DeskLogicTest {
         assertEquals("1 expired Nov 20", officerViews(w2, now).single().expiredLabel { "Nov 20" })
         assertEquals(1, riane.duplicates)
     }
+
+    @Test fun officersSummaryAndSearchKeepTheAdministrationPageShort() {
+        val now = Instant.parse("2026-11-22T00:00:00Z")
+        val w = ws("roles" to listOf(obj("id" to "finance", "name" to "Treasurer"), obj("id" to "membership", "name" to "Membership officer")),
+            "member_directory" to listOf(obj("user_id" to "s", "full_name" to "Sofia Reyes"), obj("user_id" to "n", "full_name" to "Nathan Ramos"),
+                obj("user_id" to "m", "full_name" to "Miguel Santos")),
+            "role_assignments" to listOf(
+                obj("id" to "1", "user_id" to "s", "role_id" to "finance", "position" to "", "ends_at" to "2027-05-31T00:00:00Z", "retired_at" to ""),
+                obj("id" to "2", "user_id" to "n", "role_id" to "membership", "position" to "", "ends_at" to "2026-11-20T00:00:00Z", "retired_at" to ""),
+                obj("id" to "3", "user_id" to "m", "role_id" to "membership", "position" to "Deputy", "ends_at" to "2027-05-31T00:00:00Z", "retired_at" to "")))
+        val all = officerViews(w, now)
+        val sum = officerSummary(all)
+        assertEquals("3 officers · 1 expired", sum.line)
+        assertEquals(1, sum.needsRenewal)
+        assertEquals(listOf("Nathan Ramos"), filterOfficers(all, "", OfficerFilter.RENEW).map { it.name })
+        assertEquals(2, filterOfficers(all, "", OfficerFilter.ACTIVE).size)
+        // By role name and by title, case-insensitive.
+        assertEquals(listOf("Sofia Reyes"), filterOfficers(all, "treas", OfficerFilter.ALL).map { it.name })
+        assertEquals(listOf("Miguel Santos"), filterOfficers(all, "deputy", OfficerFilter.ALL).map { it.name })
+        assertEquals(emptyList<String>(), filterOfficers(all, "treas", OfficerFilter.RENEW).map { it.name })
+        assertEquals("1 officer · all terms current", officerSummary(all.filter { it.worst == TermState.ACTIVE }.take(1)).line)
+    }
 }
