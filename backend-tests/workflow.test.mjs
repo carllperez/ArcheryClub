@@ -1066,6 +1066,7 @@ test('Clubs 23 Nov: a second club is created by the platform administrator and k
  assert.equal(u.club.id,up); assert.equal(u.settings.length,1); assert.equal(u.settings[0].club_name,'UP Archery Club');
  assert.deepEqual(u.settings[0].application_requirements,[]);
  assert.ok(u.permissions.includes('administration'));
+ assert.ok(u.permissions.includes('membership'),'first administrator can accept members');
  for(const t of ['memberships','applications','events','financial_records','equipment','role_assignments','audit_log','partner_clubs'])
   assert.ok(u[t].every(r=>r.club_id===up),t+' leaked another club');
  assert.deepEqual(u.profiles.map(p=>p.id),[ids.upadmin],'only UP people');
