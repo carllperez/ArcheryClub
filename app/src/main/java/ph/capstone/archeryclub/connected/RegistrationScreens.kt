@@ -108,22 +108,25 @@ fun ApplicationScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null && target.isNotBlank()) onUpload(uri, 2, view.id, target) }
     val editable = view.stage.editable && membership == null
     // Students from other schools can apply (migration 049): "Another school" asks for its name and their own ID format.
-    var otherSchool by rememberSaveable(app?.text("version")) { mutableStateOf(!isDlsu(initial["school"])) }
-    val errors = applicationErrors(values, otherSchool)
+    // The club's own school comes first (migration 050): DLSU's club asks for a DLSU ID, a UP club for a UP one.
+    val homeSchool = myClub(workspace)?.text("school")?.ifBlank { null } ?: DLSU
+    var otherSchool by rememberSaveable(app?.text("version")) { mutableStateOf(initial["school"].orEmpty().isNotBlank() && !sameSchool(initial["school"], homeSchool)) }
+    val dlsuRules = !otherSchool && isDlsu(homeSchool)
+    val errors = applicationErrors(values, otherSchool, dlsuRules)
     val changed = values.toMap() != initial
-    val blockers = submitBlockers(view, values, confirmed, otherSchool)
+    val blockers = submitBlockers(view, values, confirmed, otherSchool, dlsuRules)
     val leave = { if (editable && changed) discard = true else onBack() }
     BackHandler(onBack = leave)
     if (discard) DiscardDialog(onDismiss = { discard = false }, onDiscard = { discard = false; onBack() })
 
     fun payload(extra: JsonObjectBuilder.() -> Unit) = buildJsonObject {
         values.forEach { (k, v) -> put(k, v.trim()) }
-        put("school", if (otherSchool) values["school"].orEmpty().trim() else DLSU)
+        put("school", if (otherSchool) values["school"].orEmpty().trim() else homeSchool)
         app?.text("version")?.takeIf { it.isNotBlank() }?.toLongOrNull()?.let { put("version", it) }
         extra()
     }
     @Composable fun field(key: String, label: String, keyboard: KeyboardType = KeyboardType.Text, lines: Int = 1, hint: String = "") =
-        OutlinedTextField(values[key].orEmpty(), { values[key] = when (key) { "phone", "emergency_contact_phone" -> mobileInput(it); "student_number" -> idInput(it, !otherSchool); else -> it } }, label = { Text(label) }, enabled = editable && !busy,
+        OutlinedTextField(values[key].orEmpty(), { values[key] = when (key) { "phone", "emergency_contact_phone" -> mobileInput(it); "student_number" -> idInput(it, dlsuRules); else -> it } }, label = { Text(label) }, enabled = editable && !busy,
             isError = attempted && key in errors,
             supportingText = { (if (attempted) errors[key] else null)?.let { Text(it) } ?: if (hint.isNotBlank()) Text(hint) else Unit },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), singleLine = lines == 1, minLines = lines, modifier = Modifier.fillMaxWidth())
@@ -175,28 +178,29 @@ fun ApplicationScreen(
             RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepHeader(1, "Your details", view.id.isNotBlank() && errors.isEmpty() && !changed)
             Text("School", style = MaterialTheme.typography.labelLarge)
-            ChoiceChips(listOf("dlsu" to DLSU, "other" to "Another school"), if (otherSchool) "other" else "dlsu") {
+            ChoiceChips(listOf("home" to homeSchool, "other" to "Another school"), if (otherSchool) "other" else "home") {
                 if (editable && !busy) {
                     otherSchool = it == "other"
-                    values["school"] = if (otherSchool) values["school"].orEmpty().takeUnless { s -> isDlsu(s) }.orEmpty() else DLSU
+                    values["school"] = if (otherSchool) values["school"].orEmpty().takeUnless { s -> sameSchool(s, homeSchool) }.orEmpty() else homeSchool
                     // The ID and college formats differ by school, so clear answers that only fit the other one.
-                    values["college"] = values["college"].orEmpty().takeIf { c -> (c in COLLEGES) != otherSchool }.orEmpty()
+                    val dlsuNow = !otherSchool && isDlsu(homeSchool)
+                    values["college"] = values["college"].orEmpty().takeIf { c -> (c in COLLEGES) == dlsuNow }.orEmpty()
                 }
             }
             if (otherSchool) field("school", "School name", hint = "e.g. University of Santo Tomas")
             field("full_name", "Full name", hint = "As it appears on your school ID. It becomes your verified club name.")
             field("phone", "Mobile number", KeyboardType.Phone, hint = MOBILE_HELP)
-            if (otherSchool) field("student_number", "Student ID number", hint = "As printed on your school ID, e.g. 2021-12345")
+            if (!dlsuRules) field("student_number", "Student ID number", hint = "As printed on your school ID, e.g. 2021-12345")
             else field("student_number", "DLSU ID number", KeyboardType.Number, hint = "8 digits, e.g. 12345678")
             Text("Sex", style = MaterialTheme.typography.labelLarge)
             ChoiceChips(SEXES.map { it to it }, values["sex"].orEmpty()) { if (editable && !busy) values["sex"] = it }
             if (attempted && values["sex"].orEmpty().isBlank()) Text("Pick your sex.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            if (otherSchool) field("college", "College or department", hint = "e.g. College of Science")
+            if (!dlsuRules) field("college", "College or department", hint = "e.g. College of Science")
             else {
                 Text("College", style = MaterialTheme.typography.labelLarge)
                 ChoiceChips(COLLEGES.map { it to it }, values["college"].orEmpty()) { if (editable && !busy) values["college"] = it }
             }
-            if (attempted && values["college"].orEmpty().isBlank()) Text(if (otherSchool) "Enter your college or department." else "Pick your college.",
+            if (attempted && values["college"].orEmpty().isBlank()) Text(if (!dlsuRules) "Enter your college or department." else "Pick your college.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             field("program", "Program", hint = "e.g. BS Information Technology")
             Text("Year level", style = MaterialTheme.typography.labelLarge)

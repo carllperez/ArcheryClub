@@ -126,7 +126,7 @@ fun ClubLanding(
     var welcomed by remember(user){mutableStateOf(context.clubPrefs().getBoolean(welcomedKey(user),false))}
     if(isMember&&!welcomed&&page=="home"&&workspace.records("applications").any{it.text("user_id")==user}){
         val paid=workspace.records("fee_assessments").find{it.text("user_id")==user&&it.text("purpose")=="Membership fee"&&it.text("payment_id").isNotBlank()}
-        WelcomeActive(firstName(fullName),paid?.let{peso(it.amount())}){context.clubPrefs().edit().putBoolean(welcomedKey(user),true).apply();welcomed=true}
+        WelcomeActive(firstName(fullName),paid?.let{peso(it.amount())},clubName(workspace),isDlsu(myClub(workspace)?.text("school"))){context.clubPrefs().edit().putBoolean(welcomedKey(user),true).apply();welcomed=true}
         return
     }
     if(partnerRep&&page=="home"){

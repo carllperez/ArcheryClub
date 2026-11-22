@@ -1048,3 +1048,82 @@ test('Other schools 23 Nov: an application records the school; DLSU keeps the 8-
  await db.exec('reset role');
  assert.equal((await db.query('select school from app_private.applications where user_id=$1',[ids.newbie])).rows[0].school,'De La Salle University');
 });
+test('Clubs 23 Nov: a second club is created by the platform administrator and kept completely apart from DLSU',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ ids.upadmin='00000000-0000-4000-8000-0000000000c1'; ids.upnew='00000000-0000-4000-8000-0000000000c2';
+ for(const n of ['upadmin','upnew'])await db.query('insert into auth.users values($1,$2,now())',[ids[n],n+'@up.example.test']);
+ await as('upadmin',()=>db.exec('select public.initialize_account()'));
+ // Only the platform administrator creates clubs.
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'upadmin@up.example.test'})],'$1::jsonb'),/platform administrator/);
+ await db.query('update app_private.profiles set platform_admin=true where id=$1',[ids.admin]);
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'applicant@example.test'})],'$1::jsonb'),/already belongs to a club/);
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'nobody@example.test'})],'$1::jsonb'),/No account uses/);
+ const up=(await rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',short_name:'UPAC',school:'University of the Philippines',admin_email:'upadmin@up.example.test'})],'$1::jsonb')).id;
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'up archery club',admin_email:'upnew@up.example.test'})],'$1::jsonb'),/already exists/);
+ const ws=name=>as(name,async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ // The UP administrator sees UP's blank settings and none of DLSU's people, money or records.
+ const u=await ws('upadmin');
+ assert.equal(u.club.id,up); assert.equal(u.settings.length,1); assert.equal(u.settings[0].club_name,'UP Archery Club');
+ assert.deepEqual(u.settings[0].application_requirements,[]);
+ assert.ok(u.permissions.includes('administration'));
+ for(const t of ['memberships','applications','events','financial_records','equipment','role_assignments','audit_log','partner_clubs'])
+  assert.ok(u[t].every(r=>r.club_id===up),t+' leaked another club');
+ assert.deepEqual(u.profiles.map(p=>p.id),[ids.upadmin],'only UP people');
+ assert.ok(u.member_directory.every(m=>m.user_id===ids.upadmin||!m.user_id)||u.member_directory.length===0,'directory leaked');
+ assert.equal(Number(u.fund_totals?.received??0),0);
+ // UP sets its own rules; DLSU's stay as they were.
+ const dlsuBefore=(await db.query('select application_requirements from app_private.settings where club_id=$1',[dlsu])).rows[0];
+ await command('upadmin','configure_club',{club_name:'UP Archery Club',application_requirements:['UP Form 5'],renewal_requirements:[],membership_categories:['Regular member'],retention_policy:'UP policy',rules_validated:true});
+ assert.deepEqual((await db.query('select application_requirements from app_private.settings where club_id=$1',[up])).rows[0].application_requirements,['UP Form 5']);
+ assert.deepEqual((await db.query('select application_requirements from app_private.settings where club_id=$1',[dlsu])).rows[0],dlsuBefore);
+ // UP's activity is UP's: DLSU people don't see it, and UP doesn't see DLSU's.
+ await db.query("insert into app_private.role_assignments(user_id,role_id,position,ends_at,reason,club_id) values($1,'activity_officer','Activity officer',now()+interval '1 year','UP fixture',$2)",[ids.upadmin,up]);
+ const ev=await command('upadmin','save_event',{title:'UP Open Shoot',description:'UP only',venue:'UP Range',starts_at:new Date(Date.now()+48*3600e3).toISOString(),ends_at:new Date(Date.now()+50*3600e3).toISOString(),registration_opens:new Date(Date.now()-3600e3).toISOString(),registration_closes:new Date(Date.now()+24*3600e3).toISOString(),capacity:10});
+ assert.equal((await db.query('select club_id from app_private.events where id=$1',[ev.id])).rows[0].club_id,up);
+ const d=await ws('admin');
+ assert.ok(!d.events.some(e=>e.id===ev.id),'DLSU sees UP event');
+ const dOfficer=await ws('officer'); assert.ok(!dOfficer.events.some(e=>e.id===ev.id),'DLSU officer sees UP event');
+ assert.ok(dOfficer.events.every(e=>e.club_id===dlsu));
+ assert.ok(d.clubs.length===2 && d.club.id===dlsu);
+ // A DLSU officer can't reach UP's event by its id either.
+ await assert.rejects(()=>command('officer','save_event',{id:ev.id,version:1,title:'Hijack',description:'x',venue:'x',starts_at:new Date(Date.now()+48*3600e3).toISOString(),ends_at:new Date(Date.now()+50*3600e3).toISOString(),registration_opens:new Date(Date.now()-3600e3).toISOString(),registration_closes:new Date(Date.now()+24*3600e3).toISOString(),capacity:10}));
+ assert.equal((await db.query('select title from app_private.events where id=$1',[ev.id])).rows[0].title,'UP Open Shoot');
+ // With two clubs, a new account has no club until it picks one; a DLSU member can't switch.
+ await as('upnew',()=>db.exec('select public.initialize_account()'));
+ assert.equal((await ws('upnew')).club,null);
+ assert.equal((await ws('upnew')).settings.length,0);
+ await rpc('upnew','join_club',[JSON.stringify({club_id:up})],'$1::jsonb');
+ assert.equal((await ws('upnew')).club.id,up);
+ await denied(()=>rpc('applicant','join_club',[JSON.stringify({club_id:up})],'$1::jsonb'),/already belongs/);
+ // Interclub across clubs: UP's administrator joins a DLSU event with a code, stays in UP, and adds an archer that
+ // DLSU sees; UP still sees no other DLSU event.
+ const e2=await command('officer','save_event',{title:'DLSU Open (cross-club)',description:'Shared',venue:'Range',starts_at:future(60),ends_at:future(64),registration_opens:future(-1),registration_closes:future(50),capacity:30});
+ await command('officer','publish_event',{id:e2.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e2.id,shared_details:'Shared',requirements:'School ID',registration_closes:future(40),rules:'Rules'});
+ const pUp=await command('officer','save_partner',{name:'UP Archery Club (cross-club)',official_channel:'up@example.test'});
+ const inv2=await rpc('officer','create_partner_invite',[JSON.stringify({event_id:e2.id,partner_id:pUp.id})],'$1::jsonb');
+ const claimed=await rpc('upadmin','claim_partner_invite',[JSON.stringify({code:inv2.code})],'$1::jsonb');
+ assert.equal(claimed.ok,true);
+ const upProf=(await db.query('select club_id,account_type from app_private.profiles where id=$1',[ids.upadmin])).rows[0];
+ assert.equal(upProf.club_id,up,'UP admin stayed in UP'); assert.notEqual(upProf.account_type,'partner');
+ const u2=await ws('upadmin');
+ assert.ok(u2.events.some(e=>e.id===e2.id),'guest sees the shared event');
+ assert.ok(!u2.events.some(e=>e.club_id===dlsu&&e.id!==e2.id),'guest sees only the event invited to');
+ assert.ok(u2.interclub_events.some(i=>i.event_id===e2.id));
+ assert.ok(u2.permissions.includes('administration'),'still UP administrator');
+ const del=await command('upadmin','save_delegate',{event_id:e2.id,partner_id:pUp.id,full_name:'UP Archer',affiliation:'UP',category:'Recurve',requirements:'Confirmed'});
+ assert.equal((await db.query('select club_id from app_private.delegates where id=$1',[del.id])).rows[0].club_id,dlsu,'event rows stay with the host');
+ assert.ok((await ws('officer')).delegates.some(d=>d.id===del.id),'host sees the guest archer');
+ // A UP account without an invite can't add archers to a DLSU event.
+ await assert.rejects(()=>command('upnew','save_delegate',{event_id:e2.id,partner_id:pUp.id,full_name:'Sneak',affiliation:'UP',category:'Recurve',requirements:'x'}));
+ // Each club's fee rules: UP sets its own amount and days to pay; DLSU's stay.
+ await db.query("insert into app_private.role_assignments(user_id,role_id,position,ends_at,reason,club_id) values($1,'treasurer','Treasurer',now()+interval '1 year','UP fixture',$2)",[ids.upadmin,up]);
+ const dlsuFee=(await db.query('select membership_fee,fee_due_days from app_private.settings where club_id=$1',[dlsu])).rows[0];
+ await command('upadmin','set_membership_fee',{amount:500,due_days:30});
+ assert.deepEqual((await db.query('select membership_fee::float8 f,fee_due_days d from app_private.settings where club_id=$1',[up])).rows[0],{f:500,d:30});
+ assert.deepEqual((await db.query('select membership_fee,fee_due_days from app_private.settings where club_id=$1',[dlsu])).rows[0],dlsuFee);
+ await denied(()=>command('upadmin','set_membership_fee',{amount:500,due_days:0}),/1 to 120/);
+ // The shared role catalogue can't be changed by one club's administrator once there are several clubs.
+ await denied(()=>command('upadmin','define_role',{role_id:'treasurer',name:'Bursar',permissions:['finance']}),/platform administrator|shared/);
+ await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
+});

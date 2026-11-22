@@ -102,6 +102,9 @@ const val OTHER_ID_HINT = "Your student ID number is 4 to 20 letters, numbers or
 /** What the ID box accepts while typing, by school. */
 fun idInput(s: String, dlsu: Boolean): String = if (dlsu) studentIdInput(s) else s.filter { it.isLetterOrDigit() || it == '-' }.take(20)
 
+/** The same school? DLSU accepts its short names; other schools compare by name. */
+fun sameSchool(a: String?, b: String): Boolean = if (isDlsu(b)) isDlsu(a) else a.orEmpty().trim().equals(b.trim(), ignoreCase = true)
+
 /** DLSU colleges, by the short names students use. */
 val COLLEGES = listOf("CCS", "GCOE", "COS", "CLA", "RVR-COB", "SOE", "BAGCED", "TDCOL", "Other")
 val YEAR_LEVELS = listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Graduate", "Alumni")
@@ -122,7 +125,7 @@ fun categoryFor(yearLevel: String, categories: List<String>): String? {
 
 /** Mirrors the server: name required (≤160); mobile numbers are Philippine mobiles; a DLSU ID number is 8 digits.
  *  [otherSchool]: the applicant picked "Another school", so the school's name is needed and their ID format applies. */
-fun applicationErrors(v: Map<String, String>, otherSchool: Boolean = !isDlsu(v["school"])): Map<String, String> = buildMap {
+fun applicationErrors(v: Map<String, String>, otherSchool: Boolean = !isDlsu(v["school"]), dlsuId: Boolean = !otherSchool): Map<String, String> = buildMap {
     val school = v["school"].orEmpty().trim()
     if (otherSchool && school.isEmpty()) put("school", "Enter the name of your school.")
     else if (school.length > 120) put("school", "Keep it under 120 characters.")
@@ -133,8 +136,8 @@ fun applicationErrors(v: Map<String, String>, otherSchool: Boolean = !isDlsu(v["
     if (phone.isNotEmpty() && !validMobile(phone)) put("phone", MOBILE_HINT)
     val id = v["student_number"].orEmpty().trim()
     if (id.isNotEmpty()) when {
-        !otherSchool && !validStudentId(id) -> put("student_number", STUDENT_ID_HINT)
-        otherSchool && !validOtherSchoolId(id) -> put("student_number", OTHER_ID_HINT)
+        dlsuId && !validStudentId(id) -> put("student_number", STUDENT_ID_HINT)
+        !dlsuId && !validOtherSchoolId(id) -> put("student_number", OTHER_ID_HINT)
     }
     if (v["experience"].orEmpty().length > 2000) put("experience", "Keep it under 2,000 characters.")
     if (v["program"].orEmpty().trim().length > 120) put("program", "Keep it under 120 characters.")
@@ -144,11 +147,12 @@ fun applicationErrors(v: Map<String, String>, otherSchool: Boolean = !isDlsu(v["
 }
 
 /** Everything still standing between the applicant and a successful submission, in plain words. */
-fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean, otherSchool: Boolean = !isDlsu(values["school"])): List<String> = buildList {
+fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean, otherSchool: Boolean = !isDlsu(values["school"]),
+                   dlsuId: Boolean = !otherSchool): List<String> = buildList {
     if (!view.stage.editable) { add("This application is being checked."); return@buildList }
-    applicationErrors(values, otherSchool).values.forEach { add(it) }
+    applicationErrors(values, otherSchool, dlsuId).values.forEach { add(it) }
     if (values["phone"].orEmpty().isBlank()) add("Enter your mobile number.")
-    if (values["student_number"].orEmpty().isBlank()) add(if (otherSchool) "Enter your student ID number." else "Enter your DLSU ID number.")
+    if (values["student_number"].orEmpty().isBlank()) add(if (dlsuId) "Enter your DLSU ID number." else "Enter your student ID number.")
     if (values["sex"].orEmpty().isBlank()) add("Pick your sex.")
     if (values["college"].orEmpty().isBlank()) add("Pick your college.")
     if (values["program"].orEmpty().isBlank()) add("Enter your program.")

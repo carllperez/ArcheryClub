@@ -131,6 +131,7 @@ fun MemberProfilePage(
                 if (state.recovery) recovery()
                 val myRoles = myRoleLines(workspace, Instant.now())
                 YourRolesCard(workspace, myRoles)
+                if (allClubs(workspace).size > 1) InterclubInvitesGroup(workspace, onRoute)
                 RaisedCard(onClick = { onRoute("profile") }) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -313,16 +314,34 @@ fun OfficerProfilePage(workspace: JsonObject, fullName: String, noticeCount: Int
         if (state.recovery) recovery()
         if (developer) InfoCard("Developer account", "Can hold roles without a membership, for testing. Turn this off before the club uses the app for real.")
         YourRolesCard(workspace, myRoles)
+        if (allClubs(workspace).size > 1) InterclubInvitesGroup(workspace, onRoute)
         RowGroup {
             GroupRow("home", "Your desks", "Everything your roles open", onClick = { onPage("home") })
             GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
                 trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
             if ("equipment" in permissions) GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
-            GroupRow("modules", "All club records", "For anything not on your desks", divider = false, onClick = { onPage("modules") })
+            GroupRow("modules", "All club records", "For anything not on your desks", divider = !isPlatformAdmin(workspace), onClick = { onPage("modules") })
+            if (isPlatformAdmin(workspace)) GroupRow("users", "Clubs", "${allClubs(workspace).size} in the app · create a club for another school", divider = false,
+                onClick = { onRoute("platform_clubs") })
         }
         OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.roseSoft)) { Text("Sign out", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
     }
     if (signOut) ConfirmDialog("Sign out?", "You'll need your email and password to sign back in.", "Sign out",
         onConfirm = { signOut = false; onSignOut() }, onDismiss = { signOut = false }, destructive = true)
+}
+
+/** A club account (e.g. UP's administrator) joins another club's interclub event with an invite code and stays in its
+ *  own club (migration 050). Lists the events joined, and the way in with a code. */
+@Composable
+fun InterclubInvitesGroup(workspace: JsonObject, onRoute: (String) -> Unit) {
+    val joined = partnerEvents(workspace).filter { it.text("club_id") != myClub(workspace)?.text("id") }
+    DeskLabel("Interclub with other clubs")
+    RowGroup {
+        joined.forEach { e ->
+            val title = workspace.records("events").find { it.text("id") == e.text("event_id") }?.text("title").orEmpty()
+            GroupRow("calendar", title.ifBlank { "Interclub event" }, "Hosted by another club", onClick = { onRoute("interclub:${e.text("event_id")}") })
+        }
+        GroupRow("qr", "Enter an invite code", "Join another club's interclub event", divider = false, onClick = { onRoute("partner_claim") })
+    }
 }

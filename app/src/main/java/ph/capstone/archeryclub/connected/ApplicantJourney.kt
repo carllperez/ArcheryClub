@@ -269,7 +269,7 @@ fun ApplicantProfilePage(
 
 /** Shown once per device when an applicant's membership turns Active. */
 @Composable
-fun WelcomeActive(firstName: String, feeAmount: String?, onContinue: () -> Unit) {
+fun WelcomeActive(firstName: String, feeAmount: String?, clubName: String = "the club", dlsu: Boolean = true, onContinue: () -> Unit) {
     LightStatusBarIcons()
     // systemBarsPadding: the green fills the screen but the content stays clear of the status and gesture bars
     // (the gesture bar sat on top of "Go to my Home" on a small phone, 22 Nov).
@@ -278,7 +278,7 @@ fun WelcomeActive(firstName: String, feeAmount: String?, onContinue: () -> Unit)
         ClubMark(104)
         Pill("ACTIVE MEMBER", Club.lime, Club.forestDeep)
         Text("You're in, $firstName!", style = MaterialTheme.typography.headlineLarge, color = Color.White, textAlign = TextAlign.Center)
-        Text((feeAmount?.let { "Your $it payment was verified. " }.orEmpty()) + "Welcome to the De La Salle University Archery Club.",
+        Text((feeAmount?.let { "Your $it payment was verified. " }.orEmpty()) + "Welcome to $clubName.",
             style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = .92f), textAlign = TextAlign.Center)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = .12f)).padding(horizontal = 16.dp, vertical = 6.dp)) {
             listOf("calendar" to "Register for practice sessions", "box" to "Borrow club bows and arrows", "target" to "Log rounds and get coach feedback").forEach { (icon, text) ->
@@ -287,7 +287,8 @@ fun WelcomeActive(firstName: String, feeAmount: String?, onContinue: () -> Unit)
                 }
             }
         }
-        Text("Visit the range at least once a week to stay active (Bylaws 2.3).", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .85f), textAlign = TextAlign.Center)
+        // DLSU's own bylaw; other clubs set their own rules (23 Nov), so it isn't shown to them.
+        if (dlsu) Text("Visit the range at least once a week to stay active (Bylaws 2.3).", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .85f), textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Button(onClick = onContinue, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Club.forestDeep)) { Text("Go to my Home", fontWeight = FontWeight.ExtraBold) }

@@ -1,5 +1,6 @@
 package ph.capstone.archeryclub.connected
 
+import kotlinx.serialization.json.*
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -52,3 +53,22 @@ fun splashProblem(serverReplied: Boolean, message: String?): SplashProblem = whe
     message.orEmpty().contains("enabled account", ignoreCase = true) -> SplashProblem.ACCOUNT_OFF
     else -> SplashProblem.NO_ACCESS
 }
+
+/* Many clubs, one app (migration 050). */
+/** The caller's club, or null when the account hasn't picked one yet. */
+fun myClub(workspace: JsonObject): JsonObject? = workspace["club"] as? JsonObject
+fun allClubs(workspace: JsonObject): List<JsonObject> = workspace.records("clubs")
+/** A new account must pick a club once there is more than one (a backend without clubs never asks). */
+fun needsClub(workspace: JsonObject): Boolean {
+    if (!workspace.containsKey("clubs") || myClub(workspace) != null) return false
+    val me = workspace.text("user_id")
+    return workspace.records("profiles").find { it.text("id") == me }?.text("account_type") != "partner"
+}
+fun isPlatformAdmin(workspace: JsonObject): Boolean =
+    workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }?.text("platform_admin") == "true"
+/** The club's own name for headings and messages, falling back to the club's settings. */
+fun clubName(workspace: JsonObject): String = myClub(workspace)?.text("name")?.ifBlank { null }
+    ?: workspace.records("settings").firstOrNull()?.text("club_name")?.ifBlank { null } ?: "your club"
+
+/** The club's colour name ("green", "red", "blue"); signed-out screens and older backends use green. */
+fun clubTheme(workspace: JsonObject?): String = workspace?.let { myClub(it)?.text("theme") }?.ifBlank { null } ?: "green"

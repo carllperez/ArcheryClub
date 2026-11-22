@@ -41,7 +41,8 @@ data class ToneColors(val container: Color, val content: Color)
 @Composable fun toneColors(tone: Tone): ToneColors {
     val dark = MaterialTheme.colorScheme.background.red < .5f
     return when (tone) {
-        Tone.POSITIVE -> if (dark) ToneColors(Color(0xFF23402E), Club.mint) else ToneColors(Club.mint, Club.forestDeep)
+        // Status colours stay green in every club, so "approved" never looks like an error in UP's red theme.
+        Tone.POSITIVE -> if (dark) ToneColors(Color(0xFF23402E), Color(0xFFDDEFD3)) else ToneColors(Color(0xFFDDEFD3), Color(0xFF183F27))
         Tone.WARNING -> if (dark) ToneColors(Color(0xFF3F3218), Color(0xFFF1C76B)) else ToneColors(Club.amberSoft, Club.amberInk)
         Tone.DANGER -> if (dark) ToneColors(Color(0xFF452222), Color(0xFFF3A6A0)) else ToneColors(Club.roseSoft, Club.roseInk)
         Tone.INFO -> if (dark) ToneColors(Color(0xFF1F2F37), Color(0xFFB5D3E2)) else ToneColors(Color(0xFFE4EEF2), Color(0xFF214556))

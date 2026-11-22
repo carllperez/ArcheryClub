@@ -104,6 +104,8 @@ fun WorkflowRoute(
         "admin" -> if (allowed("administration")) AdminScreen(workspace, busy, snackbar, perms, onBack, onStart, onRoles = { onPush("roles") }, onSetup = { onPush("club_setup") }, onInventory = { onPush("inv_setup") }, onAssign = { onPush("assign_roles:$it") },
             onSave = { name, data, done -> vm?.save(name, data, done) }, onLog = { onPush("activity_log") }, onAccounts = { onPush("accounts") }, onOfficers = { onPush("officers:$it") }) { onGo("records:14") }
             else denied("Administrators only", "Your current role can't change club settings or roles.")
+        "platform_clubs" -> if (isPlatformAdmin(workspace)) PlatformClubsScreen(workspace, busy, snackbar, onBack, vm)
+            else denied("Platform administrator only", "Only the platform administrator creates clubs.")
         "officers" -> if (allowed("administration")) OfficersScreen(workspace, busy, snackbar, id, onBack, onStart, onAssign = { onPush("assign_roles:$it") },
             onSave = { name, data, done -> vm?.save(name, data, done) })
             else denied("Administrators only", "Your current role can't change club settings or roles.")

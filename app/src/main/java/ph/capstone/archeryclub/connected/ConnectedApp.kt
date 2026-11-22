@@ -87,9 +87,14 @@ fun ConnectedApp(vm:SystemViewModel){
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START){
         if(leftAt>0&&System.currentTimeMillis()-leftAt>RELOAD_AFTER_AWAY_MS&&state.signedIn)vm.refresh()
     }
+    // The colours follow the signed-in account's club (green DLSU, red UP, blue Ateneo); signed out is green.
+    val theme=clubTheme(state.workspace)
+    SideEffect{Club.palette=ClubPalettes.of(theme)}
     if(!state.signedIn){ClubAuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
     if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")},problem=state.problem);return}
+    // Several clubs (migration 050): a new account picks its club before anything else.
+    if(needsClub(workspace)){ChooseClubScreen(workspace,state,vm,snackbar);return}
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}

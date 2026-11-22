@@ -159,6 +159,9 @@ fun SetupFeesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
     val pay = paymentDetails(settings)
     val canFee = "finance" in permissions || "administration" in permissions
     var amount by rememberSaveable { mutableStateOf(plainNumber(fee)) }
+    // Days to pay after approval, per club (migration 050); 14 is the default every club starts with.
+    val savedDays = workspace.records("settings").firstOrNull()?.text("fee_due_days")?.toIntOrNull() ?: 14
+    var days by rememberSaveable { mutableStateOf(savedDays.toString()) }
     var gName by rememberSaveable { mutableStateOf(pay.gcashName) }
     var gNumber by rememberSaveable { mutableStateOf(pay.gcashNumber) }
     var bank by rememberSaveable { mutableStateOf(pay.bankName) }
@@ -173,10 +176,14 @@ fun SetupFeesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
             }
             OutlinedTextField(amount, { amount = it.filter { c -> c.isDigit() || c == '.' }.take(9) }, label = { Text("Yearly fee (₱)") }, singleLine = true,
                 enabled = canFee, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(days, { days = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Days to pay after approval") }, singleLine = true,
+                enabled = canFee, isError = days.toIntOrNull()?.let { it !in 1..120 } ?: true,
+                supportingText = { Text("1 to 120 days. The due date on each approval is counted from the approval day.") }, modifier = Modifier.fillMaxWidth())
             Text(if (canFee) "Approved applicants pay this before they become Active. Set 0 for a free club." else "Only the Treasurer or an Administrator can change the fee.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (canFee) Button(onClick = { onCommand("set_membership_fee", buildJsonObject { put("amount", amount.toDoubleOrNull() ?: 0.0) }) {} },
-                enabled = !busy && amount.toDoubleOrNull() != null && amount.toDoubleOrNull() != fee, shape = RoundedCornerShape(999.dp),
+            val daysOk = days.toIntOrNull()?.let { it in 1..120 } == true
+            if (canFee) Button(onClick = { onCommand("set_membership_fee", buildJsonObject { put("amount", amount.toDoubleOrNull() ?: 0.0); put("due_days", days.toInt()) }) {} },
+                enabled = !busy && daysOk && amount.toDoubleOrNull() != null && (amount.toDoubleOrNull() != fee || days.toIntOrNull() != savedDays), shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep), modifier = Modifier.fillMaxWidth()) { Text("Save fee", fontWeight = FontWeight.ExtraBold) }
         } }
         RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

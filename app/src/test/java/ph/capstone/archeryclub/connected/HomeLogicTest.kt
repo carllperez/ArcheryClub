@@ -67,4 +67,22 @@ class HomeLogicTest {
         assertEquals(SplashProblem.OFFLINE, splashProblem(false, "Unable to resolve host"))
         assertEquals(SplashProblem.NO_ACCESS, splashProblem(true, "JWT expired"))
     }
+
+    @org.junit.Test fun clubsDecideTheFirstScreenTheColourAndTheSchool() {
+        fun o(vararg p: Pair<String, String>) = kotlinx.serialization.json.JsonObject(p.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })
+        fun arr(vararg x: kotlinx.serialization.json.JsonObject) = kotlinx.serialization.json.JsonArray(x.toList())
+        val up = o("id" to "c2", "name" to "UP Archery Club", "school" to "University of the Philippines", "theme" to "red")
+        val clubs = arr(o("id" to "c1", "name" to "DLSU Archery Club", "theme" to "green"), up)
+        // A new account with two clubs to choose from picks one first; a partner guest and an older backend don't.
+        val fresh = kotlinx.serialization.json.JsonObject(mapOf("user_id" to kotlinx.serialization.json.JsonPrimitive("u"), "clubs" to clubs,
+            "profiles" to arr(o("id" to "u", "account_type" to "member"))))
+        assertEquals(true, needsClub(fresh))
+        assertEquals(false, needsClub(kotlinx.serialization.json.JsonObject(fresh + ("profiles" to arr(o("id" to "u", "account_type" to "partner"))))))
+        assertEquals(false, needsClub(kotlinx.serialization.json.JsonObject(mapOf("user_id" to kotlinx.serialization.json.JsonPrimitive("u")))))
+        val inUp = kotlinx.serialization.json.JsonObject(fresh + ("club" to up) + ("profiles" to arr(o("id" to "u", "platform_admin" to "true"))))
+        assertEquals(false, needsClub(inUp)); assertEquals(true, isPlatformAdmin(inUp))
+        assertEquals("red", clubTheme(inUp)); assertEquals("green", clubTheme(null)); assertEquals("UP Archery Club", clubName(inUp))
+        assertEquals(true, sameSchool("university of the philippines", "University of the Philippines"))
+        assertEquals(true, sameSchool("DLSU", "De La Salle University")); assertEquals(false, sameSchool("Ateneo", "De La Salle University"))
+    }
 }

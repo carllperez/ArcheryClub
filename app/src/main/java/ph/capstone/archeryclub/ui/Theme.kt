@@ -4,6 +4,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -13,19 +15,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ph.capstone.archeryclub.R
 
-/** Brand tokens of the "forest and target" design. Every screen draws from these. */
+/** One club's colours. DLSU is green, UP red, Ateneo blue (migration 050); the workflows are the same for all. */
+data class ClubPalette(val deep: Color, val main: Color, val accent: Color, val soft: Color, val page: Color, val line: Color,
+                       val container: Color, val variant: Color, val tray: Color)
+
+object ClubPalettes {
+    val green = ClubPalette(Color(0xFF183F27), Color(0xFF2B5E3C), Color(0xFFB9DC7A), Color(0xFFDDEFD3), Color(0xFFF2F6EF), Color(0xFFD5DED2),
+        Color(0xFFE6F1E0), Color(0xFFE6ECE3), Color(0xFFEDF2EA))
+    val red = ClubPalette(Color(0xFF5E0B12), Color(0xFF8E1B24), Color(0xFFF7B6A8), Color(0xFFF8DEDC), Color(0xFFFAF3F2), Color(0xFFE6D3D1),
+        Color(0xFFF6E3E1), Color(0xFFEFE3E2), Color(0xFFF4EAE9))
+    val blue = ClubPalette(Color(0xFF0E2A5A), Color(0xFF1D4E9A), Color(0xFF9CC7FF), Color(0xFFDCE7F8), Color(0xFFF2F5FB), Color(0xFFD2DBEA),
+        Color(0xFFE2EBF8), Color(0xFFE3E8F1), Color(0xFFEAEFF6))
+    fun of(theme: String?) = when (theme) { "red" -> red; "blue" -> blue; else -> green }
+}
+
+/** Brand tokens of the "forest and target" design. Every screen draws from these; the brand colours follow the
+ *  signed-in account's club. They are snapshot state, so changing the club recolours every screen at once. */
 object Club {
-    val forestDeep = Color(0xFF183F27)
-    val forest = Color(0xFF2B5E3C)
-    val lime = Color(0xFFB9DC7A)
-    val mint = Color(0xFFDDEFD3)
-    val sage = Color(0xFFF2F6EF)
+    var palette by androidx.compose.runtime.mutableStateOf(ClubPalettes.green)
+    val forestDeep get() = palette.deep
+    val forest get() = palette.main
+    val lime get() = palette.accent
+    val mint get() = palette.soft
+    val sage get() = palette.page
     val amberSoft = Color(0xFFFCEBC2)
     val amberInk = Color(0xFF7A4B00)
     val roseSoft = Color(0xFFFBE1DF)
     val roseInk = Color(0xFF8C1D18)
-    val shadow = Color(0x33183F27)
-    val line = Color(0xFFD5DED2)
+    val shadow get() = palette.deep.copy(alpha = 0.2f)
+    val line get() = palette.line
 }
 
 /** Plus Jakarta Sans (SIL Open Font License, see assets/OFL-plus-jakarta-sans.txt). */
@@ -37,23 +55,23 @@ val Jakarta = FontFamily(
     Font(R.font.plus_jakarta_sans_extrabold, FontWeight.ExtraBold),
 )
 
-private val LightColors = lightColorScheme(
-    primary = Club.forest, onPrimary = Color.White,
-    primaryContainer = Color(0xFFE6F1E0), onPrimaryContainer = Club.forestDeep,
-    secondary = Color(0xFF4F6354), secondaryContainer = Club.mint, onSecondaryContainer = Club.forestDeep,
+private fun lightColors(p: ClubPalette) = lightColorScheme(
+    primary = p.main, onPrimary = Color.White,
+    primaryContainer = p.container, onPrimaryContainer = p.deep,
+    secondary = Color(0xFF4F6354), secondaryContainer = p.soft, onSecondaryContainer = p.deep,
     tertiary = Club.amberInk, tertiaryContainer = Club.amberSoft,
-    background = Club.sage, surface = Color(0xFFFFFFFF),
-    surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFFFFFFF), surfaceVariant = Color(0xFFE6ECE3),
-    surfaceContainer = Color(0xFFEDF2EA), surfaceContainerHigh = Color(0xFFE6ECE3), surfaceContainerHighest = Color(0xFFE1E8DE),
+    background = p.page, surface = Color(0xFFFFFFFF),
+    surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFFFFFFF), surfaceVariant = p.variant,
+    surfaceContainer = p.tray, surfaceContainerHigh = p.variant, surfaceContainerHighest = p.variant,
     onBackground = Color(0xFF131715), onSurface = Color(0xFF131715),
     onSurfaceVariant = Color(0xFF565F59),
-    outline = Color(0xFF78817B), outlineVariant = Club.line,
+    outline = Color(0xFF78817B), outlineVariant = p.line,
     error = Color(0xFFB3261E), errorContainer = Club.roseSoft, onErrorContainer = Club.roseInk,
 )
 
 private val DarkColors = darkColorScheme(
     primary = Color(0xFFA8D5A2), onPrimary = Color(0xFF0B2A17),
-    primaryContainer = Color(0xFF23402E), onPrimaryContainer = Club.mint,
+    primaryContainer = Color(0xFF23402E), onPrimaryContainer = Color(0xFFDDEFD3),
     secondaryContainer = Color(0xFF2A3B30), background = Color(0xFF101612), surface = Color(0xFF18211B),
     surfaceContainerLowest = Color(0xFF141B16), surfaceContainerLow = Color(0xFF18211B), surfaceContainer = Color(0xFF1E2921),
     surfaceContainerHigh = Color(0xFF243027), surfaceContainerHighest = Color(0xFF2A372D),
@@ -65,7 +83,7 @@ private fun t(size: Int, line: Int, weight: FontWeight, spacing: Double = 0.0) =
 
 @Composable
 fun ArcheryTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else lightColors(Club.palette),
         shapes = Shapes(
             extraSmall = RoundedCornerShape(10.dp), small = RoundedCornerShape(14.dp), medium = RoundedCornerShape(18.dp),
             large = RoundedCornerShape(22.dp), extraLarge = RoundedCornerShape(28.dp)),
