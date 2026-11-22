@@ -18,9 +18,9 @@ def form(action,label,fields,permission='account',table=None,seed=None,states=No
    parsed[-1]['label']={'event':'Activity','user':'Member'}.get(parsed[-1]['name'][:-3],parsed[-1]['name'][:-3].replace('_',' ').capitalize())
  forms[action]={'action':action,'label':label,'fields':parsed,'permission':permission,'table':table,'seed':seed or {},'states':states or [],'help':help}
 def module(n,tables,actions):modules[n-1].update(tables=tables.split(),actions=actions.split())
-form('save_profile','Edit my profile','full_name;phone?',table='profiles')
+form('save_profile','Edit my profile','full_name;phone',table='profiles')
 form('save_application','Save application draft','full_name;phone?;student_number?;experience?:long;confirmed:boolean',table='applications')
-form('submit_application','Submit application','full_name;phone?;student_number?;experience?:long;confirmed:boolean',table='applications',states=['draft','incomplete','returned_for_correction'],help='Upload required documents to your saved draft before submitting.')
+form('submit_application','Submit application','full_name;phone;student_number;experience?:long;confirmed:boolean',table='applications',states=['draft','incomplete','returned_for_correction'],help='Upload required documents to your saved draft before submitting.')
 form('save_renewal','Save renewal draft','information:long','account','renewals',states=['draft','returned_for_correction'])
 form('request_renewal','Submit renewal information','information:long','account','renewals',states=['draft','returned_for_correction'],help='Save a draft and attach all configured renewal requirements before submitting.')
 form('review_application','Review application','status:choice:under_review|incomplete|returned_for_correction|approved|rejected;remark?:long;category:choice:Regular member;requirements_verified:boolean','membership','applications',states=['pending','under_review'])
