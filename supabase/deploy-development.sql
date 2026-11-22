@@ -1264,5 +1264,2354 @@ do $$declare t text;begin
 end $$;
 revoke all on function app_private.sync_workflow_notices() from public,anon,authenticated;
 
+-- SOURCE: 202610230014_announcement_updates.sql
+alter table app_private.announcements
+ add column version bigint not null default 1,
+ add column updated_at timestamptz,
+ add column updated_by uuid references app_private.profiles;
+
+-- An announcement must not disclose an unpublished activity to every member.
+create function app_private.guard_announcement_event() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if new.event_id is not null and not exists (
+  select 1 from app_private.events where id=new.event_id and published and not archived
+ ) then raise exception 'Choose a published, active activity or leave the activity empty.';end if;
+ return new;
+end $$;
+create trigger announcement_event before insert or update on app_private.announcements
+for each row execute function app_private.guard_announcement_event();
+revoke all on function app_private.guard_announcement_event() from public,anon,authenticated;
+
+create function app_private.update_announcement(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare a app_private.announcements;begin
+ perform app_private.require_permission('activities');
+ select * into a from app_private.announcements where id=(p_data->>'id')::uuid for update;
+ if not found then raise exception 'Announcement not found.';end if;
+ perform app_private.check_version(a.version,p_data);
+ update app_private.announcements set title=app_private.required(p_data,'title',200),
+ message=app_private.required(p_data,'message'),event_id=nullif(p_data->>'event_id','')::uuid,
+ version=version+1,updated_at=now(),updated_by=auth.uid() where id=a.id;
+ -- Reopen the existing notice, including for a correction that retains its title.
+ update app_private.notifications set message='Updated announcement: '||(p_data->>'title'),
+  acknowledged_at=null,completed_at=null,notified_at=now()
+ where record_id=a.id and kind='announcement';
+ insert into app_private.notifications(user_id,module,record_id,kind,message)
+ select m.user_id,3,a.id,'announcement','Updated announcement: '||(p_data->>'title')
+ from app_private.memberships m where m.status='Active' and not exists (
+  select 1 from app_private.notifications n where n.user_id=m.user_id and n.record_id=a.id and n.kind='announcement'
+ );
+ perform app_private.note(8,a.id,'update_announcement',jsonb_build_object('before',to_jsonb(a),'after',p_data));
+ return jsonb_build_object('id',a.id);
+end $$;
+revoke all on function app_private.update_announcement(jsonb) from public,anon,authenticated;
+
+create or replace function public.club_command(p_action text,p_data jsonb default '{}') returns jsonb
+language plpgsql security definer set search_path='' as $$
+begin
+ perform app_private.require_user();
+ if p_action='update_election' then return app_private.update_election(p_data);end if;
+ if p_action='update_announcement' then return app_private.update_announcement(p_data);end if;
+ return app_private.club_command_before_completion(p_action,p_data);
+end $$;
+revoke all on function public.club_command(text,jsonb) from public,anon;
+grant execute on function public.club_command(text,jsonb) to authenticated;
+
+-- SOURCE: 202610230015_version_conflicts.sql
+-- Expected-version mismatches are business conflicts, not retryable PostgreSQL
+-- serialization failures. SQLSTATE 40001 can loop in PostgREST 14.
+create or replace function app_private.check_version(p_actual bigint,p_data jsonb)
+returns void language plpgsql immutable set search_path='' as $$
+begin
+ if p_actual is null or (p_data->>'version')::bigint is distinct from p_actual then
+  raise sqlstate 'PT409' using message='This record changed. Refresh before trying again.';
+ end if;
+end $$;
+
+-- SOURCE: 202611050016_settings_safe_update.sql
+-- Supabase safe-update enforcement requires an explicit singleton predicate.
+-- Preserve role guards, serialization and the last-administrator invariant.
+create or replace function app_private.admin_command(p_action text,p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+ declare u uuid:=app_private.require_user(); v_id uuid; begin
+ perform app_private.require_permission('administration');
+ -- Serialize access changes to protect against two concurrent last-admin retirements.
+ perform pg_advisory_xact_lock(14001);
+ case p_action
+ when 'configure_club' then
+  update app_private.settings set club_name=app_private.required(p_data,'club_name',160),
+   application_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'application_requirements','[]'))),
+   renewal_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'renewal_requirements','[]'))),
+   membership_categories=array(select jsonb_array_elements_text(coalesce(p_data->'membership_categories','["Regular member"]'))),
+   retention_policy=app_private.required(p_data,'retention_policy'),rules_validated=coalesce((p_data->>'rules_validated')::boolean,false),updated_at=now() where id=true;
+ when 'define_role' then
+  insert into app_private.roles(id,name,permissions) values(app_private.required(p_data,'role_id',80),app_private.required(p_data,'name',160),array(select jsonb_array_elements_text(p_data->'permissions')))
+  on conflict(id) do update set name=excluded.name,permissions=excluded.permissions;
+ when 'assign_role' then
+  insert into app_private.role_assignments(user_id,role_id,position,starts_at,ends_at,assigned_by,reason)
+  values((p_data->>'user_id')::uuid,p_data->>'role_id',app_private.required(p_data,'position',160),coalesce((p_data->>'starts_at')::timestamptz,now()),(p_data->>'ends_at')::timestamptz,u,app_private.required(p_data,'reason')) returning id into v_id;
+ when 'retire_role' then
+  update app_private.role_assignments set retired_at=now(),reason=reason||E'\nRetired: '||app_private.required(p_data,'reason') where id=(p_data->>'id')::uuid returning id into v_id;
+ when 'set_account_status' then
+  v_id:=(p_data->>'user_id')::uuid; perform app_private.required(p_data,'reason');
+  update app_private.profiles set enabled=(p_data->>'enabled')::boolean,updated_at=now() where id=v_id;
+ else raise exception 'Unknown administrative action.';
+ end case;
+ if not exists(select 1 from app_private.role_assignments a join app_private.roles r on r.id=a.role_id join app_private.profiles p on p.id=a.user_id
+ where p.enabled and 'administration'=any(r.permissions) and a.retired_at is null and now()>=a.starts_at and now()<a.ends_at) then raise exception 'Keep at least one active administrator.'; end if;
+ perform app_private.note(14,v_id,p_action,p_data); return jsonb_build_object('id',v_id); end
+$$;
+
+-- SOURCE: 202611100017_member_workflows.sql
+-- Member workflow completion (consultation follow-up, November 2026).
+--  * Full member profile editing (contact, emergency contact, academic and archery details).
+--  * Registration lifecycle: register -> (full) waitlist -> cancel -> automatic waitlist promotion.
+--    The registrations table keeps its meaning (confirmed seats), so capacity checks, QR/manual
+--    attendance and reports continue to count only confirmed participants.
+--  * Member-side borrowing cancellation before release.
+--  * Read models for the app: per-event seat counts and live equipment status, so members see
+--    "3 spots left" / "Borrowed until Nov 12" without reading other members' records.
+
+-- ---------------------------------------------------------------- profile
+alter table app_private.profiles
+ add column emergency_contact_name text not null default '',
+ add column emergency_contact_phone text not null default '',
+ add column program text not null default '',
+ add column year_level text not null default '',
+ add column dominant_hand text not null default '' check(dominant_hand in ('','left','right')),
+ add column bow_type text not null default '' check(bow_type in ('','recurve','compound','barebow','traditional','longbow')),
+ add column draw_weight numeric check(draw_weight is null or draw_weight between 5 and 80),
+ add column arrow_length numeric check(arrow_length is null or arrow_length between 20 and 34),
+ add column experience_level text not null default '' check(experience_level in ('','beginner','intermediate','advanced','competitive')),
+ add column bio text not null default '' check(length(bio)<=500);
+
+create function app_private.valid_phone(p text) returns boolean language sql immutable set search_path='' as $$
+ select p='' or p ~ '^\+?[0-9][0-9 -]{6,18}$'
+$$;
+
+create function app_private.save_member_profile(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v_phone text:=trim(coalesce(p_data->>'phone',''));
+ v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone',''));
+begin
+ if not app_private.valid_phone(v_phone) then raise exception 'Enter a valid mobile number (for example 0917 123 4567).'; end if;
+ if not app_private.valid_phone(v_ec_phone) then raise exception 'Enter a valid emergency contact number.'; end if;
+ if (v_ec_phone='') <> (trim(coalesce(p_data->>'emergency_contact_name',''))='') then
+  raise exception 'Provide both the emergency contact name and number.'; end if;
+ update app_private.profiles set
+  full_name=app_private.required(p_data,'full_name',160), phone=v_phone,
+  emergency_contact_name=trim(coalesce(p_data->>'emergency_contact_name','')), emergency_contact_phone=v_ec_phone,
+  program=left(trim(coalesce(p_data->>'program','')),120), year_level=left(trim(coalesce(p_data->>'year_level','')),40),
+  dominant_hand=coalesce(p_data->>'dominant_hand',''), bow_type=coalesce(p_data->>'bow_type',''),
+  draw_weight=nullif(p_data->>'draw_weight','')::numeric, arrow_length=nullif(p_data->>'arrow_length','')::numeric,
+  experience_level=coalesce(p_data->>'experience_level',''), bio=trim(coalesce(p_data->>'bio','')), updated_at=now()
+ where id=u;
+ perform app_private.note(1,u,'save_profile',p_data);
+ return jsonb_build_object('id',u);
+end $$;
+
+-- ---------------------------------------------------------------- waitlist
+create table app_private.waitlist (
+ id uuid primary key default gen_random_uuid(), event_id uuid not null references app_private.events,
+ user_id uuid not null references app_private.memberships(user_id), created_at timestamptz not null default now(),
+ unique(event_id,user_id)
+);
+alter table app_private.waitlist enable row level security;
+revoke all on app_private.waitlist from public,anon,authenticated;
+grant select on app_private.waitlist to authenticated;
+create policy waitlist_read on app_private.waitlist for select to authenticated
+ using(app_private.can('activities') or (app_private.active_user() and user_id=auth.uid()));
+
+create function app_private.registration_command(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); e app_private.events; v_id uuid; v_next app_private.waitlist; v_seats bigint;
+begin
+ perform app_private.require_member();
+ select * into e from app_private.events where id=(p_data->>'event_id')::uuid for update;
+ if not found or not e.published or e.archived then raise exception 'Registration is not open for this activity.'; end if;
+ if p_action='register_event' then
+  if now()<e.registration_opens then raise exception 'Registration has not opened yet.'; end if;
+  if now()>e.registration_closes then raise exception 'Registration is closed.'; end if;
+  select id into v_id from app_private.registrations where event_id=e.id and user_id=u;
+  if v_id is not null then return jsonb_build_object('id',v_id,'status','registered'); end if;
+  select id into v_id from app_private.waitlist where event_id=e.id and user_id=u;
+  if v_id is not null then return jsonb_build_object('id',v_id,'status','waitlisted'); end if;
+  select count(*) into v_seats from app_private.registrations where event_id=e.id;
+  if v_seats>=e.capacity then
+   insert into app_private.waitlist(event_id,user_id) values(e.id,u) returning id into v_id;
+   perform app_private.notify(u,3,e.id,'waitlist','Waitlisted: '||e.title);
+   perform app_private.note(3,v_id,'join_waitlist',p_data);
+   return jsonb_build_object('id',v_id,'status','waitlisted');
+  end if;
+  insert into app_private.registrations(event_id,user_id) values(e.id,u) returning id into v_id;
+  insert into app_private.notifications(user_id,module,record_id,kind,message,due_at)
+   values(u,3,e.id,'event','Upcoming activity: '||e.title,e.starts_at) on conflict do nothing;
+  perform app_private.note(3,v_id,'register_event',p_data);
+  return jsonb_build_object('id',v_id,'status','registered');
+ elsif p_action='cancel_registration' then
+  if now()>=e.starts_at then raise exception 'This activity has started. Ask an officer to update your record.'; end if;
+  delete from app_private.waitlist where event_id=e.id and user_id=u returning id into v_id;
+  if v_id is not null then perform app_private.note(3,v_id,'leave_waitlist',p_data); return jsonb_build_object('id',v_id,'status','cancelled'); end if;
+  if exists(select 1 from app_private.attendance where event_id=e.id and user_id=u) then
+   raise exception 'Attendance is already recorded for this activity.'; end if;
+  delete from app_private.registrations where event_id=e.id and user_id=u returning id into v_id;
+  if v_id is null then raise exception 'You are not registered for this activity.'; end if;
+  update app_private.notifications set completed_at=now() where user_id=u and record_id=e.id and kind='event' and completed_at is null;
+  perform app_private.note(3,v_id,'cancel_registration',p_data);
+  -- The freed seat goes to the earliest waitlisted member while registration is still open.
+  if now()<=e.registration_closes then
+   select * into v_next from app_private.waitlist where event_id=e.id order by created_at limit 1 for update;
+   if found then
+    delete from app_private.waitlist where id=v_next.id;
+    insert into app_private.registrations(event_id,user_id) values(e.id,v_next.user_id);
+    perform app_private.notify(v_next.user_id,3,e.id,'promoted','A slot opened. You are now registered for '||e.title);
+    insert into app_private.notifications(user_id,module,record_id,kind,message,due_at)
+     values(v_next.user_id,3,e.id,'event','Upcoming activity: '||e.title,e.starts_at) on conflict do nothing;
+    perform app_private.note(3,e.id,'waitlist_promotion',jsonb_build_object('user_id',v_next.user_id));
+   end if;
+  end if;
+  return jsonb_build_object('id',v_id,'status','cancelled');
+ end if;
+ raise exception 'Unknown registration action.';
+end $$;
+
+-- ---------------------------------------------------------------- borrowing cancellation
+alter table app_private.borrowings drop constraint borrowings_status_check;
+alter table app_private.borrowings add constraint borrowings_status_check
+ check(status in ('pending','approved','released','returned','rejected','returned_for_correction','cancelled'));
+
+create function app_private.cancel_borrowing(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); b app_private.borrowings;
+begin
+ select * into b from app_private.borrowings where id=(p_data->>'id')::uuid and user_id=u for update;
+ if not found then raise exception 'Borrowing request not found.'; end if;
+ if b.status not in ('pending','approved','returned_for_correction') then
+  raise exception 'Only requests that have not been released can be cancelled.'; end if;
+ perform app_private.check_version(b.version,p_data);
+ update app_private.borrowings set status='cancelled',remark=coalesce(nullif(trim(p_data->>'remark'),''),'Cancelled by member'),version=version+1 where id=b.id;
+ update app_private.notifications set completed_at=now() where record_id=b.id and kind='review' and completed_at is null;
+ perform app_private.note(5,b.id,'cancel_borrowing',p_data);
+ return jsonb_build_object('id',b.id);
+end $$;
+
+-- ---------------------------------------------------------------- read models
+-- Seat counts only (no identities) for every activity the caller may see.
+create function app_private.event_stats() returns jsonb language sql stable security definer set search_path='' as $$
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'event_id',e.id,
+  'registered',(select count(*) from app_private.registrations r where r.event_id=e.id),
+  'waitlisted',(select count(*) from app_private.waitlist w where w.event_id=e.id),
+  'present',(select count(*) from app_private.attendance a where a.event_id=e.id and a.status='present'),
+  'waitlist_position',(select p.pos from (select w.user_id,row_number() over(order by w.created_at) pos from app_private.waitlist w where w.event_id=e.id) p where p.user_id=auth.uid())
+ )),'[]')
+ from app_private.events e
+ where app_private.can('activities') or (e.published and (app_private.member() or app_private.can('equipment') or app_private.can('training') or app_private.can('interclub')))
+$$;
+
+-- Current state of each item: in_use / overdue / reserved (approved, not released) / available,
+-- or the condition when the item is out of service. Borrower identity is not exposed.
+create function app_private.equipment_status() returns jsonb language sql stable security definer set search_path='' as $$
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'equipment_id',e.id,
+  'state',case when e.condition<>'serviceable' then e.condition
+   when exists(select 1 from app_private.borrowings b where b.equipment_id=e.id and b.status='released' and b.ends_at<now()) then 'overdue'
+   when exists(select 1 from app_private.borrowings b where b.equipment_id=e.id and b.status='released') then 'in_use'
+   when exists(select 1 from app_private.borrowings b where b.equipment_id=e.id and b.status='approved' and b.ends_at>now() and b.starts_at<now()+interval '24 hours') then 'reserved'
+   else 'available' end,
+  'busy_until',(select max(b.ends_at) from app_private.borrowings b where b.equipment_id=e.id and b.status in ('approved','released') and b.ends_at>now() and b.starts_at<now()+interval '24 hours'),
+  'next_booking',(select min(b.starts_at) from app_private.borrowings b where b.equipment_id=e.id and b.status='approved' and b.starts_at>now()),
+  'times_borrowed',(select count(*) from app_private.borrowings b where b.equipment_id=e.id and b.status in ('released','returned'))
+ )),'[]')
+ from app_private.equipment e where app_private.member() or app_private.can('equipment')
+$$;
+
+revoke all on function app_private.valid_phone(text),app_private.save_member_profile(jsonb),app_private.registration_command(text,jsonb),
+ app_private.cancel_borrowing(jsonb),app_private.event_stats(),app_private.equipment_status() from public,anon,authenticated;
+grant execute on function app_private.event_stats(),app_private.equipment_status() to authenticated;
+
+-- ---------------------------------------------------------------- check-in must hold a confirmed seat
+-- (unchanged rule; waitlisted members are not in registrations, so the existing check already refuses them)
+
+-- ---------------------------------------------------------------- API entry points
+alter function public.club_command(text,jsonb) set schema app_private;
+alter function app_private.club_command(text,jsonb) rename to club_command_before_member_workflows;
+revoke all on function app_private.club_command_before_member_workflows(text,jsonb) from public,anon,authenticated;
+create function public.club_command(p_action text,p_data jsonb default '{}') returns jsonb
+language plpgsql security definer set search_path='' as $$
+begin
+ perform app_private.require_user();
+ if p_action='save_profile' then return app_private.save_member_profile(p_data); end if;
+ if p_action in ('register_event','cancel_registration') then return app_private.registration_command(p_action,p_data); end if;
+ if p_action='cancel_borrowing' then return app_private.cancel_borrowing(p_data); end if;
+ if p_action='request_borrowing' and (p_data->>'ends_at')::timestamptz-(p_data->>'starts_at')::timestamptz>interval '14 days' then
+  raise exception 'Borrowing periods are limited to 14 days.'; end if;
+ return app_private.club_command_before_member_workflows(p_action,p_data);
+end $$;
+revoke all on function public.club_command(text,jsonb) from public,anon;
+grant execute on function public.club_command(text,jsonb) to authenticated;
+
+alter function public.club_workspace() set schema app_private;
+alter function app_private.club_workspace() rename to club_workspace_base;
+revoke all on function app_private.club_workspace_base() from public,anon;
+grant execute on function app_private.club_workspace_base() to authenticated;
+create function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status());
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611100018_name_corrections.sql
+-- Verified names (consultation follow-up).
+-- A member's full name is the identity an officer verified when approving the application,
+-- and it appears on rosters, borrowings, ballots and reports. Once a membership exists the
+-- member can no longer rename themselves; they file a correction that a membership officer
+-- (not themselves) approves or rejects, with the decision kept in the audit log.
+
+create table app_private.name_corrections (
+ id uuid primary key default gen_random_uuid(),
+ user_id uuid not null references app_private.profiles,
+ current_name text not null,
+ requested_name text not null check(length(trim(requested_name)) between 1 and 160),
+ reason text not null check(length(trim(reason)) between 1 and 500),
+ status text not null default 'pending' check(status in ('pending','approved','rejected')),
+ decision text not null default '',
+ reviewed_by uuid references app_private.profiles,
+ created_at timestamptz not null default now(),
+ reviewed_at timestamptz
+);
+create unique index one_pending_name_correction on app_private.name_corrections(user_id) where status='pending';
+alter table app_private.name_corrections enable row level security;
+revoke all on app_private.name_corrections from public,anon,authenticated;
+grant select on app_private.name_corrections to authenticated;
+create policy name_correction_read on app_private.name_corrections for select to authenticated
+ using(app_private.can('membership') or (app_private.active_user() and user_id=auth.uid()));
+
+-- Same as migration 017, plus: the name is locked once a membership exists.
+create or replace function app_private.save_member_profile(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v_phone text:=trim(coalesce(p_data->>'phone',''));
+ v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone','')); v_name text; v_current text;
+begin
+ v_name:=app_private.required(p_data,'full_name',160);
+ select full_name into v_current from app_private.profiles where id=u;
+ if trim(v_name)<>trim(v_current) and exists(select 1 from app_private.memberships where user_id=u) then
+  raise exception 'Your name was verified when your membership was approved. Request a name correction instead.';
+ end if;
+ if not app_private.valid_phone(v_phone) then raise exception 'Enter a valid mobile number (for example 0917 123 4567).'; end if;
+ if not app_private.valid_phone(v_ec_phone) then raise exception 'Enter a valid emergency contact number.'; end if;
+ if (v_ec_phone='') <> (trim(coalesce(p_data->>'emergency_contact_name',''))='') then
+  raise exception 'Provide both the emergency contact name and number.'; end if;
+ update app_private.profiles set
+  full_name=v_name, phone=v_phone,
+  emergency_contact_name=trim(coalesce(p_data->>'emergency_contact_name','')), emergency_contact_phone=v_ec_phone,
+  program=left(trim(coalesce(p_data->>'program','')),120), year_level=left(trim(coalesce(p_data->>'year_level','')),40),
+  dominant_hand=coalesce(p_data->>'dominant_hand',''), bow_type=coalesce(p_data->>'bow_type',''),
+  draw_weight=nullif(p_data->>'draw_weight','')::numeric, arrow_length=nullif(p_data->>'arrow_length','')::numeric,
+  experience_level=coalesce(p_data->>'experience_level',''), bio=trim(coalesce(p_data->>'bio','')), updated_at=now()
+ where id=u;
+ perform app_private.note(1,u,'save_profile',p_data);
+ return jsonb_build_object('id',u);
+end $$;
+
+create function app_private.name_correction_command(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); c app_private.name_corrections; v_id uuid; v_current text; v_requested text;
+begin
+ if p_action='request_name_correction' then
+  if not exists(select 1 from app_private.memberships where user_id=u) then
+   raise exception 'Applicants can edit their name directly in their application.'; end if;
+  select full_name into v_current from app_private.profiles where id=u;
+  v_requested:=trim(app_private.required(p_data,'requested_name',160));
+  if v_requested=trim(v_current) then raise exception 'The requested name is the same as your current name.'; end if;
+  if exists(select 1 from app_private.name_corrections where user_id=u and status='pending') then
+   raise exception 'You already have a pending name correction.'; end if;
+  insert into app_private.name_corrections(user_id,current_name,requested_name,reason)
+   values(u,v_current,v_requested,trim(app_private.required(p_data,'reason',500))) returning id into v_id;
+  perform app_private.notify_role('membership',1,v_id,'Name correction requested');
+  perform app_private.note(1,v_id,p_action,p_data);
+  return jsonb_build_object('id',v_id);
+ elsif p_action='review_name_correction' then
+  perform app_private.require_permission('membership');
+  select * into c from app_private.name_corrections where id=(p_data->>'id')::uuid for update;
+  if not found or c.status<>'pending' then raise exception 'Pending name correction not found.'; end if;
+  if c.user_id=u then raise exception 'You cannot review your own name correction.'; end if;
+  if p_data->>'status' not in ('approved','rejected') then raise exception 'Invalid correction decision.'; end if;
+  perform app_private.required(p_data,'decision');
+  if p_data->>'status'='approved' then
+   update app_private.profiles set full_name=c.requested_name,updated_at=now() where id=c.user_id;
+  end if;
+  update app_private.name_corrections set status=p_data->>'status',decision=trim(p_data->>'decision'),reviewed_by=u,reviewed_at=now() where id=c.id;
+  update app_private.notifications set completed_at=now() where record_id=c.id and kind='review' and completed_at is null;
+  perform app_private.notify(c.user_id,1,c.id,'name_correction',
+   case when p_data->>'status'='approved' then 'Name updated to '||c.requested_name else 'Name correction not approved: '||trim(p_data->>'decision') end);
+  perform app_private.note(1,c.id,p_action,jsonb_build_object('before',c.current_name,'after',c.requested_name,'status',p_data->>'status','decision',p_data->>'decision'));
+  return jsonb_build_object('id',c.id);
+ end if;
+ raise exception 'Unknown name correction action.';
+end $$;
+revoke all on function app_private.name_correction_command(text,jsonb) from public,anon,authenticated;
+
+create or replace function public.club_command(p_action text,p_data jsonb default '{}') returns jsonb
+language plpgsql security definer set search_path='' as $$
+begin
+ perform app_private.require_user();
+ if p_action='save_profile' then return app_private.save_member_profile(p_data); end if;
+ if p_action in ('request_name_correction','review_name_correction') then return app_private.name_correction_command(p_action,p_data); end if;
+ if p_action in ('register_event','cancel_registration') then return app_private.registration_command(p_action,p_data); end if;
+ if p_action='cancel_borrowing' then return app_private.cancel_borrowing(p_data); end if;
+ if p_action='request_borrowing' and (p_data->>'ends_at')::timestamptz-(p_data->>'starts_at')::timestamptz>interval '14 days' then
+  raise exception 'Borrowing periods are limited to 14 days.'; end if;
+ return app_private.club_command_before_member_workflows(p_action,p_data);
+end $$;
+revoke all on function public.club_command(text,jsonb) from public,anon;
+grant execute on function public.club_command(text,jsonb) to authenticated;
+
+create or replace function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status(),
+  'name_corrections',(select coalesce(jsonb_agg(n),'[]') from app_private.name_corrections n));
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611100019_workflow_hardening.sql
+-- Workflow hardening after the process review (November 2026).
+-- Connects modules that were independent and closes the "what if" gaps:
+--  * Membership fee before Active: approval creates a "Pending payment" membership and a fee;
+--    linking the verified payment activates it. Off while the configured fee is 0.
+--  * Bulk fee assessment for every active member.
+--  * Documents verified one by one; approval refused while any uploaded document is unverified.
+--  * Rejected applicants may start a new application.
+--  * Waitlist promotion continues until the activity starts (not only until the deadline).
+--  * Walk-in attendance for active members who were not registered.
+--  * Archiving an upcoming activity tells registrants and waitlisted members and cancels linked
+--    equipment requests.
+--  * Equipment: overdue items block new requests; overlapping bookings refused at request time;
+--    members confirm receipt; a damaged return alerts the finance officers.
+--  * Separation of duties: results of an election are confirmed by someone other than the person
+--    who closed voting or entered paper tallies; interclub results are verified by someone other
+--    than the person who recorded them.
+--  * One attendance-rate definition everywhere: present / (registered - excused).
+
+-- ---------------------------------------------------------------- membership fee before Active
+alter table app_private.settings add column membership_fee numeric(12,2) not null default 0 check(membership_fee>=0);
+alter table app_private.memberships drop constraint memberships_status_check;
+alter table app_private.memberships add constraint memberships_status_check
+ check(status in ('Active','Inactive','Suspended','Expired','Pending payment'));
+
+create function app_private.membership_fee_gate() returns trigger language plpgsql security definer set search_path='' as $$
+declare v_fee numeric;
+begin
+ select membership_fee into v_fee from app_private.settings where id;
+ if tg_op='INSERT' and coalesce(v_fee,0)>0 and new.status='Active' then new.status:='Pending payment'; end if;
+ return new;
+end $$;
+create trigger membership_fee_gate before insert on app_private.memberships for each row execute function app_private.membership_fee_gate();
+
+create function app_private.membership_fee_assess() returns trigger language plpgsql security definer set search_path='' as $$
+declare v_fee numeric;
+begin
+ if new.status='Pending payment' then
+  select membership_fee into v_fee from app_private.settings where id;
+  insert into app_private.fee_assessments(user_id,purpose,amount,due_on,created_by)
+   values(new.user_id,'Membership fee',v_fee,current_date+14,new.approved_by);
+  perform app_private.notify(new.user_id,1,new.user_id,'membership','Approved. Pay the membership fee to activate your membership.');
+ end if;
+ return new;
+end $$;
+create trigger membership_fee_assess after insert on app_private.memberships for each row execute function app_private.membership_fee_assess();
+
+create function app_private.membership_fee_paid() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.payment_id is not null and old.payment_id is null and new.purpose='Membership fee' then
+  update app_private.memberships set status='Active',updated_at=now(),version=version+1
+   where user_id=new.user_id and status='Pending payment';
+  if found then perform app_private.notify(new.user_id,1,new.user_id,'membership','Membership fee verified. Your membership is now Active.'); end if;
+ end if;
+ return new;
+end $$;
+create trigger membership_fee_paid after update on app_private.fee_assessments for each row execute function app_private.membership_fee_paid();
+
+-- ---------------------------------------------------------------- equipment receipt
+alter table app_private.borrowings add column received_at timestamptz;
+
+-- ---------------------------------------------------------------- seat counts include excused
+create or replace function app_private.event_stats() returns jsonb language sql stable security definer set search_path='' as $$
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'event_id',e.id,
+  'registered',(select count(*) from app_private.registrations r where r.event_id=e.id),
+  'waitlisted',(select count(*) from app_private.waitlist w where w.event_id=e.id),
+  'present',(select count(*) from app_private.attendance a where a.event_id=e.id and a.status='present'),
+  'excused',(select count(*) from app_private.attendance a where a.event_id=e.id and a.status='excused'),
+  'waitlist_position',(select p.pos from (select w.user_id,row_number() over(order by w.created_at) pos from app_private.waitlist w where w.event_id=e.id) p where p.user_id=auth.uid())
+ )),'[]')
+ from app_private.events e
+ where app_private.can('activities') or (e.published and (app_private.member() or app_private.can('equipment') or app_private.can('training') or app_private.can('interclub')))
+$$;
+
+-- ---------------------------------------------------------------- new commands
+create function app_private.hardening_command(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); e app_private.events; b app_private.borrowings; a app_private.applications;
+ d app_private.documents; v_id uuid; n integer:=0; v_user uuid;
+begin
+ case p_action
+ when 'set_membership_fee' then
+  if not (app_private.can('administration') or app_private.can('finance')) then raise exception 'Permission denied: finance' using errcode='42501'; end if;
+  if (p_data->>'amount')::numeric<0 then raise exception 'The fee cannot be negative.'; end if;
+  update app_private.settings set membership_fee=(p_data->>'amount')::numeric,updated_at=now() where id=true;
+  perform app_private.note(12,null,p_action,p_data); return jsonb_build_object('amount',(p_data->>'amount')::numeric);
+ when 'assess_fee_bulk' then
+  perform app_private.require_permission('finance');
+  if coalesce((p_data->>'amount')::numeric,0)<=0 then raise exception 'Enter an amount above zero.'; end if;
+  if (p_data->>'due_on')::date<current_date then raise exception 'Choose a due date that has not passed.'; end if;
+  insert into app_private.fee_assessments(user_id,purpose,amount,due_on,created_by)
+   select m.user_id,app_private.required(p_data,'purpose',200),(p_data->>'amount')::numeric,(p_data->>'due_on')::date,u
+   from app_private.memberships m where m.status='Active'
+   and not exists(select 1 from app_private.fee_assessments f where f.user_id=m.user_id and f.purpose=p_data->>'purpose' and f.due_on=(p_data->>'due_on')::date);
+  get diagnostics n=row_count;
+  perform app_private.note(12,null,p_action,p_data||jsonb_build_object('assessed',n));
+  return jsonb_build_object('assessed',n);
+ when 'verify_document' then
+  perform app_private.require_permission('membership');
+  select * into d from app_private.documents where id=(p_data->>'id')::uuid for update;
+  if not found then raise exception 'Document not found.'; end if;
+  if d.owner_id=u then raise exception 'You cannot verify your own document.' using errcode='42501'; end if;
+  update app_private.documents set verified_by=u where id=d.id;
+  perform app_private.note(d.module,d.record_id,p_action,jsonb_build_object('document_id',d.id,'requirement',d.requirement));
+  return jsonb_build_object('id',d.id);
+ when 'restart_application' then
+  select * into a from app_private.applications where user_id=u for update;
+  if not found or a.status<>'rejected' then raise exception 'Only a rejected application can be started again.'; end if;
+  if exists(select 1 from app_private.memberships where user_id=u) then raise exception 'An official membership already exists.'; end if;
+  update app_private.applications set status='draft',confirmed=false,updated_at=now(),version=version+1 where id=a.id;
+  perform app_private.note(2,a.id,p_action,'{}'); return jsonb_build_object('id',a.id);
+ when 'record_walk_in' then
+  perform app_private.require_permission('activities');
+  select * into e from app_private.events where id=(p_data->>'event_id')::uuid for update;
+  if not found or not e.published or e.archived then raise exception 'Active event not found.'; end if;
+  if now()<e.starts_at-interval '2 hours' or now()>e.ends_at+interval '1 day' then raise exception 'Walk-ins can be recorded only around the activity time.'; end if;
+  v_user:=(p_data->>'user_id')::uuid;
+  if not exists(select 1 from app_private.memberships where user_id=v_user and status='Active') then raise exception 'Only active members can be recorded as walk-ins.'; end if;
+  delete from app_private.waitlist where event_id=e.id and user_id=v_user;
+  insert into app_private.registrations(event_id,user_id) values(e.id,v_user) on conflict(event_id,user_id) do nothing;
+  insert into app_private.attendance(event_id,user_id,status,method,encoded_by,remark) values(e.id,v_user,'present','manual',u,'Walk-in')
+   on conflict(event_id,user_id) do update set status='present',method='manual',encoded_by=u,remark='Walk-in',version=attendance.version+1 returning id into v_id;
+  perform app_private.notify(v_user,4,v_id,'attendance','Recorded as a walk-in at '||e.title);
+  perform app_private.note(8,v_id,p_action,p_data); return jsonb_build_object('id',v_id);
+ when 'confirm_receipt' then
+  select * into b from app_private.borrowings where id=(p_data->>'id')::uuid and user_id=u for update;
+  if not found or b.status<>'released' then raise exception 'Only equipment handed over to you can be confirmed.'; end if;
+  if b.received_at is not null then return jsonb_build_object('id',b.id); end if;
+  update app_private.borrowings set received_at=now() where id=b.id;
+  perform app_private.note(5,b.id,p_action,'{}'); return jsonb_build_object('id',b.id);
+ end case;
+end $$;
+
+-- ---------------------------------------------------------------- API entry point
+alter function public.club_command(text,jsonb) set schema app_private;
+alter function app_private.club_command(text,jsonb) rename to club_command_before_hardening;
+revoke all on function app_private.club_command_before_hardening(text,jsonb) from public,anon,authenticated;
+create function public.club_command(p_action text,p_data jsonb default '{}') returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); result jsonb; e app_private.events; v_user uuid; v_actor uuid;
+begin
+ if p_action in ('set_membership_fee','assess_fee_bulk','verify_document','restart_application','record_walk_in','confirm_receipt') then
+  return app_private.hardening_command(p_action,p_data);
+ end if;
+ -- checks that must run before the original command
+ if p_action='request_borrowing' then
+  if exists(select 1 from app_private.borrowings where user_id=u and status='released' and ends_at<now()) then
+   raise exception 'Return your overdue equipment before requesting more.'; end if;
+  if exists(select 1 from app_private.borrowings x where x.equipment_id=(p_data->>'equipment_id')::uuid and x.status in ('approved','released')
+     and x.id is distinct from nullif(p_data->>'id','')::uuid
+     and tstzrange(x.starts_at,x.ends_at,'[)') && tstzrange((p_data->>'starts_at')::timestamptz,(p_data->>'ends_at')::timestamptz,'[)')) then
+   raise exception 'This item is already booked for that time. Choose another time or item.'; end if;
+ elsif p_action='review_application' and p_data->>'status'='approved' then
+  if exists(select 1 from app_private.documents where module=2 and record_id=(p_data->>'id')::uuid and verified_by is null) then
+   raise exception 'Verify every uploaded document before approving.'; end if;
+ elsif p_action='confirm_results' then
+  if exists(select 1 from app_private.audit_log where module=9 and record_id=(p_data->>'id')::uuid and actor=u
+     and (action='record_external_results' or (action='set_election_status' and detail->>'status'='closed'))) then
+   raise exception 'Another COMELEC member must confirm results you closed or entered.' using errcode='42501'; end if;
+ elsif p_action='verify_result' then
+  select actor into v_actor from app_private.audit_log where module=15 and record_id=(p_data->>'id')::uuid and action='record_result' order by created_at desc, id desc limit 1;
+  if v_actor=u then raise exception 'Another officer must verify a result you recorded.' using errcode='42501'; end if;
+ elsif p_action='archive_event' then
+  select * into e from app_private.events where id=(p_data->>'id')::uuid;
+ end if;
+
+ result:=app_private.club_command_before_hardening(p_action,p_data);
+
+ -- consequences that follow the original command
+ if p_action='archive_event' and e.id is not null and not e.archived and e.ends_at>now() then
+  for v_user in select user_id from app_private.registrations where event_id=e.id union select user_id from app_private.waitlist where event_id=e.id loop
+   perform app_private.notify(v_user,3,e.id,'event_cancelled','Activity cancelled: '||e.title);
+  end loop;
+  update app_private.notifications set completed_at=now() where record_id=e.id and kind='event' and completed_at is null;
+  delete from app_private.waitlist where event_id=e.id;
+  update app_private.borrowings set status='cancelled',remark='Activity cancelled',version=version+1
+   where event_id=e.id and status in ('pending','approved','returned_for_correction');
+ elsif p_action='review_borrowing' and p_data->>'status'='returned' and p_data->>'condition'='damaged' then
+  perform app_private.notify_role('finance',12,(p_data->>'id')::uuid,'Equipment returned damaged: decide on a repair fee');
+ end if;
+ return result;
+end $$;
+revoke all on function public.club_command(text,jsonb) from public,anon;
+grant execute on function public.club_command(text,jsonb) to authenticated;
+revoke all on function app_private.hardening_command(text,jsonb),app_private.membership_fee_gate(),app_private.membership_fee_assess(),app_private.membership_fee_paid() from public,anon,authenticated;
+
+-- ---------------------------------------------------------------- waitlist promotion until the activity starts
+create or replace function app_private.registration_command(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); e app_private.events; v_id uuid; v_next app_private.waitlist; v_seats bigint;
+begin
+ perform app_private.require_member();
+ select * into e from app_private.events where id=(p_data->>'event_id')::uuid for update;
+ if not found or not e.published or e.archived then raise exception 'Registration is not open for this activity.'; end if;
+ if p_action='register_event' then
+  if now()<e.registration_opens then raise exception 'Registration has not opened yet.'; end if;
+  if now()>e.registration_closes then raise exception 'Registration is closed.'; end if;
+  select id into v_id from app_private.registrations where event_id=e.id and user_id=u;
+  if v_id is not null then return jsonb_build_object('id',v_id,'status','registered'); end if;
+  select id into v_id from app_private.waitlist where event_id=e.id and user_id=u;
+  if v_id is not null then return jsonb_build_object('id',v_id,'status','waitlisted'); end if;
+  select count(*) into v_seats from app_private.registrations where event_id=e.id;
+  if v_seats>=e.capacity then
+   insert into app_private.waitlist(event_id,user_id) values(e.id,u) returning id into v_id;
+   perform app_private.notify(u,3,e.id,'waitlist','Waitlisted: '||e.title);
+   perform app_private.note(3,v_id,'join_waitlist',p_data);
+   return jsonb_build_object('id',v_id,'status','waitlisted');
+  end if;
+  insert into app_private.registrations(event_id,user_id) values(e.id,u) returning id into v_id;
+  insert into app_private.notifications(user_id,module,record_id,kind,message,due_at)
+   values(u,3,e.id,'event','Upcoming activity: '||e.title,e.starts_at) on conflict do nothing;
+  perform app_private.note(3,v_id,'register_event',p_data);
+  return jsonb_build_object('id',v_id,'status','registered');
+ elsif p_action='cancel_registration' then
+  if now()>=e.starts_at then raise exception 'This activity has started. Ask an officer to update your record.'; end if;
+  delete from app_private.waitlist where event_id=e.id and user_id=u returning id into v_id;
+  if v_id is not null then perform app_private.note(3,v_id,'leave_waitlist',p_data); return jsonb_build_object('id',v_id,'status','cancelled'); end if;
+  if exists(select 1 from app_private.attendance where event_id=e.id and user_id=u) then
+   raise exception 'Attendance is already recorded for this activity.'; end if;
+  delete from app_private.registrations where event_id=e.id and user_id=u returning id into v_id;
+  if v_id is null then raise exception 'You are not registered for this activity.'; end if;
+  update app_private.notifications set completed_at=now() where user_id=u and record_id=e.id and kind='event' and completed_at is null;
+  perform app_private.note(3,v_id,'cancel_registration',p_data);
+  -- The freed seat goes to the earliest waitlisted member until the activity starts.
+  if now()<e.starts_at then
+   select * into v_next from app_private.waitlist where event_id=e.id order by created_at limit 1 for update;
+   if found then
+    delete from app_private.waitlist where id=v_next.id;
+    insert into app_private.registrations(event_id,user_id) values(e.id,v_next.user_id);
+    perform app_private.notify(v_next.user_id,3,e.id,'promoted','A slot opened. You are now registered for '||e.title);
+    insert into app_private.notifications(user_id,module,record_id,kind,message,due_at)
+     values(v_next.user_id,3,e.id,'event','Upcoming activity: '||e.title,e.starts_at) on conflict do nothing;
+    perform app_private.note(3,e.id,'waitlist_promotion',jsonb_build_object('user_id',v_next.user_id));
+   end if;
+  end if;
+  return jsonb_build_object('id',v_id,'status','cancelled');
+ end if;
+ raise exception 'Unknown registration action.';
+end $$;
+
+create or replace function public.club_report_data(p_from date,p_to date) returns jsonb language plpgsql security definer set search_path='' as $$
+ declare result jsonb:='{}';begin
+ perform app_private.require_permission('reports');
+ if p_to<p_from then raise exception 'Invalid reporting period.';end if;
+ if app_private.can('membership') then
+ result:=result||jsonb_build_object('membership',jsonb_build_object('active',(select count(*) from app_private.memberships where status='Active'),'total',(select count(*) from app_private.memberships),'active_ratio',(select round(100.0*count(*) filter(where status='Active')/nullif(count(*),0),2) from app_private.memberships),'applications',(select count(*) from app_private.applications where submitted_at::date between p_from and p_to),'conversion_rate',(select round(100.0*count(*) filter(where status='approved')/nullif(count(*),0),2) from app_private.applications where submitted_at::date between p_from and p_to),'incomplete',(select count(*) from app_private.applications where status in ('incomplete','returned_for_correction'))));end if;
+ if app_private.can('activities') then
+ result:=result||jsonb_build_object('activities',(select coalesce(jsonb_agg(x),'[]') from(select e.id,e.title,(select count(*) from app_private.registrations where event_id=e.id) registrations,(select count(*) from app_private.attendance where event_id=e.id and status='present') present,(select count(*) from app_private.attendance where event_id=e.id and status='excused') excused,(select round(100.0*(select count(*) from app_private.attendance where event_id=e.id and status='present')/nullif(count(*)-(select count(*) from app_private.attendance where event_id=e.id and status='excused'),0),2) from app_private.registrations where event_id=e.id) attendance_rate from app_private.events e where e.starts_at::date between p_from and p_to)x));end if;
+ if app_private.can('equipment') then
+ result:=result||jsonb_build_object('equipment',jsonb_build_object('items',(select count(*) from app_private.equipment),'serviceable',(select count(*) from app_private.equipment where condition='serviceable'),'utilized_items',(select count(distinct equipment_id) from app_private.borrowings where released_at::date between p_from and p_to),'overdue',(select count(*) from app_private.borrowings where status='released' and ends_at<now()),'pending',(select count(*) from app_private.borrowings where status='pending')));end if;
+ if app_private.can('training') then
+ result:=result||jsonb_build_object('training',(select coalesce(jsonb_agg(x),'[]') from(select user_id,distance,target_face,category,scoring_format,maximum_score,training_date,count(*) sessions,round(avg(score),2) average_score from app_private.training_records where validation='validated' and training_date between p_from and p_to group by user_id,distance,target_face,category,scoring_format,maximum_score,training_date order by training_date)x));end if;
+ if app_private.can('finance') then
+ result:=result||jsonb_build_object('finance',jsonb_build_object('verified_payments',(select coalesce(sum(amount),0) from app_private.financial_records where kind='payment' and status='verified' and verified_at::date between p_from and p_to),'verified_expenses',(select coalesce(sum(amount),0) from app_private.financial_records where kind in ('expense','reimbursement') and status='verified' and verified_at::date between p_from and p_to),'outstanding_reimbursements',(select coalesce(sum(amount),0) from app_private.financial_records where kind='reimbursement' and status='pending_verification'),'collection_completion',(select round(100.0*count(*) filter(where payment_id is not null)/nullif(count(*),0),2) from app_private.fee_assessments where due_on between p_from and p_to)));end if;
+ if app_private.can('interclub') then result:=result||jsonb_build_object('interclub',(select coalesce(jsonb_agg(x),'[]') from(select i.event_id,i.shared_title,i.status,(select count(*) from app_private.delegates where event_id=i.event_id) delegates,(select count(*) from app_private.interclub_results where event_id=i.event_id and verified_by is not null) verified_results from app_private.interclub_events i where shared_start::date between p_from and p_to)x));end if;
+ return result||jsonb_build_object('from',p_from,'to',p_to,'generated_at',now(),'limitation','Attendance rate = present / (registered - excused). Recorded data only. Missing attendance, unvalidated training, and unverified finance are not assumed complete. Null rates have no denominator.');end
+$$;
+
+create or replace function public.club_report(p_from date,p_to date) returns jsonb language plpgsql security definer set search_path='' as $$
+declare result jsonb;g app_private.goals;data jsonb;actual numeric;goals jsonb:='[]';begin
+ perform app_private.require_permission('reports');
+ result:=public.club_report_data(p_from,p_to);
+ for g in select * from app_private.goals where starts_on<=p_to and ends_on>=p_from loop
+  data:=public.club_report_data(g.starts_on,g.ends_on);actual:=null;
+  case g.metric
+   when 'active_members' then actual:=(data->'membership'->>'active')::numeric;
+   when 'applicant_conversion' then actual:=(data->'membership'->>'conversion_rate')::numeric;
+   when 'attendance_rate' then select round(100.0*sum((v->>'present')::numeric)/nullif(sum((v->>'registrations')::numeric-coalesce((v->>'excused')::numeric,0)),0),2) into actual from jsonb_array_elements(coalesce(data->'activities','[]')) v;
+   when 'equipment_readiness' then actual:=round(100.0*(data->'equipment'->>'serviceable')::numeric/nullif((data->'equipment'->>'items')::numeric,0),2);
+   when 'training_average' then
+    if app_private.can('training') then select round(avg(100.0*score/maximum_score),2) into actual from app_private.training_records where validation='validated' and training_date between g.starts_on and g.ends_on;end if;
+   when 'collection_completion' then actual:=(data->'finance'->>'collection_completion')::numeric;
+  end case;
+  goals:=goals||jsonb_build_array(jsonb_build_object('id',g.id,'title',g.title,'metric',g.metric,'target',g.target,'actual',actual,'starts_on',g.starts_on,'ends_on',g.ends_on,'achievement_percent',round(100.0*actual/g.target,2),'basis',case when g.metric in ('active_members','equipment_readiness') then 'Current snapshot' when g.metric='training_average' then 'Validated score percentage; compare individual trends only within matching conditions' else 'Records in the goal period' end));
+ end loop;
+ if app_private.can('elections') then
+  result:=result||jsonb_build_object('elections',(select coalesce(jsonb_agg(jsonb_build_object('id',e.id,'title',e.title,'summary',public.election_summary(e.id))),'[]') from app_private.elections e where e.voting_closes::date between p_from and p_to));
+ end if;
+ return result||jsonb_build_object('goals',goals);
+end $$;
+
+-- SOURCE: 202611100020_registration_fixes.sql
+-- Registration fixes found while walking the sign-up → application → approval story end to end.
+--  * A replaced document no longer blocks approval. Uploading a new file for the same requirement
+--    (allowed only while the application is editable) marks the earlier file superseded; officers
+--    verify the current file, and the old one stays on record for the audit trail.
+--  * Starting again after a rejection clears earlier verifications, so the next decision is made
+--    on documents someone has checked for this application.
+alter table app_private.documents add column superseded_by uuid references app_private.documents(id);
+
+create function app_private.supersede_document() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.module in (1,2) then
+  update app_private.documents set superseded_by=new.id
+   where module=new.module and record_id=new.record_id and requirement=new.requirement and owner_id=new.owner_id
+     and id<>new.id and superseded_by is null;
+ end if;
+ return new;
+end $$;
+create trigger supersede_document after insert on app_private.documents for each row execute function app_private.supersede_document();
+
+create function app_private.reset_verifications_on_restart() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if old.status='rejected' and new.status='draft' then
+  update app_private.documents set verified_by=null where module=2 and record_id=new.id;
+ end if;
+ return new;
+end $$;
+create trigger reset_verifications_on_restart after update on app_private.applications for each row execute function app_private.reset_verifications_on_restart();
+
+-- Same dispatcher as 202611100019, with superseded files excluded from the approval check.
+create or replace function public.club_command(p_action text,p_data jsonb default '{}') returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); result jsonb; e app_private.events; v_user uuid; v_actor uuid;
+begin
+ if p_action in ('set_membership_fee','assess_fee_bulk','verify_document','restart_application','record_walk_in','confirm_receipt') then
+  return app_private.hardening_command(p_action,p_data);
+ end if;
+ -- checks that must run before the original command
+ if p_action='request_borrowing' then
+  if exists(select 1 from app_private.borrowings where user_id=u and status='released' and ends_at<now()) then
+   raise exception 'Return your overdue equipment before requesting more.'; end if;
+  if exists(select 1 from app_private.borrowings x where x.equipment_id=(p_data->>'equipment_id')::uuid and x.status in ('approved','released')
+     and x.id is distinct from nullif(p_data->>'id','')::uuid
+     and tstzrange(x.starts_at,x.ends_at,'[)') && tstzrange((p_data->>'starts_at')::timestamptz,(p_data->>'ends_at')::timestamptz,'[)')) then
+   raise exception 'This item is already booked for that time. Choose another time or item.'; end if;
+ elsif p_action='review_application' and p_data->>'status'='approved' then
+  if exists(select 1 from app_private.documents where module=2 and record_id=(p_data->>'id')::uuid and verified_by is null and superseded_by is null) then
+   raise exception 'Verify every uploaded document before approving.'; end if;
+ elsif p_action='confirm_results' then
+  if exists(select 1 from app_private.audit_log where module=9 and record_id=(p_data->>'id')::uuid and actor=u
+     and (action='record_external_results' or (action='set_election_status' and detail->>'status'='closed'))) then
+   raise exception 'Another COMELEC member must confirm results you closed or entered.' using errcode='42501'; end if;
+ elsif p_action='verify_result' then
+  select actor into v_actor from app_private.audit_log where module=15 and record_id=(p_data->>'id')::uuid and action='record_result' order by created_at desc, id desc limit 1;
+  if v_actor=u then raise exception 'Another officer must verify a result you recorded.' using errcode='42501'; end if;
+ elsif p_action='archive_event' then
+  select * into e from app_private.events where id=(p_data->>'id')::uuid;
+ end if;
+
+ result:=app_private.club_command_before_hardening(p_action,p_data);
+
+ -- consequences that follow the original command
+ if p_action='archive_event' and e.id is not null and not e.archived and e.ends_at>now() then
+  for v_user in select user_id from app_private.registrations where event_id=e.id union select user_id from app_private.waitlist where event_id=e.id loop
+   perform app_private.notify(v_user,3,e.id,'event_cancelled','Activity cancelled: '||e.title);
+  end loop;
+  update app_private.notifications set completed_at=now() where record_id=e.id and kind='event' and completed_at is null;
+  delete from app_private.waitlist where event_id=e.id;
+  update app_private.borrowings set status='cancelled',remark='Activity cancelled',version=version+1
+   where event_id=e.id and status in ('pending','approved','returned_for_correction');
+ elsif p_action='review_borrowing' and p_data->>'status'='returned' and p_data->>'condition'='damaged' then
+  perform app_private.notify_role('finance',12,(p_data->>'id')::uuid,'Equipment returned damaged: decide on a repair fee');
+ end if;
+ return result;
+end $$;
+revoke all on function public.club_command(text,jsonb) from public,anon;
+grant execute on function public.club_command(text,jsonb) to authenticated;
+revoke all on function app_private.supersede_document(),app_private.reset_verifications_on_restart() from public,anon,authenticated;
+
+-- SOURCE: 202611110021_profile_name_from_application.sql
+-- Applicant names show everywhere as soon as they apply.
+-- Sign-up only asks for an email and password, so a new profile has no name until the
+-- application is approved. Officers then saw unnamed accounts ("Club record") in pickers
+-- such as Assign role. While someone has no membership yet, their profile name follows
+-- the name on their application; once a membership exists the verified-name lock from
+-- migration 018 applies and only an approved name correction changes it.
+
+create or replace function app_private.profile_name_from_application() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if trim(coalesce(new.full_name,''))<>'' and not exists(select 1 from app_private.memberships where user_id=new.user_id) then
+  update app_private.profiles set full_name=trim(new.full_name),updated_at=now()
+   where id=new.user_id and full_name is distinct from trim(new.full_name);
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.profile_name_from_application() from public,anon,authenticated;
+
+create trigger profile_name_from_application after insert or update of full_name on app_private.applications
+ for each row execute function app_private.profile_name_from_application();
+
+-- Backfill: unnamed profiles of people who have already applied.
+update app_private.profiles p set full_name=trim(a.full_name),updated_at=now()
+ from app_private.applications a
+ where a.user_id=p.id and trim(p.full_name)='' and trim(a.full_name)<>'';
+
+-- SOURCE: 202611110022_payment_reference_required.sql
+-- A payment must carry the reference number printed on its receipt (GCash "Ref No.", bank
+-- transaction number, OR number). The treasurer checks it against the club's account, and
+-- one receipt can only pay once. Expenses and reimbursements keep the reference optional.
+
+create or replace function app_private.payment_reference_check() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare v_ref text;
+begin
+ if new.kind<>'payment' then return new; end if;
+ v_ref:=upper(regexp_replace(coalesce(new.reference,''),'[\s]','','g'));
+ if v_ref !~ '^[A-Z0-9-]{6,30}$' then
+  raise exception 'Enter the reference number from your receipt (6 to 30 letters or numbers, e.g. the GCash Ref No.).';
+ end if;
+ if exists(select 1 from app_private.financial_records r where r.kind='payment' and r.id<>new.id and r.status<>'rejected'
+   and upper(regexp_replace(r.reference,'[\s]','','g'))=v_ref) then
+  raise exception 'This reference number is already on another payment. Check the number on your receipt.';
+ end if;
+ new.reference:=v_ref;
+ return new;
+end $$;
+revoke all on function app_private.payment_reference_check() from public,anon,authenticated;
+
+create trigger payment_reference_check before insert or update of reference, kind on app_private.financial_records
+ for each row execute function app_private.payment_reference_check();
+
+-- SOURCE: 202611120023_payment_details.sql
+-- Where to pay. The Treasurer records the club's GCash and bank details once; every
+-- applicant's pay step shows them. Any GCash or bank transfer is accepted as long as the
+-- receipt carries a reference number (migration 022).
+
+alter table app_private.settings add column payment_details jsonb not null default '{}'::jsonb;
+
+create function public.set_payment_details(p_details jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v jsonb:='{}'::jsonb; k text;
+begin
+ perform app_private.require_user();
+ if not (app_private.can('finance') or app_private.can('administration')) then raise exception 'Permission denied: finance' using errcode='42501'; end if;
+ foreach k in array array['gcash_name','gcash_number','bank_name','bank_account_name','bank_account_number'] loop
+  if length(trim(coalesce(p_details->>k,'')))>120 then raise exception 'Keep each payment detail under 120 characters.'; end if;
+  v:=v||jsonb_build_object(k,trim(coalesce(p_details->>k,'')));
+ end loop;
+ if (v->>'gcash_number')='' and (v->>'bank_account_number')='' then raise exception 'Enter at least a GCash number or a bank account number.'; end if;
+ update app_private.settings set payment_details=v,updated_at=now() where id;
+ perform app_private.note(12,null,'set_payment_details',v);
+ return v;
+end $$;
+revoke all on function public.set_payment_details(jsonb) from public,anon;
+grant execute on function public.set_payment_details(jsonb) to authenticated;
+
+-- SOURCE: 202611120024_one_notice_per_event.sql
+-- One notice per event, in plain words.
+-- Approving an application with a fee used to send three notices ("approved: ",
+-- "Approved. Pay the membership fee...", "Fee assessment: Membership fee"). The fee notice is
+-- the one worth keeping: it carries the due date and completes itself once the fee is paid.
+-- Officer decisions also arrived as "<status>: <remark>", which read as "approved:" when the
+-- remark was empty.
+
+create or replace function app_private.peso_text(p numeric) returns text language sql immutable set search_path='' as $$
+ select '₱'||case when p=trunc(p) then to_char(p,'FM999,999,990') else to_char(p,'FM999,999,990.00') end
+$$;
+
+create or replace function app_private.tidy_notice() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare v_status text; v_remark text; f app_private.fee_assessments;
+begin
+ if new.kind in ('screening','finance') and position(': ' in new.message)>0 then
+  v_status:=split_part(new.message,': ',1); v_remark:=trim(substr(new.message,length(v_status)+3));
+ end if;
+ if new.kind='screening' then
+  -- Approved with a fee: the fee notice says it all.
+  if v_status='approved' and exists(select 1 from app_private.memberships where user_id=new.user_id and status='Pending payment') and v_remark='' then return null; end if;
+  new.message:=case v_status
+   when 'approved' then 'Your membership application was approved.'
+   when 'returned_for_correction' then 'Changes requested on your application'
+   when 'rejected' then 'Your membership application was not approved'
+   when 'under_review' then 'Your application is being reviewed.'
+   else new.message end
+   ||case when v_status is not null and v_remark<>'' then ': '||v_remark else (case when v_status in ('returned_for_correction','rejected') then '.' else '' end) end;
+ elsif new.kind='finance' and v_status is not null then
+  new.message:=case v_status
+   when 'verified' then 'Your payment was verified'
+   when 'returned_for_correction' then 'Your payment was sent back'
+   when 'incomplete' then 'Your payment is incomplete'
+   when 'rejected' then 'Your payment was not accepted'
+   else v_status end
+   ||case when v_remark<>'' and v_status<>'verified' then ': '||v_remark else '.' end;
+ elsif new.kind='membership' and new.message like 'Approved. Pay the membership fee%' then
+  return null;
+ elsif new.kind='fee' then
+  select * into f from app_private.fee_assessments where id=new.record_id;
+  -- the text must not depend on payment_id: paying re-sends the same notice to mark it complete
+  if found and f.purpose='Membership fee' then
+   new.message:='Approved! Pay the '||app_private.peso_text(f.amount)||' membership fee by '||to_char(f.due_on,'Dy, Mon FMDD')||' to activate your membership.';
+  elsif found then
+   new.message:='Fee due: '||f.purpose||' · '||app_private.peso_text(f.amount)||' by '||to_char(f.due_on,'Dy, Mon FMDD');
+  end if;
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.tidy_notice(),app_private.peso_text(numeric) from public,anon,authenticated;
+
+create trigger tidy_notice before insert on app_private.notifications for each row execute function app_private.tidy_notice();
+
+-- Clean up notices already sent.
+delete from app_private.notifications n where n.kind='membership' and n.message like 'Approved. Pay the membership fee%';
+delete from app_private.notifications n where n.kind='screening' and n.message='approved: '
+ and exists(select 1 from app_private.memberships m where m.user_id=n.user_id);
+update app_private.notifications n set message='Approved! Pay the '||app_private.peso_text(f.amount)||' membership fee by '||to_char(f.due_on,'Dy, Mon FMDD')||' to activate your membership.'
+ from app_private.fee_assessments f where n.kind='fee' and n.record_id=f.id and f.purpose='Membership fee' and n.message='Fee assessment: Membership fee';
+
+-- SOURCE: 202611120025_no_duplicate_roles.sql
+-- A person holds a role once. Assigning a role someone already holds (and that is not about to
+-- end) is refused; renewing is allowed in the last 30 days of a term or after it ends.
+
+create or replace function app_private.no_duplicate_role() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare v_end timestamptz; v_role text;
+begin
+ select ra.ends_at into v_end from app_private.role_assignments ra
+  where ra.user_id=new.user_id and ra.role_id=new.role_id and ra.retired_at is null and ra.ends_at>now()+interval '30 days'
+  order by ra.ends_at desc limit 1;
+ if found then
+  select name into v_role from app_private.roles where id=new.role_id;
+  raise exception 'This person is already % until %. Renew the term in its last 30 days instead.', v_role, to_char(v_end,'Mon FMDD, YYYY');
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.no_duplicate_role() from public,anon,authenticated;
+
+create trigger no_duplicate_role before insert on app_private.role_assignments for each row execute function app_private.no_duplicate_role();
+
+-- SOURCE: 202611120026_role_access.sql
+-- Roles & access. Each club decides which desks a role opens (Administration -> Roles & access).
+-- A role is a name plus a set of permissions; every action already checks that set, so changing
+-- it changes what holders can see and do on their next refresh. Built-in roles remember their
+-- default so a club can undo its changes. The last-administrator rule still applies.
+
+alter table app_private.roles add column default_permissions text[];
+update app_private.roles r set default_permissions=d.p from (values
+ ('administrator',array['administration']),('membership_officer',array['membership']),('activity_officer',array['activities']),
+ ('election_officer',array['elections']),('equipment_officer',array['equipment']),('training_officer',array['training']),
+ ('treasurer',array['finance']),('president',array['president']),('reports_officer',array['reports']),('interclub_officer',array['interclub'])
+) as d(id,p) where r.id=d.id;
+
+create function app_private.keep_an_administrator() returns void language plpgsql security definer set search_path='' as $$
+begin
+ if not exists(select 1 from app_private.role_assignments a join app_private.roles r on r.id=a.role_id join app_private.profiles p on p.id=a.user_id
+  where p.enabled and 'administration'=any(r.permissions) and a.retired_at is null and now()>=a.starts_at and now()<a.ends_at)
+ then raise exception 'At least one person must keep Administration, or nobody could manage roles.'; end if;
+end $$;
+revoke all on function app_private.keep_an_administrator() from public,anon,authenticated;
+
+create function public.save_role(p_role_id text,p_name text,p_permissions text[],p_new boolean) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_name text:=trim(coalesce(p_name,'')); v_perms text[]; v_old text[];
+begin
+ perform app_private.require_user();
+ perform app_private.require_permission('administration');
+ perform pg_advisory_xact_lock(14001);
+ if length(v_name) not between 2 and 60 then raise exception 'Give the role a name of 2 to 60 characters.'; end if;
+ if coalesce(p_role_id,'') !~ '^[a-z][a-z0-9_]{1,79}$' then raise exception 'That role id is not valid.'; end if;
+ select coalesce(array_agg(distinct x order by x),'{}') into v_perms from unnest(coalesce(p_permissions,'{}')) x;
+ if not v_perms <@ array['membership','activities','elections','equipment','training','finance','president','reports','administration','interclub'] then
+  raise exception 'Unknown desk in the list.'; end if;
+ select permissions into v_old from app_private.roles where id=p_role_id;
+ if p_new then
+  if found then raise exception 'A role with this name already exists. Open it from the list instead.'; end if;
+  if exists(select 1 from app_private.roles where lower(name)=lower(v_name)) then raise exception 'A role called % already exists.',v_name; end if;
+  insert into app_private.roles(id,name,permissions) values(p_role_id,v_name,v_perms);
+ else
+  if not found then raise exception 'That role no longer exists. Refresh and try again.'; end if;
+  if exists(select 1 from app_private.roles where lower(name)=lower(v_name) and id<>p_role_id) then raise exception 'Another role is already called %.',v_name; end if;
+  update app_private.roles set name=v_name,permissions=v_perms where id=p_role_id;
+ end if;
+ perform app_private.keep_an_administrator();
+ perform app_private.note(14,null,'save_role',jsonb_build_object('role_id',p_role_id,'name',v_name,'permissions',to_jsonb(v_perms),'before',to_jsonb(v_old)));
+ return jsonb_build_object('id',p_role_id,'name',v_name,'permissions',to_jsonb(v_perms));
+end $$;
+revoke all on function public.save_role(text,text,text[],boolean) from public,anon;
+grant execute on function public.save_role(text,text,text[],boolean) to authenticated;
+
+create function public.reset_role(p_role_id text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_default text[];
+begin
+ perform app_private.require_user();
+ perform app_private.require_permission('administration');
+ perform pg_advisory_xact_lock(14001);
+ select default_permissions into v_default from app_private.roles where id=p_role_id;
+ if not found then raise exception 'That role no longer exists. Refresh and try again.'; end if;
+ if v_default is null then raise exception 'This role was made by the club, so it has no default to go back to.'; end if;
+ update app_private.roles set permissions=v_default where id=p_role_id;
+ perform app_private.keep_an_administrator();
+ perform app_private.note(14,null,'reset_role',jsonb_build_object('role_id',p_role_id,'permissions',to_jsonb(v_default)));
+ return jsonb_build_object('id',p_role_id,'permissions',to_jsonb(v_default));
+end $$;
+revoke all on function public.reset_role(text) from public,anon;
+grant execute on function public.reset_role(text) to authenticated;
+
+-- SOURCE: 202611120027_equipment_photos.sql
+-- Equipment photos. A photo is an ordinary club document (module 10, requirement "Photo") attached to an
+-- equipment item, so it reuses the upload, storage and audit path every other attachment uses. Only the
+-- Equipment desk can attach one; every active member can view it when browsing gear.
+
+create or replace function app_private.document_access(p_module integer,p_record uuid,p_write boolean default false) returns boolean language plpgsql stable security definer set search_path='' as $$
+ declare u uuid:=auth.uid();begin
+ if not app_private.active_user() then return false;end if;
+ case p_module
+ when 2 then return exists(select 1 from app_private.applications where id=p_record and ((user_id=u and (not p_write or status in ('draft','incomplete','returned_for_correction'))) or (not p_write and app_private.can('membership'))));
+ when 1 then return exists(select 1 from app_private.renewals where id=p_record and ((user_id=u and (not p_write or status in ('draft','returned_for_correction'))) or (not p_write and app_private.can('membership'))));
+ when 9 then return exists(select 1 from app_private.candidates c join app_private.elections e on e.id=c.election_id where c.id=p_record and ((c.user_id=u and (not p_write or (e.status='announced' and now()<=e.candidacy_closes))) or app_private.can('elections')));
+ when 11 then return exists(select 1 from app_private.training_records where id=p_record and ((user_id=u and (not p_write or validation in ('personal','returned_for_correction'))) or app_private.can('training')));
+ when 12 then return exists(select 1 from app_private.financial_records where id=p_record and ((user_id=u and (not p_write or status in ('draft','incomplete','returned_for_correction'))) or (not p_write and (app_private.can('finance') or (kind<>'payment' and app_private.can('president'))))));
+ when 15 then return exists(select 1 from app_private.delegates d join app_private.interclub_events e on e.event_id=d.event_id where d.id=p_record and ((app_private.event_guest(d.event_id,d.partner_id) and (not p_write or (e.status='preparation' and now()<=e.registration_closes and d.status in ('pending','incomplete')))) or (app_private.event_staff(d.event_id) and (not p_write or e.status<>'archived'))))
+ or exists(select 1 from app_private.interclub_events e where e.event_id=p_record and ((app_private.event_staff(e.event_id) and (not p_write or e.status<>'archived')) or (not p_write and app_private.event_guest(e.event_id))));
+ -- Equipment photos: the Equipment desk adds them; any active member can see them in the catalog.
+ when 10 then return exists(select 1 from app_private.equipment where id=p_record) and (app_private.can('equipment')
+  or (not p_write and exists(select 1 from app_private.memberships where user_id=u and status='Active')));
+ else return false;end case;end
+$$;
+
+-- SOURCE: 202611120028_clear_approval_notice.sql
+-- Say what was approved. "Approved! Pay the fee" read as if the payment had been approved; the approval
+-- is the application's, and paying comes next.
+
+create or replace function app_private.tidy_notice() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare v_status text; v_remark text; f app_private.fee_assessments;
+begin
+ if new.kind in ('screening','finance') and position(': ' in new.message)>0 then
+  v_status:=split_part(new.message,': ',1); v_remark:=trim(substr(new.message,length(v_status)+3));
+ end if;
+ if new.kind='screening' then
+  -- Approved with a fee: the fee notice says it all.
+  if v_status='approved' and exists(select 1 from app_private.memberships where user_id=new.user_id and status='Pending payment') and v_remark='' then return null; end if;
+  new.message:=case v_status
+   when 'approved' then 'Your membership application was approved.'
+   when 'returned_for_correction' then 'Changes requested on your application'
+   when 'rejected' then 'Your membership application was not approved'
+   when 'under_review' then 'Your application is being reviewed.'
+   else new.message end
+   ||case when v_status is not null and v_remark<>'' then ': '||v_remark else (case when v_status in ('returned_for_correction','rejected') then '.' else '' end) end;
+ elsif new.kind='finance' and v_status is not null then
+  new.message:=case v_status
+   when 'verified' then 'Your payment was verified'
+   when 'returned_for_correction' then 'Your payment was sent back'
+   when 'incomplete' then 'Your payment is incomplete'
+   when 'rejected' then 'Your payment was not accepted'
+   else v_status end
+   ||case when v_remark<>'' and v_status<>'verified' then ': '||v_remark else '.' end;
+ elsif new.kind='membership' and new.message like 'Approved. Pay the membership fee%' then
+  return null;
+ elsif new.kind='fee' then
+  select * into f from app_private.fee_assessments where id=new.record_id;
+  -- the text must not depend on payment_id: paying re-sends the same notice to mark it complete
+  if found and f.purpose='Membership fee' then
+   new.message:='Your application was approved. Next, pay the '||app_private.peso_text(f.amount)||' membership fee by '||to_char(f.due_on,'Dy, Mon FMDD')||' to activate your membership.';
+  elsif found then
+   new.message:='Fee due: '||f.purpose||' · '||app_private.peso_text(f.amount)||' by '||to_char(f.due_on,'Dy, Mon FMDD');
+  end if;
+ end if;
+ return new;
+end $$;
+
+update app_private.notifications set message=replace(message,'Approved! Pay the ','Your application was approved. Next, pay the ')
+ where kind='fee' and message like 'Approved! Pay the %';
+
+-- SOURCE: 202611120029_clear_review_notices.sql
+-- Officer review notices say whose submission they are about. Before, the Treasurer saw identical
+-- "Financial submission requires review" cards. (Handled ones already get completed_at from
+-- sync_workflow_notices; the app now hides completed notices.)
+
+create or replace function app_private.tidy_notice() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare v_status text; v_remark text; f app_private.fee_assessments;
+begin
+ if new.kind in ('screening','finance') and position(': ' in new.message)>0 then
+  v_status:=split_part(new.message,': ',1); v_remark:=trim(substr(new.message,length(v_status)+3));
+ end if;
+ if new.kind='screening' then
+  -- Approved with a fee: the fee notice says it all.
+  if v_status='approved' and exists(select 1 from app_private.memberships where user_id=new.user_id and status='Pending payment') and v_remark='' then return null; end if;
+  new.message:=case v_status
+   when 'approved' then 'Your membership application was approved.'
+   when 'returned_for_correction' then 'Changes requested on your application'
+   when 'rejected' then 'Your membership application was not approved'
+   when 'under_review' then 'Your application is being reviewed.'
+   else new.message end
+   ||case when v_status is not null and v_remark<>'' then ': '||v_remark else (case when v_status in ('returned_for_correction','rejected') then '.' else '' end) end;
+ elsif new.kind='finance' and v_status is not null then
+  new.message:=case v_status
+   when 'verified' then 'Your payment was verified'
+   when 'returned_for_correction' then 'Your payment was sent back'
+   when 'incomplete' then 'Your payment is incomplete'
+   when 'rejected' then 'Your payment was not accepted'
+   else v_status end
+   ||case when v_remark<>'' and v_status<>'verified' then ': '||v_remark else '.' end;
+ elsif new.kind='membership' and new.message like 'Approved. Pay the membership fee%' then
+  return null;
+ elsif new.kind='review' and new.module=12 and new.message='Financial submission requires review' then
+  -- Name who sent what, so the Treasurer can tell submissions apart. Kept to fields that don't change on a
+  -- resubmission, so a corrected submission reopens the same notice instead of adding another.
+  select 'Check '||coalesce(nullif(p.full_name,''),'a member')||'''s '||case r.kind when 'payment' then 'payment' when 'reimbursement' then 'reimbursement request' else 'expense' end||' · '||r.purpose
+    into new.message
+    from app_private.financial_records r left join app_private.profiles p on p.id=r.user_id where r.id=new.record_id;
+  new.message:=coalesce(new.message,'A financial submission needs checking');
+ elsif new.kind='review' and new.module=10 and new.message='Borrowing request requires review' then
+  select coalesce(nullif(p.full_name,''),'A member')||' asked to borrow '||e.label
+    into new.message
+    from app_private.borrowings b join app_private.equipment e on e.id=b.equipment_id left join app_private.profiles p on p.id=b.user_id where b.id=new.record_id;
+  new.message:=coalesce(new.message,'A borrowing request needs review');
+ elsif new.kind='fee' then
+  select * into f from app_private.fee_assessments where id=new.record_id;
+  -- the text must not depend on payment_id: paying re-sends the same notice to mark it complete
+  if found and f.purpose='Membership fee' then
+   new.message:='Your application was approved. Next, pay the '||app_private.peso_text(f.amount)||' membership fee by '||to_char(f.due_on,'Dy, Mon FMDD')||' to activate your membership.';
+  elsif found then
+   new.message:='Fee due: '||f.purpose||' · '||app_private.peso_text(f.amount)||' by '||to_char(f.due_on,'Dy, Mon FMDD');
+  end if;
+ end if;
+ return new;
+end $$;
+
+update app_private.notifications n set message='Check '||coalesce(nullif(p.full_name,''),'a member')||'''s '||case r.kind when 'payment' then 'payment' when 'reimbursement' then 'reimbursement request' else 'expense' end||' · '||r.purpose
+ from app_private.financial_records r left join app_private.profiles p on p.id=r.user_id
+ where n.kind='review' and n.module=12 and n.record_id=r.id and n.message='Financial submission requires review'
+   and not exists(select 1 from app_private.notifications d where d.user_id=n.user_id and d.record_id=n.record_id and d.kind='review' and d.id<>n.id);
+update app_private.notifications n set message=coalesce(nullif(p.full_name,''),'A member')||' asked to borrow '||e.label
+ from app_private.borrowings b join app_private.equipment e on e.id=b.equipment_id left join app_private.profiles p on p.id=b.user_id
+ where n.kind='review' and n.module=10 and n.record_id=b.id and n.message='Borrowing request requires review'
+   and not exists(select 1 from app_private.notifications d where d.user_id=n.user_id and d.record_id=n.record_id and d.kind='review' and d.id<>n.id);
+
+-- SOURCE: 202611120030_round_arrows.sql
+-- Rounds keep their arrows. A round can carry its ends and each arrow's score (X, 10..1, M), plus where it hit
+-- when a scoring app exported positions. When arrows are sent, the server works out the score and maximum
+-- from them, so the total can never disagree with the arrows. Rounds without arrows keep working as before.
+
+alter table app_private.training_records add column arrows jsonb;
+
+create function app_private.arrow_totals(p jsonb, out score integer, out arrows integer)
+language plpgsql immutable set search_path='' as $$
+declare e jsonb; a jsonb; v text;
+begin
+ score:=0; arrows:=0;
+ if jsonb_typeof(p->'ends') is distinct from 'array' or jsonb_array_length(p->'ends') not between 1 and 60 then
+  raise exception 'A round needs 1 to 60 ends.'; end if;
+ for e in select value from jsonb_array_elements(p->'ends') loop
+  if jsonb_typeof(e) is distinct from 'array' or jsonb_array_length(e) not between 1 and 24 then
+   raise exception 'Each end needs 1 to 24 arrows.'; end if;
+  for a in select value from jsonb_array_elements(e) loop
+   v:=upper(coalesce(a->>'p',''));
+   if v not in ('X','10','9','8','7','6','5','4','3','2','1','M') then raise exception 'Arrow scores are X, 10 to 1, or M.'; end if;
+   if (a ? 'x' and jsonb_typeof(a->'x')<>'number') or (a ? 'y' and jsonb_typeof(a->'y')<>'number') then
+    raise exception 'Arrow positions must be numbers.'; end if;
+   score:=score+case v when 'X' then 10 when 'M' then 0 else v::integer end;
+   arrows:=arrows+1;
+  end loop;
+ end loop;
+end $$;
+revoke all on function app_private.arrow_totals(jsonb) from public,anon,authenticated;
+
+-- Save a round (coach: save_training, member: save_personal_training) with or without arrows; optionally send it
+-- to the coach in the same step. Permissions are the training commands' own.
+create function public.save_round(p_action text,p_data jsonb,p_submit boolean default false) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_score integer; v_count integer; v_data jsonb:=p_data-'arrows'; v_result jsonb; v_id uuid;
+ v_arrows jsonb:=nullif(p_data->'arrows','null'::jsonb);
+begin
+ perform app_private.require_user();
+ if p_action not in ('save_training','save_personal_training') then raise exception 'Unknown action.'; end if;
+ if v_arrows is not null then
+  select score,arrows into v_score,v_count from app_private.arrow_totals(v_arrows);
+  v_data:=v_data||jsonb_build_object('score',v_score,'maximum_score',v_count*10);
+ end if;
+ v_result:=app_private.training_command(p_action,v_data);
+ v_id:=(v_result->>'id')::uuid;
+ if p_data ? 'arrows' then update app_private.training_records set arrows=v_arrows where id=v_id; end if;
+ if p_submit then perform app_private.training_command('submit_training',jsonb_build_object('id',v_id)); end if;
+ return v_result;
+end $$;
+revoke all on function public.save_round(text,jsonb,boolean) from public,anon;
+grant execute on function public.save_round(text,jsonb,boolean) to authenticated;
+
+-- The coach's CSV import, arrows included. All rows save or none do.
+create function public.import_rounds(p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare entry jsonb; results jsonb:='[]';
+begin
+ perform app_private.require_user();
+ perform app_private.require_permission('training');
+ if jsonb_typeof(p_rows) is distinct from 'array' or jsonb_array_length(p_rows) not between 1 and 500 then
+  raise exception 'Import 1 to 500 rounds at a time.'; end if;
+ for entry in select value from jsonb_array_elements(p_rows) loop
+  perform app_private.required(entry,'import_key',200);
+  if exists(select 1 from app_private.training_records where import_key=entry->>'import_key') then
+   raise exception 'This file was already imported (%). Nothing was saved.',entry->>'import_key'; end if;
+  results:=results||jsonb_build_array(public.save_round('save_training',entry,false));
+ end loop;
+ return results;
+end $$;
+revoke all on function public.import_rounds(jsonb) from public,anon;
+grant execute on function public.import_rounds(jsonb) to authenticated;
+
+-- SOURCE: 202611120031_delete_records.sql
+-- Delete what can safely disappear; everything official keeps its archive/retire path instead.
+-- Deletable:
+--   training_round  the owner's personal or returned round; a coach may delete any round (reason required
+--                   once validated, e.g. a duplicate import)
+--   payment_draft   the owner's financial submission while it is still a draft
+--   event_draft     an unpublished event nobody registered for (Events & attendance)
+--   equipment       an item that was never borrowed (otherwise mark it Retired)
+--   role            a club-made role nobody has ever held (Administration)
+-- Each delete is written to the activity log with who, why and a copy of what was removed.
+
+create function public.delete_record(p_kind text,p_id uuid,p_reason text default '') returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v_reason text:=trim(coalesce(p_reason,'')); v_row jsonb; v_module integer;
+ t app_private.training_records; f app_private.financial_records; e app_private.events; q app_private.equipment;
+begin
+ case p_kind
+ when 'training_round' then
+  select * into t from app_private.training_records where id=p_id for update;
+  if not found then raise exception 'This round no longer exists. Refresh and try again.'; end if;
+  if t.user_id=u and t.validation in ('personal','returned_for_correction') then null;
+  elsif app_private.can('training') then
+   if t.validation='validated' and v_reason='' then raise exception 'Say why this official round is being deleted.'; end if;
+  else raise exception 'Only your own personal rounds can be deleted.' using errcode='42501'; end if;
+  v_row:=to_jsonb(t); v_module:=11;
+  delete from app_private.corrections where module in (4,11) and record_id=p_id;
+  delete from app_private.documents where module in (4,11) and record_id=p_id;
+  delete from app_private.training_records where id=p_id;
+ when 'payment_draft' then
+  select * into f from app_private.financial_records where id=p_id for update;
+  if not found then raise exception 'This submission no longer exists. Refresh and try again.'; end if;
+  if f.user_id<>u or f.status<>'draft' then raise exception 'Only your own drafts can be deleted. Sent submissions stay on record.' using errcode='42501'; end if;
+  v_row:=to_jsonb(f); v_module:=12;
+  delete from app_private.documents where module=12 and record_id=p_id;
+  delete from app_private.financial_records where id=p_id;
+ when 'event_draft' then
+  perform app_private.require_permission('activities');
+  select * into e from app_private.events where id=p_id for update;
+  if not found then raise exception 'This event no longer exists. Refresh and try again.'; end if;
+  if e.published then raise exception 'Published events stay on record. Archive it instead.'; end if;
+  v_row:=to_jsonb(e); v_module:=8;
+  delete from app_private.events where id=p_id;
+ when 'equipment' then
+  perform app_private.require_permission('equipment');
+  select * into q from app_private.equipment where id=p_id for update;
+  if not found then raise exception 'This item no longer exists. Refresh and try again.'; end if;
+  if exists(select 1 from app_private.borrowings where equipment_id=p_id) then
+   raise exception 'This item has been borrowed before, so its history stays. Set its condition to Retired instead.'; end if;
+  v_row:=to_jsonb(q); v_module:=10;
+  delete from app_private.documents where module=10 and record_id=p_id;
+  delete from app_private.equipment_history where equipment_id=p_id and borrowing_id is null;
+  delete from app_private.equipment where id=p_id;
+ else raise exception 'This kind of record cannot be deleted.';
+ end case;
+ delete from app_private.notifications where record_id=p_id;
+ perform app_private.note(v_module,p_id,'delete_'||p_kind,jsonb_build_object('reason',v_reason,'deleted',v_row));
+ return jsonb_build_object('deleted',p_id);
+exception when foreign_key_violation then
+ raise exception 'Other records still point to this one, so it stays. Archive or retire it instead.';
+end $$;
+revoke all on function public.delete_record(text,uuid,text) from public,anon;
+grant execute on function public.delete_record(text,uuid,text) to authenticated;
+
+-- Roles have text ids, so they get their own door.
+create function public.delete_role(p_role_id text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_row jsonb;
+begin
+ perform app_private.require_user();
+ perform app_private.require_permission('administration');
+ perform pg_advisory_xact_lock(14001);
+ select to_jsonb(r) into v_row from app_private.roles r where r.id=p_role_id;
+ if v_row is null then raise exception 'This role no longer exists. Refresh and try again.'; end if;
+ if v_row->'default_permissions' is not null and jsonb_typeof(v_row->'default_permissions')<>'null' then
+  raise exception 'Built-in roles stay. Turn off its desks or reset it instead.'; end if;
+ if exists(select 1 from app_private.role_assignments where role_id=p_role_id) then
+  raise exception 'Someone has held this role, so its history stays. Turn off its desks instead.'; end if;
+ delete from app_private.roles where id=p_role_id;
+ perform app_private.note(14,null,'delete_role',jsonb_build_object('deleted',v_row));
+ return jsonb_build_object('deleted',p_role_id);
+end $$;
+revoke all on function public.delete_role(text) from public,anon;
+grant execute on function public.delete_role(text) to authenticated;
+
+-- SOURCE: 202611120032_send_training.sql
+-- Send a whole training to the coach in one step: every personal or returned round the member owns among the
+-- given ids goes to pending, all or none. The coach still validates each round.
+
+create function public.submit_training_session(p_ids uuid[]) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_id uuid; n integer:=0;
+begin
+ perform app_private.require_user();
+ if coalesce(array_length(p_ids,1),0) not between 1 and 50 then raise exception 'Send 1 to 50 rounds at a time.'; end if;
+ foreach v_id in array p_ids loop
+  perform app_private.training_command('submit_training',jsonb_build_object('id',v_id));
+  n:=n+1;
+ end loop;
+ return jsonb_build_object('sent',n);
+end $$;
+revoke all on function public.submit_training_session(uuid[]) from public,anon;
+grant execute on function public.submit_training_session(uuid[]) to authenticated;
+
+-- SOURCE: 202611120033_inventory.sql
+-- Inventory the club sets up itself, like its Inventory spreadsheet.
+--   Categories (Riser, Limbs, Sight…) each have a colour and their own fields: text, a choice from a list,
+--   a number, or a range such as 68-66. A field can show on the inventory list or only on the item page.
+--   A category can be borrowable or not, labelled piece by piece or just counted, and matched to the archer.
+--   Places are where things are kept (each spreadsheet tab: Tall White Cabinet, Short White Cabinet (Left)…).
+--   Items keep their existing columns, so borrowing keeps working; the new columns hold the item name,
+--   category, place, quantity, owner and the category's field values. The server fills label, category,
+--   specifications, handedness and draw weight from them.
+-- Who: anyone with the Equipment desk, and the Administrator.
+
+create table app_private.inventory_categories (
+ id uuid primary key default gen_random_uuid(),
+ name text not null unique check(length(trim(name)) between 1 and 60),
+ color text not null default 'green' check(color in ('red','orange','yellow','green','blue','teal','purple','gray')),
+ fields jsonb not null default '[]',
+ borrowable boolean not null default true,
+ labelled boolean not null default true,
+ match_archer boolean not null default false,
+ position integer not null default 0,
+ version bigint not null default 1
+);
+create table app_private.inventory_places (
+ id uuid primary key default gen_random_uuid(),
+ name text not null unique check(length(trim(name)) between 1 and 80),
+ position integer not null default 0,
+ version bigint not null default 1
+);
+alter table app_private.equipment
+ add column name text not null default '',
+ add column category_id uuid references app_private.inventory_categories,
+ add column place_id uuid references app_private.inventory_places,
+ add column quantity integer not null default 1 check(quantity between 1 and 9999),
+ add column owner text not null default 'Club property' check(length(trim(owner)) between 1 and 120),
+ add column details jsonb not null default '{}';
+
+alter table app_private.inventory_categories enable row level security;
+alter table app_private.inventory_places enable row level security;
+revoke all on app_private.inventory_categories, app_private.inventory_places from public,anon,authenticated;
+grant select on app_private.inventory_categories, app_private.inventory_places to authenticated;
+create policy inventory_categories_read on app_private.inventory_categories for select to authenticated using(app_private.member() or app_private.can('equipment') or app_private.can('administration'));
+create policy inventory_places_read on app_private.inventory_places for select to authenticated using(app_private.member() or app_private.can('equipment') or app_private.can('administration'));
+
+-- Starting set taken from the club's Inventory (26-27) sheet; every club can rename, recolour or delete them.
+insert into app_private.inventory_categories(name,color,fields,borrowable,labelled,match_archer,position) values
+ ('Riser','red','[{"key":"hand","label":"Hand","type":"choice","options":["RH","LH"],"on_list":true},{"key":"size","label":"Size","type":"choice","options":["S","M","L"],"on_list":true},{"key":"sight","label":"Sight","type":"text","options":[],"on_list":true},{"key":"color","label":"Color","type":"text","options":[],"on_list":true},{"key":"length","label":"Length (in.)","type":"number","options":[],"on_list":true}]',true,false,true,1),
+ ('Limbs','orange','[{"key":"label","label":"Label","type":"text","options":[],"on_list":true},{"key":"size","label":"Size","type":"choice","options":["S","M","L"],"on_list":true},{"key":"length","label":"Length (in.)","type":"range","options":[],"on_list":true},{"key":"lbs","label":"Draw weight (lbs.)","type":"range","options":[],"on_list":true},{"key":"color","label":"Color","type":"text","options":[],"on_list":false}]',true,true,true,2),
+ ('Sight','yellow','[{"key":"size","label":"Size","type":"choice","options":["S","M","L"],"on_list":true},{"key":"color","label":"Color","type":"text","options":[],"on_list":true},{"key":"pins","label":"Pins","type":"text","options":[],"on_list":true}]',true,false,false,3),
+ ('Finger Tab','green','[{"key":"hand","label":"Hand","type":"choice","options":["RH","LH"],"on_list":true},{"key":"size","label":"Size","type":"choice","options":["S","M","L"],"on_list":true},{"key":"kind","label":"Leather/Plate","type":"choice","options":["Leather","Plate"],"on_list":true}]',true,false,true,4),
+ ('Stringers','blue','[]',true,false,false,5),
+ ('Quiver','teal','[{"key":"hand","label":"Hand","type":"choice","options":["RH","LH"],"on_list":true}]',true,false,false,6),
+ ('Arm/Chest Guard','purple','[{"key":"size","label":"Size","type":"choice","options":["S","M","L"],"on_list":true}]',true,false,false,7),
+ ('Arrows','gray','[{"key":"length","label":"Length (in.)","type":"number","options":[],"on_list":true},{"key":"spine","label":"Spine","type":"text","options":[],"on_list":true}]',true,false,false,8);
+insert into app_private.inventory_places(name,position) values
+ ('Arrows',1),('Tall White Cabinet',2),('Short White Cabinet (Left)',3),('Short White Cabinet (Right)',4),('Benel Cabinet (Left)',5);
+
+create function app_private.require_inventory() returns uuid language plpgsql stable security definer set search_path='' as $$
+declare u uuid:=app_private.require_user();
+begin
+ if not (app_private.can('equipment') or app_private.can('administration')) then
+  raise exception 'Only the Equipment desk or the Administrator can change the inventory.' using errcode='42501'; end if;
+ return u;
+end $$;
+revoke all on function app_private.require_inventory() from public,anon,authenticated;
+
+-- Checks a category's field list and returns it cleaned: keys made from labels, unique labels, known types.
+create function app_private.clean_fields(p jsonb) returns jsonb language plpgsql immutable set search_path='' as $$
+declare f jsonb; v_out jsonb:='[]'; v_label text; v_key text; v_type text; v_opts jsonb; seen text[]:='{}'; keys text[]:='{}';
+begin
+ if jsonb_typeof(coalesce(p,'[]')) <> 'array' or jsonb_array_length(coalesce(p,'[]')) > 12 then raise exception 'A category can have up to 12 fields.'; end if;
+ for f in select value from jsonb_array_elements(coalesce(p,'[]')) loop
+  v_label:=trim(coalesce(f->>'label',''));
+  if length(v_label) not between 1 and 40 then raise exception 'Each field needs a name of up to 40 characters.'; end if;
+  if lower(v_label) = any(seen) then raise exception 'Two fields are both called %.',v_label; end if;
+  seen:=seen||lower(v_label);
+  v_type:=coalesce(f->>'type','text');
+  if v_type not in ('text','choice','number','range') then raise exception 'Field types are text, choice, number or range.'; end if;
+  v_opts:=coalesce(f->'options','[]');
+  if v_type='choice' then
+   -- Drop blanks and repeats, keeping the order the club typed (S, M, L).
+   select coalesce(jsonb_agg(o order by first_n),'[]') into v_opts from (
+    select trim(t.o) o,min(t.n) first_n from jsonb_array_elements_text(v_opts) with ordinality t(o,n) where trim(t.o)<>'' group by trim(t.o)) s;
+   if jsonb_array_length(v_opts) not between 1 and 30 then raise exception '% needs 1 to 30 choices.',v_label; end if;
+  else v_opts:='[]'; end if;
+  -- Keep a field's key when it is renamed so items keep their values; new fields get one from the name.
+  v_key:=coalesce(nullif(f->>'key',''),trim(both '_' from regexp_replace(lower(v_label),'[^a-z0-9]+','_','g')));
+  if v_key='' then v_key:='field'; end if;
+  while v_key = any(keys) loop v_key:=v_key||'_2'; end loop;
+  keys:=keys||v_key;
+  v_out:=v_out||jsonb_build_array(jsonb_build_object('key',v_key,'label',v_label,'type',v_type,'options',v_opts,'on_list',coalesce((f->>'on_list')::boolean,true)));
+ end loop;
+ return v_out;
+end $$;
+revoke all on function app_private.clean_fields(jsonb) from public,anon,authenticated;
+
+create function public.save_inventory_category(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c app_private.inventory_categories; v_id uuid; v_fields jsonb:=app_private.clean_fields(p_data->'fields');
+begin
+ perform app_private.require_inventory();
+ if nullif(p_data->>'id','') is null then
+  insert into app_private.inventory_categories(name,color,fields,borrowable,labelled,match_archer,position)
+  values(app_private.required(p_data,'name',60),coalesce(nullif(p_data->>'color',''),'green'),v_fields,
+   coalesce((p_data->>'borrowable')::boolean,true),coalesce((p_data->>'labelled')::boolean,false),coalesce((p_data->>'match_archer')::boolean,false),
+   (select coalesce(max(position),0)+1 from app_private.inventory_categories)) returning id into v_id;
+ else
+  select * into c from app_private.inventory_categories where id=(p_data->>'id')::uuid for update;
+  if not found then raise exception 'This category no longer exists. Refresh and try again.'; end if;
+  perform app_private.check_version(c.version,p_data);
+  update app_private.inventory_categories set name=app_private.required(p_data,'name',60),color=coalesce(nullif(p_data->>'color',''),color),fields=v_fields,
+   borrowable=coalesce((p_data->>'borrowable')::boolean,borrowable),labelled=coalesce((p_data->>'labelled')::boolean,labelled),
+   match_archer=coalesce((p_data->>'match_archer')::boolean,match_archer),version=version+1 where id=c.id;
+  -- Items keep the category's name in their own category column for older screens.
+  update app_private.equipment set category=app_private.required(p_data,'name',60) where category_id=c.id;
+  v_id:=c.id;
+ end if;
+ perform app_private.note(10,v_id,'save_inventory_category',p_data);
+ return jsonb_build_object('id',v_id);
+exception when unique_violation then raise exception 'Another category already has this name.';
+end $$;
+
+create function public.save_inventory_place(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare pl app_private.inventory_places; v_id uuid;
+begin
+ perform app_private.require_inventory();
+ if nullif(p_data->>'id','') is null then
+  insert into app_private.inventory_places(name,position) values(app_private.required(p_data,'name',80),(select coalesce(max(position),0)+1 from app_private.inventory_places)) returning id into v_id;
+ else
+  select * into pl from app_private.inventory_places where id=(p_data->>'id')::uuid for update;
+  if not found then raise exception 'This place no longer exists. Refresh and try again.'; end if;
+  perform app_private.check_version(pl.version,p_data);
+  update app_private.inventory_places set name=app_private.required(p_data,'name',80),version=version+1 where id=pl.id; v_id:=pl.id;
+ end if;
+ perform app_private.note(10,v_id,'save_inventory_place',p_data);
+ return jsonb_build_object('id',v_id);
+exception when unique_violation then raise exception 'Another place already has this name.';
+end $$;
+
+-- Order categories or places as listed.
+create function public.order_inventory(p_kind text,p_ids uuid[]) returns jsonb
+language plpgsql security definer set search_path='' as $$
+begin
+ perform app_private.require_inventory();
+ if p_kind='category' then
+  update app_private.inventory_categories c set position=o.n from unnest(p_ids) with ordinality o(id,n) where c.id=o.id;
+ elsif p_kind='place' then
+  update app_private.inventory_places pl set position=o.n from unnest(p_ids) with ordinality o(id,n) where pl.id=o.id;
+ else raise exception 'Unknown list.'; end if;
+ return jsonb_build_object('ordered',coalesce(array_length(p_ids,1),0));
+end $$;
+
+-- Only empty categories and places can go; otherwise the items would lose where they belong.
+create function public.delete_inventory_group(p_kind text,p_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare n integer; v_row jsonb;
+begin
+ perform app_private.require_inventory();
+ if p_kind='category' then
+  select count(*) into n from app_private.equipment where category_id=p_id;
+  if n>0 then raise exception 'Move or delete its % item(s) first.',n; end if;
+  delete from app_private.inventory_categories c where c.id=p_id returning to_jsonb(c) into v_row;
+ elsif p_kind='place' then
+  select count(*) into n from app_private.equipment where place_id=p_id;
+  if n>0 then raise exception 'Move its % item(s) somewhere else first.',n; end if;
+  delete from app_private.inventory_places pl where pl.id=p_id returning to_jsonb(pl) into v_row;
+ else raise exception 'Unknown list.'; end if;
+ if v_row is null then raise exception 'It no longer exists. Refresh and try again.'; end if;
+ perform app_private.note(10,p_id,'delete_inventory_'||p_kind,jsonb_build_object('deleted',v_row));
+ return jsonb_build_object('deleted',p_id);
+end $$;
+
+-- Save one item from a category's fields. Returns its id.
+create function app_private.save_inventory_item(u uuid,p_data jsonb) returns uuid
+language plpgsql security definer set search_path='' as $$
+declare c app_private.inventory_categories; e app_private.equipment; f jsonb; v_details jsonb:='{}'; v_val text; v_key text;
+ v_name text:=app_private.required(p_data,'name',120); v_label text; v_base text; n integer:=1; v_hand text:='not_applicable';
+ v_weight numeric; v_specs text:=''; v_id uuid; v_place uuid:=nullif(p_data->>'place_id','')::uuid;
+ v_condition text:=coalesce(nullif(p_data->>'condition',''),'serviceable'); v_qty integer;
+begin
+ select * into c from app_private.inventory_categories where id=nullif(p_data->>'category_id','')::uuid;
+ if not found then raise exception 'Pick a category for the item.'; end if;
+ if v_place is not null and not exists(select 1 from app_private.inventory_places where id=v_place) then raise exception 'That place no longer exists.'; end if;
+ if v_condition not in ('serviceable','maintenance','damaged','retired') then raise exception 'Unknown condition.'; end if;
+ v_qty:=coalesce(nullif(p_data->>'quantity','')::integer,1);
+ if v_qty not between 1 and 9999 then raise exception 'Quantity is 1 to 9999.'; end if;
+ if c.labelled and v_qty<>1 then raise exception '% are labelled one by one, so each piece is its own item with quantity 1.',c.name; end if;
+ for f in select value from jsonb_array_elements(c.fields) loop
+  v_key:=f->>'key'; v_val:=trim(coalesce(p_data->'details'->>v_key,''));
+  if v_val='' then continue; end if;
+  if length(v_val)>80 then raise exception '% is too long.',f->>'label'; end if;
+  if f->>'type'='choice' and not (f->'options' ? v_val) then raise exception '% must be one of: %.',f->>'label',(select string_agg(o,', ') from jsonb_array_elements_text(f->'options') o); end if;
+  if f->>'type'='number' and v_val !~ '^\d+(\.\d+)?$' then raise exception '% must be a number.',f->>'label'; end if;
+  if f->>'type'='range' and v_val !~ '^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$' then raise exception '% must be a number or a range like 68-66.',f->>'label'; end if;
+  v_details:=v_details||jsonb_build_object(v_key,v_val);
+  v_specs:=v_specs||case when v_specs='' then '' else ' · ' end||(f->>'label')||': '||v_val;
+  -- Hand and draw weight feed the existing matching for borrowers.
+  if lower(f->>'label') in ('hand','handedness') then
+   v_hand:=case when upper(v_val) in ('RH','RIGHT','R') then 'right' when upper(v_val) in ('LH','LEFT','L') then 'left' else v_hand end; end if;
+  if lower(f->>'label') like '%lb%' or lower(f->>'label') like '%weight%' then
+   select max(t.x[1]::numeric) into v_weight from regexp_matches(v_val,'(\d+(?:\.\d+)?)','g') as t(x); end if;
+ end loop;
+ -- The label is what borrowers and officers see; it must be unique, so repeats get #2, #3…
+ v_base:=trim(v_name||coalesce(' '||nullif(v_details->>'label',''),'')||case when v_hand='right' then ' (RH)' when v_hand='left' then ' (LH)' else '' end);
+ v_label:=v_base;
+ while exists(select 1 from app_private.equipment where label=v_label and id is distinct from nullif(p_data->>'id','')::uuid) loop
+  n:=n+1; v_label:=v_base||' #'||n; end loop;
+ if nullif(p_data->>'id','') is null then
+  insert into app_private.equipment(label,category,specifications,handedness,draw_weight,bow_setup,condition,acquired_on,notes,name,category_id,place_id,quantity,owner,details)
+  values(v_label,c.name,coalesce(nullif(v_specs,''),c.name),v_hand,v_weight,'',v_condition,nullif(p_data->>'acquired_on','')::date,coalesce(p_data->>'notes',''),
+   v_name,c.id,v_place,v_qty,coalesce(nullif(trim(p_data->>'owner'),''),'Club property'),v_details) returning id into v_id;
+ else
+  select * into e from app_private.equipment where id=(p_data->>'id')::uuid for update;
+  if not found then raise exception 'This item no longer exists. Refresh and try again.'; end if;
+  perform app_private.check_version(e.version,p_data);
+  update app_private.equipment set label=v_label,category=c.name,specifications=coalesce(nullif(v_specs,''),c.name),handedness=v_hand,draw_weight=v_weight,
+   condition=v_condition,acquired_on=coalesce(nullif(p_data->>'acquired_on','')::date,acquired_on),notes=coalesce(p_data->>'notes',''),name=v_name,category_id=c.id,
+   place_id=v_place,quantity=v_qty,owner=coalesce(nullif(trim(p_data->>'owner'),''),'Club property'),details=v_details,version=version+1 where id=e.id;
+  v_id:=e.id;
+ end if;
+ insert into app_private.equipment_history(equipment_id,condition,notes,actor) values(v_id,v_condition,coalesce(p_data->>'notes',''),u);
+ return v_id;
+end $$;
+revoke all on function app_private.save_inventory_item(uuid,jsonb) from public,anon,authenticated;
+
+create function public.save_inventory_item(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_inventory(); v_id uuid;
+begin
+ v_id:=app_private.save_inventory_item(u,p_data);
+ perform app_private.note(10,v_id,'save_inventory_item',p_data);
+ return jsonb_build_object('id',v_id);
+end $$;
+
+-- One spreadsheet tab into one place. All rows save or none do.
+create function public.import_inventory(p_place_id uuid,p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_inventory(); r jsonb; n integer:=0; i integer:=0;
+begin
+ if jsonb_typeof(p_rows) is distinct from 'array' or jsonb_array_length(p_rows) not between 1 and 500 then raise exception 'Import 1 to 500 items at a time.'; end if;
+ if p_place_id is not null and not exists(select 1 from app_private.inventory_places where id=p_place_id) then raise exception 'That place no longer exists.'; end if;
+ for r in select value from jsonb_array_elements(p_rows) loop
+  i:=i+1;
+  begin
+   perform app_private.save_inventory_item(u,(r-'id')||jsonb_build_object('place_id',p_place_id));
+  exception when others then raise exception 'Row %: %',i,sqlerrm;
+  end;
+  n:=n+1;
+ end loop;
+ perform app_private.note(10,p_place_id,'import_inventory',jsonb_build_object('items',n));
+ return jsonb_build_object('imported',n);
+end $$;
+
+-- Categories that aren't borrowable can't be requested, whatever the app shows.
+create function app_private.only_borrowable() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if exists(select 1 from app_private.equipment e join app_private.inventory_categories c on c.id=e.category_id where e.id=new.equipment_id and not c.borrowable) then
+  raise exception 'This item is not lent out.'; end if;
+ return new;
+end $$;
+create trigger borrow_only_borrowable before insert or update of equipment_id on app_private.borrowings for each row execute function app_private.only_borrowable();
+
+do $$ declare f text; begin
+ foreach f in array array['save_inventory_category(jsonb)','save_inventory_place(jsonb)','order_inventory(text,uuid[])','delete_inventory_group(text,uuid)','save_inventory_item(jsonb)','import_inventory(uuid,jsonb)'] loop
+  execute format('revoke all on function public.%s from public,anon',f);
+  execute format('grant execute on function public.%s to authenticated',f);
+ end loop;
+end $$;
+
+-- The app reads categories and places with everything else.
+create or replace function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status(),
+  'name_corrections',(select coalesce(jsonb_agg(n),'[]') from app_private.name_corrections n),
+  'inventory_categories',(select coalesce(jsonb_agg(c order by c.position,c.name),'[]') from app_private.inventory_categories c),
+  'inventory_places',(select coalesce(jsonb_agg(p order by p.position,p.name),'[]') from app_private.inventory_places p));
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611130034_announcement_reads.sql
+-- Announcements remember who has read them. Read ones stay on Home and Activities, shown in gray,
+-- instead of disappearing. Each person sees and writes only their own read marks.
+
+create table app_private.announcement_reads (
+ user_id uuid not null references app_private.profiles,
+ announcement_id uuid not null references app_private.announcements on delete cascade,
+ read_at timestamptz not null default now(),
+ primary key(user_id,announcement_id)
+);
+alter table app_private.announcement_reads enable row level security;
+revoke all on app_private.announcement_reads from public,anon,authenticated;
+grant select on app_private.announcement_reads to authenticated;
+create policy announcement_reads_own on app_private.announcement_reads for select to authenticated
+ using(app_private.active_user() and user_id=auth.uid());
+
+create function public.mark_announcements_read(p_ids uuid[]) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); n integer;
+begin
+ if coalesce(array_length(p_ids,1),0) not between 1 and 200 then raise exception 'Mark 1 to 200 announcements at a time.'; end if;
+ insert into app_private.announcement_reads(user_id,announcement_id)
+  select u,a.id from app_private.announcements a where a.id=any(p_ids) on conflict do nothing;
+ get diagnostics n=row_count;
+ return jsonb_build_object('marked',n);
+end $$;
+revoke all on function public.mark_announcements_read(uuid[]) from public,anon;
+grant execute on function public.mark_announcements_read(uuid[]) to authenticated;
+
+create or replace function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status(),
+  'name_corrections',(select coalesce(jsonb_agg(n),'[]') from app_private.name_corrections n),
+  'inventory_categories',(select coalesce(jsonb_agg(c order by c.position,c.name),'[]') from app_private.inventory_categories c),
+  'inventory_places',(select coalesce(jsonb_agg(p order by p.position,p.name),'[]') from app_private.inventory_places p),
+  'announcement_reads',(select coalesce(jsonb_agg(r),'[]') from app_private.announcement_reads r));
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611130035_application_details.sql
+-- The application asks for college, program, year level and an emergency contact.
+-- They're saved with the application (the existing save/submit runs first, unchanged), are required to send it,
+-- show to the membership officer, and copy into the member's profile when the application is approved.
+
+alter table app_private.applications
+ add column college text not null default '' check(length(college)<=60),
+ add column program text not null default '' check(length(program)<=120),
+ add column year_level text not null default '' check(length(year_level)<=40),
+ add column emergency_contact_name text not null default '' check(length(emergency_contact_name)<=160),
+ add column emergency_contact_phone text not null default '' check(length(emergency_contact_phone)<=40);
+alter table app_private.profiles add column college text not null default '' check(length(college)<=60);
+
+create function public.save_application_details(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); result jsonb;
+ v_college text:=trim(coalesce(p_data->>'college','')); v_program text:=trim(coalesce(p_data->>'program',''));
+ v_year text:=trim(coalesce(p_data->>'year_level','')); v_ec_name text:=trim(coalesce(p_data->>'emergency_contact_name',''));
+ v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone',''));
+begin
+ if p_action not in ('save_application','submit_application') then raise exception 'Unknown action.'; end if;
+ if length(v_college)>60 or length(v_program)>120 or length(v_year)>40 or length(v_ec_name)>160 then raise exception 'One of your answers is too long.'; end if;
+ if (v_ec_name='') <> (v_ec_phone='') then raise exception 'Give both the emergency contact''s name and number, or leave both empty.'; end if;
+ if not app_private.valid_phone(v_ec_phone) then raise exception 'Enter a valid emergency contact number.'; end if;
+ if p_action='submit_application' and (v_college='' or v_program='' or v_year='') then
+  raise exception 'Add your college, program and year level before sending.'; end if;
+ result:=public.club_command(p_action,p_data);
+ update app_private.applications set college=v_college,program=v_program,year_level=v_year,
+  emergency_contact_name=v_ec_name,emergency_contact_phone=v_ec_phone where user_id=u returning to_jsonb(applications.*) into result;
+ return result;
+end $$;
+revoke all on function public.save_application_details(text,jsonb) from public,anon;
+grant execute on function public.save_application_details(text,jsonb) to authenticated;
+
+-- Approval carries the answers into the profile (only where the profile is still empty).
+create function app_private.application_to_profile() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.status='approved' and old.status is distinct from 'approved' then
+  update app_private.profiles set
+   college=case when college='' then new.college else college end,
+   program=case when program='' then new.program else program end,
+   year_level=case when year_level='' then new.year_level else year_level end,
+   emergency_contact_name=case when emergency_contact_name='' then new.emergency_contact_name else emergency_contact_name end,
+   emergency_contact_phone=case when emergency_contact_phone='' then new.emergency_contact_phone else emergency_contact_phone end,
+   updated_at=now()
+  where id=new.user_id;
+ end if;
+ return new;
+end $$;
+create trigger application_to_profile after update of status on app_private.applications for each row execute function app_private.application_to_profile();
+
+-- SOURCE: 202611130036_application_sex.sql
+-- Sex on the application and profile (archery events are split into men's and women's divisions),
+-- and Alumni as a year level (the app's list). Same save path as migration 035.
+
+alter table app_private.applications add column sex text not null default '' check(sex in ('','Male','Female'));
+alter table app_private.profiles add column sex text not null default '' check(sex in ('','Male','Female'));
+
+create or replace function public.save_application_details(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); result jsonb;
+ v_college text:=trim(coalesce(p_data->>'college','')); v_program text:=trim(coalesce(p_data->>'program',''));
+ v_year text:=trim(coalesce(p_data->>'year_level','')); v_ec_name text:=trim(coalesce(p_data->>'emergency_contact_name',''));
+ v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone','')); v_sex text:=trim(coalesce(p_data->>'sex',''));
+begin
+ if p_action not in ('save_application','submit_application') then raise exception 'Unknown action.'; end if;
+ if length(v_college)>60 or length(v_program)>120 or length(v_year)>40 or length(v_ec_name)>160 then raise exception 'One of your answers is too long.'; end if;
+ if (v_ec_name='') <> (v_ec_phone='') then raise exception 'Give both the emergency contact''s name and number, or leave both empty.'; end if;
+ if not app_private.valid_phone(v_ec_phone) then raise exception 'Enter a valid emergency contact number.'; end if;
+ if v_sex not in ('','Male','Female') then raise exception 'Sex is Male or Female.'; end if;
+ if p_action='submit_application' and (v_college='' or v_program='' or v_year='' or v_sex='') then
+  raise exception 'Add your sex, college, program and year level before sending.'; end if;
+ result:=public.club_command(p_action,p_data);
+ update app_private.applications set college=v_college,program=v_program,year_level=v_year,
+  emergency_contact_name=v_ec_name,emergency_contact_phone=v_ec_phone,sex=v_sex where user_id=u returning to_jsonb(applications.*) into result;
+ return result;
+end $$;
+
+create or replace function app_private.application_to_profile() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.status='approved' and old.status is distinct from 'approved' then
+  update app_private.profiles set
+   college=case when college='' then new.college else college end,
+   sex=case when sex='' then new.sex else sex end,
+   program=case when program='' then new.program else program end,
+   year_level=case when year_level='' then new.year_level else year_level end,
+   emergency_contact_name=case when emergency_contact_name='' then new.emergency_contact_name else emergency_contact_name end,
+   emergency_contact_phone=case when emergency_contact_phone='' then new.emergency_contact_phone else emergency_contact_phone end,
+   updated_at=now()
+  where id=new.user_id;
+ end if;
+ return new;
+end $$;
+
+-- SOURCE: 202611130037_announcements_not_notices.sql
+-- Announcements have their own unread/read (migration 034), so they no longer also land in each member's Notices.
+-- An edited announcement turns unread again instead. Notices stay for personal alerts (application, payments, borrowing). Existing announcement notices are closed so the
+-- Profile count only shows personal ones; the announcements themselves are untouched.
+
+create function app_private.skip_announcement_notices() returns trigger language plpgsql set search_path='' as $$
+begin
+ if new.kind='announcement' then return null; end if;
+ return new;
+end $$;
+create trigger skip_announcement_notices before insert on app_private.notifications for each row execute function app_private.skip_announcement_notices();
+
+update app_private.notifications set completed_at=now() where kind='announcement' and completed_at is null;
+
+-- An edited announcement (new title or message) shows as unread again, which is what its edit notice used to do.
+create function app_private.unread_after_edit() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.title is distinct from old.title or new.message is distinct from old.message then
+  delete from app_private.announcement_reads where announcement_id=new.id; end if;
+ return new;
+end $$;
+create trigger unread_after_edit after update on app_private.announcements for each row execute function app_private.unread_after_edit();
+
+-- SOURCE: 202611180038_contact_checks_and_officer_roles.sql
+-- Findings from group testing (18 Nov 2026):
+--  * Mobile numbers are Philippine mobiles (09XXXXXXXXX or +639XXXXXXXXX) everywhere: the applicant's own number,
+--    the emergency contact, and a member editing their profile. The application and profile both require one.
+--  * The DLSU ID number is exactly 8 digits and is required to send an application.
+--  * New accounts that haven't applied have no name, so admins saw "Club record" for all of them. Profiles now
+--    keep the sign-in email (visible only to the owner, membership officers and administrators, as before).
+--  * An officer role can only go to an Active member. The Administrator role (administration permission) is
+--    exempt, because the system administrator can be the adviser or a developer. Existing assignments are untouched.
+
+create or replace function app_private.valid_mobile(p text) returns boolean language sql immutable set search_path='' as $$
+ select coalesce(p,'')='' or regexp_replace(p,'[[:space:]().-]','','g') ~ '^(09[0-9]{9}|\+?639[0-9]{9})$'
+$$;
+
+-- Emails for naming accounts that haven't applied yet.
+alter table app_private.profiles add column if not exists email text not null default '';
+update app_private.profiles p set email=lower(u.email) from auth.users u where u.id=p.id and p.email='';
+
+create or replace function public.initialize_account() returns jsonb language plpgsql security definer set search_path='' as $$
+declare u uuid:=auth.uid(); v_email text;
+begin
+ select lower(email) into v_email from auth.users where id=u and email_confirmed_at is not null;
+ if u is null or v_email is null then raise exception 'Verify your email before continuing.' using errcode='42501'; end if;
+ insert into app_private.profiles(id,email) values(u,v_email) on conflict(id) do update set email=excluded.email where app_private.profiles.email<>excluded.email;
+ perform app_private.require_user(); perform app_private.note(14,u,'session_access');
+ return jsonb_build_object('id',u);
+end $$;
+
+create or replace function public.complete_account_creation(p_request uuid,p_user uuid) returns void language plpgsql security definer set search_path='' as $$
+declare r app_private.account_requests;
+begin
+ select * into r from app_private.account_requests where id=p_request and completed_at is null for update;
+ if not found or not exists(select 1 from auth.users where id=p_user and lower(email)=r.email) then raise exception 'Account creation request does not match.'; end if;
+ insert into app_private.profiles(id,full_name,email) values(p_user,r.full_name,r.email) on conflict do nothing;
+ update app_private.account_requests set user_id=p_user,completed_at=now() where id=r.id;
+ insert into app_private.audit_log(actor,module,record_id,action,detail) values(r.actor,14,p_user,'account_invited',jsonb_build_object('request_id',r.id));
+end $$;
+
+-- Application: same as migration 036, plus the mobile, emergency contact and ID number checks.
+create or replace function public.save_application_details(p_action text,p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); result jsonb;
+ v_college text:=trim(coalesce(p_data->>'college','')); v_program text:=trim(coalesce(p_data->>'program',''));
+ v_year text:=trim(coalesce(p_data->>'year_level','')); v_ec_name text:=trim(coalesce(p_data->>'emergency_contact_name',''));
+ v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone','')); v_sex text:=trim(coalesce(p_data->>'sex',''));
+ v_phone text:=trim(coalesce(p_data->>'phone','')); v_id text:=trim(coalesce(p_data->>'student_number',''));
+begin
+ if p_action not in ('save_application','submit_application') then raise exception 'Unknown action.'; end if;
+ if length(v_college)>60 or length(v_program)>120 or length(v_year)>40 or length(v_ec_name)>160 then raise exception 'One of your answers is too long.'; end if;
+ if not app_private.valid_mobile(v_phone) then raise exception 'Only Philippine mobile numbers are allowed: 09XX XXX XXXX or +63 9XX XXX XXXX.'; end if;
+ if v_id<>'' and v_id !~ '^[0-9]{8}$' then raise exception 'Your DLSU ID number is 8 digits.'; end if;
+ if (v_ec_name='') <> (v_ec_phone='') then raise exception 'Give both the emergency contact''s name and number, or leave both empty.'; end if;
+ if not app_private.valid_mobile(v_ec_phone) then raise exception 'The emergency contact''s number must be a Philippine mobile number: 09XX XXX XXXX or +63 9XX XXX XXXX.'; end if;
+ if v_sex not in ('','Male','Female') then raise exception 'Sex is Male or Female.'; end if;
+ if p_action='submit_application' and (v_phone='' or v_id='') then raise exception 'Add your mobile number and DLSU ID number before sending.'; end if;
+ if p_action='submit_application' and (v_college='' or v_program='' or v_year='' or v_sex='') then
+  raise exception 'Add your sex, college, program and year level before sending.'; end if;
+ result:=public.club_command(p_action,p_data);
+ update app_private.applications set college=v_college,program=v_program,year_level=v_year,
+  emergency_contact_name=v_ec_name,emergency_contact_phone=v_ec_phone,sex=v_sex where user_id=u returning to_jsonb(applications.*) into result;
+ return result;
+end $$;
+
+-- Profile: same as live, but the mobile number is required and both numbers are Philippine mobiles.
+create or replace function app_private.save_member_profile(p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v_phone text:=trim(coalesce(p_data->>'phone','')); v_ec_phone text:=trim(coalesce(p_data->>'emergency_contact_phone',''));
+ v_name text; v_current text;
+begin
+ v_name:=app_private.required(p_data,'full_name',160);
+ select full_name into v_current from app_private.profiles where id=u;
+ if trim(v_name)<>trim(v_current) and exists(select 1 from app_private.memberships where user_id=u) then
+  raise exception 'Your name was verified when your membership was approved. Request a name correction instead.'; end if;
+ if v_phone='' then raise exception 'Enter your mobile number.'; end if;
+ if not app_private.valid_mobile(v_phone) then raise exception 'Only Philippine mobile numbers are allowed: 09XX XXX XXXX or +63 9XX XXX XXXX.'; end if;
+ if not app_private.valid_mobile(v_ec_phone) then raise exception 'The emergency contact''s number must be a Philippine mobile number: 09XX XXX XXXX or +63 9XX XXX XXXX.'; end if;
+ if (v_ec_phone='') <> (trim(coalesce(p_data->>'emergency_contact_name',''))='') then raise exception 'Provide both the emergency contact name and number.'; end if;
+ update app_private.profiles set full_name=v_name, phone=v_phone, emergency_contact_name=trim(coalesce(p_data->>'emergency_contact_name','')),
+  emergency_contact_phone=v_ec_phone, program=left(trim(coalesce(p_data->>'program','')),120), year_level=left(trim(coalesce(p_data->>'year_level','')),40),
+  dominant_hand=coalesce(p_data->>'dominant_hand',''), bow_type=coalesce(p_data->>'bow_type',''), draw_weight=nullif(p_data->>'draw_weight','')::numeric,
+  arrow_length=nullif(p_data->>'arrow_length','')::numeric, experience_level=coalesce(p_data->>'experience_level',''), bio=trim(coalesce(p_data->>'bio','')), updated_at=now()
+ where id=u;
+ perform app_private.note(1,u,'save_profile',p_data);
+ return jsonb_build_object('id',u);
+end $$;
+
+-- Roles: same as migration 016, plus the membership check on assign_role.
+create or replace function app_private.admin_command(p_action text,p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+ declare u uuid:=app_private.require_user(); v_id uuid; begin
+ perform app_private.require_permission('administration');
+ -- Serialize access changes to protect against two concurrent last-admin retirements.
+ perform pg_advisory_xact_lock(14001);
+ case p_action
+ when 'configure_club' then
+  update app_private.settings set club_name=app_private.required(p_data,'club_name',160),
+   application_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'application_requirements','[]'))),
+   renewal_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'renewal_requirements','[]'))),
+   membership_categories=array(select jsonb_array_elements_text(coalesce(p_data->'membership_categories','["Regular member"]'))),
+   retention_policy=app_private.required(p_data,'retention_policy'),rules_validated=coalesce((p_data->>'rules_validated')::boolean,false),updated_at=now() where id=true;
+ when 'define_role' then
+  insert into app_private.roles(id,name,permissions) values(app_private.required(p_data,'role_id',80),app_private.required(p_data,'name',160),array(select jsonb_array_elements_text(p_data->'permissions')))
+  on conflict(id) do update set name=excluded.name,permissions=excluded.permissions;
+ when 'assign_role' then
+  if not exists(select 1 from app_private.roles r where r.id=p_data->>'role_id' and 'administration'=any(r.permissions))
+     and not exists(select 1 from app_private.memberships m where m.user_id=(p_data->>'user_id')::uuid and m.status='Active') then
+   raise exception 'Officer roles can only go to Active members. This account has no Active membership.' using errcode='42501';
+  end if;
+  insert into app_private.role_assignments(user_id,role_id,position,starts_at,ends_at,assigned_by,reason)
+  values((p_data->>'user_id')::uuid,p_data->>'role_id',app_private.required(p_data,'position',160),coalesce((p_data->>'starts_at')::timestamptz,now()),(p_data->>'ends_at')::timestamptz,u,app_private.required(p_data,'reason')) returning id into v_id;
+ when 'retire_role' then
+  update app_private.role_assignments set retired_at=now(),reason=reason||E'\nRetired: '||app_private.required(p_data,'reason') where id=(p_data->>'id')::uuid returning id into v_id;
+ when 'set_account_status' then
+  v_id:=(p_data->>'user_id')::uuid; perform app_private.required(p_data,'reason');
+  update app_private.profiles set enabled=(p_data->>'enabled')::boolean,updated_at=now() where id=v_id;
+ else raise exception 'Unknown administrative action.';
+ end case;
+ if not exists(select 1 from app_private.role_assignments a join app_private.roles r on r.id=a.role_id join app_private.profiles p on p.id=a.user_id
+ where p.enabled and 'administration'=any(r.permissions) and a.retired_at is null and now()>=a.starts_at and now()<a.ends_at) then raise exception 'Keep at least one active administrator.'; end if;
+ perform app_private.note(14,v_id,p_action,p_data); return jsonb_build_object('id',v_id); end
+$$;
+
+-- SOURCE: 202611190039_member_standing.sql
+-- Testing round (19 Nov): the role picker showed every account as "not a member". Administrators can't read
+-- memberships (only the owner and membership officers can, migration 001), so the app found no membership row.
+-- Administrators and membership officers now get each account's standing (user_id + status only, nothing else
+-- from the membership), which is what the role picker needs. Everyone else gets an empty list.
+
+create or replace function app_private.member_standing() returns jsonb language sql stable security definer set search_path='' as $$
+ select case when app_private.can('administration') or app_private.can('membership')
+  then (select coalesce(jsonb_agg(jsonb_build_object('user_id',m.user_id,'status',m.status)),'[]') from app_private.memberships m)
+  else '[]'::jsonb end
+$$;
+revoke all on function app_private.member_standing() from public,anon;
+grant execute on function app_private.member_standing() to authenticated;
+
+create or replace function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status(),
+  'name_corrections',(select coalesce(jsonb_agg(n),'[]') from app_private.name_corrections n),
+  'inventory_categories',(select coalesce(jsonb_agg(c order by c.position,c.name),'[]') from app_private.inventory_categories c),
+  'inventory_places',(select coalesce(jsonb_agg(p order by p.position,p.name),'[]') from app_private.inventory_places p),
+  'announcement_reads',(select coalesce(jsonb_agg(r),'[]') from app_private.announcement_reads r),
+  'member_standing',app_private.member_standing());
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611190040_edit_role_terms.sql
+-- Administration: edit a role's title or end date from the officer's card (19 Nov). Same as migration 038's
+-- admin_command plus the update_role_term action. Extending a term past today still needs an Active membership
+-- for officer roles; ending a term early is always allowed, except for the last active Administrator.
+
+create or replace function app_private.admin_command(p_action text,p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+ declare u uuid:=app_private.require_user(); v_id uuid; ra app_private.role_assignments; v_ends timestamptz; begin
+ perform app_private.require_permission('administration');
+ -- Serialize access changes to protect against two concurrent last-admin retirements.
+ perform pg_advisory_xact_lock(14001);
+ case p_action
+ when 'configure_club' then
+  update app_private.settings set club_name=app_private.required(p_data,'club_name',160),
+   application_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'application_requirements','[]'))),
+   renewal_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'renewal_requirements','[]'))),
+   membership_categories=array(select jsonb_array_elements_text(coalesce(p_data->'membership_categories','["Regular member"]'))),
+   retention_policy=app_private.required(p_data,'retention_policy'),rules_validated=coalesce((p_data->>'rules_validated')::boolean,false),updated_at=now() where id=true;
+ when 'define_role' then
+  insert into app_private.roles(id,name,permissions) values(app_private.required(p_data,'role_id',80),app_private.required(p_data,'name',160),array(select jsonb_array_elements_text(p_data->'permissions')))
+  on conflict(id) do update set name=excluded.name,permissions=excluded.permissions;
+ when 'assign_role' then
+  if not exists(select 1 from app_private.roles r where r.id=p_data->>'role_id' and 'administration'=any(r.permissions))
+     and not exists(select 1 from app_private.memberships m where m.user_id=(p_data->>'user_id')::uuid and m.status='Active') then
+   raise exception 'Officer roles can only go to Active members. This account has no Active membership.' using errcode='42501';
+  end if;
+  insert into app_private.role_assignments(user_id,role_id,position,starts_at,ends_at,assigned_by,reason)
+  values((p_data->>'user_id')::uuid,p_data->>'role_id',app_private.required(p_data,'position',160),coalesce((p_data->>'starts_at')::timestamptz,now()),(p_data->>'ends_at')::timestamptz,u,app_private.required(p_data,'reason')) returning id into v_id;
+ -- Change an existing appointment's title or end date (extend or shorten a term) without making a new one.
+ -- The previous values go into the audit log with the reason, so turnover history stays complete.
+ when 'update_role_term' then
+  select * into ra from app_private.role_assignments where id=(p_data->>'id')::uuid and retired_at is null for update;
+  if not found then raise exception 'That role is no longer active. Assign it again instead.'; end if;
+  v_ends:=(app_private.required(p_data,'ends_at'))::timestamptz;
+  if v_ends<=ra.starts_at then raise exception 'The term must end after it starts (%).', to_char(ra.starts_at at time zone 'Asia/Manila','Mon DD, YYYY'); end if;
+  if v_ends>now() and not exists(select 1 from app_private.roles r where r.id=ra.role_id and 'administration'=any(r.permissions))
+     and not exists(select 1 from app_private.memberships m where m.user_id=ra.user_id and m.status='Active') then
+   raise exception 'Officer roles can only go to Active members. This account has no Active membership.' using errcode='42501';
+  end if;
+  update app_private.role_assignments set ends_at=v_ends,position=app_private.required(p_data,'position',160),
+   reason=reason||E'\nChanged: '||app_private.required(p_data,'reason') where id=ra.id returning id into v_id;
+  p_data:=p_data||jsonb_build_object('previous',jsonb_build_object('ends_at',ra.ends_at,'position',ra.position));
+ when 'retire_role' then
+  update app_private.role_assignments set retired_at=now(),reason=reason||E'\nRetired: '||app_private.required(p_data,'reason') where id=(p_data->>'id')::uuid returning id into v_id;
+ when 'set_account_status' then
+  v_id:=(p_data->>'user_id')::uuid; perform app_private.required(p_data,'reason');
+  update app_private.profiles set enabled=(p_data->>'enabled')::boolean,updated_at=now() where id=v_id;
+ else raise exception 'Unknown administrative action.';
+ end case;
+ if not exists(select 1 from app_private.role_assignments a join app_private.roles r on r.id=a.role_id join app_private.profiles p on p.id=a.user_id
+ where p.enabled and 'administration'=any(r.permissions) and a.retired_at is null and now()>=a.starts_at and now()<a.ends_at) then raise exception 'Keep at least one active administrator.'; end if;
+ perform app_private.note(14,v_id,p_action,p_data); return jsonb_build_object('id',v_id); end
+$$;
+
+-- Called directly (like save_application_details) so the long club_command dispatcher stays untouched.
+create or replace function public.update_role_term(p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+begin return app_private.admin_command('update_role_term',p_data); end $$;
+revoke all on function public.update_role_term(jsonb) from public,anon;
+grant execute on function public.update_role_term(jsonb) to authenticated;
+
+-- SOURCE: 202611190041_payment_method.sql
+-- Payments say how they were paid (GCash, Maya or bank), and the reference number is checked to match (19 Nov).
+--  * GCash: the receipt's Ref No. is 13 digits.
+--  * Maya and bank transfers: 6 to 30 letters, numbers or dashes (formats differ by bank).
+-- The check is a trigger, so it also covers older app versions that save through club_command directly.
+-- It only runs when the reference or method changes, so verifying or returning an older payment is never blocked.
+
+alter table app_private.financial_records add column if not exists payment_method text not null default ''
+ check (payment_method in ('','gcash','maya','bank'));
+
+create or replace function app_private.check_payment_reference() returns trigger language plpgsql set search_path='' as $$
+begin
+ if new.kind<>'payment' then return new; end if;
+ if tg_op='UPDATE' and new.reference is not distinct from old.reference and new.payment_method is not distinct from old.payment_method then return new; end if;
+ new.reference:=upper(regexp_replace(coalesce(new.reference,''),'[[:space:]]','','g'));
+ if new.reference='' then return new; end if;
+ if new.payment_method='gcash' and new.reference !~ '^[0-9]{13}$' then
+  raise exception 'A GCash reference number is the 13-digit Ref No. on your receipt.'; end if;
+ if new.reference !~ '^[A-Z0-9-]{6,30}$' then
+  raise exception 'Use the reference number exactly as on the receipt: 6 to 30 letters or numbers.'; end if;
+ return new;
+end $$;
+drop trigger if exists check_payment_reference on app_private.financial_records;
+create trigger check_payment_reference before insert or update on app_private.financial_records
+ for each row execute function app_private.check_payment_reference();
+
+-- Saves a payment with its method: the usual save, then the method on the same record (the trigger checks both).
+create or replace function public.save_payment(p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v_method text:=coalesce(p_data->>'payment_method',''); result jsonb; v_id uuid;
+begin
+ if v_method not in ('gcash','maya','bank') then raise exception 'Choose how you paid: GCash, Maya or bank transfer.'; end if;
+ if v_method='gcash' and upper(regexp_replace(coalesce(p_data->>'reference',''),'[[:space:]]','','g')) !~ '^[0-9]{13}$' then
+  raise exception 'A GCash reference number is the 13-digit Ref No. on your receipt.'; end if;
+ result:=public.club_command('save_financial_request',p_data||jsonb_build_object('kind','payment'));
+ v_id:=coalesce(nullif(result->>'id','')::uuid,nullif(p_data->>'id','')::uuid);
+ update app_private.financial_records set payment_method=v_method where id=v_id and user_id=u;
+ return result;
+end $$;
+revoke all on function public.save_payment(jsonb) from public,anon;
+grant execute on function public.save_payment(jsonb) to authenticated;
+
+-- SOURCE: 202611190042_roles_need_membership.sql
+-- Every role, Administrator included, needs an Active membership (testing round, 19 Nov: "no exceptions").
+-- Accounts with no membership or a pending fee can't be assigned a role or have a term extended.
+-- Shortening a term and retiring a role are always allowed, so a mistaken role can still be removed.
+-- Same as migration 040's admin_command otherwise.
+
+create or replace function app_private.admin_command(p_action text,p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+ declare u uuid:=app_private.require_user(); v_id uuid; ra app_private.role_assignments; v_ends timestamptz; begin
+ perform app_private.require_permission('administration');
+ -- Serialize access changes to protect against two concurrent last-admin retirements.
+ perform pg_advisory_xact_lock(14001);
+ case p_action
+ when 'configure_club' then
+  update app_private.settings set club_name=app_private.required(p_data,'club_name',160),
+   application_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'application_requirements','[]'))),
+   renewal_requirements=array(select jsonb_array_elements_text(coalesce(p_data->'renewal_requirements','[]'))),
+   membership_categories=array(select jsonb_array_elements_text(coalesce(p_data->'membership_categories','["Regular member"]'))),
+   retention_policy=app_private.required(p_data,'retention_policy'),rules_validated=coalesce((p_data->>'rules_validated')::boolean,false),updated_at=now() where id=true;
+ when 'define_role' then
+  insert into app_private.roles(id,name,permissions) values(app_private.required(p_data,'role_id',80),app_private.required(p_data,'name',160),array(select jsonb_array_elements_text(p_data->'permissions')))
+  on conflict(id) do update set name=excluded.name,permissions=excluded.permissions;
+ when 'assign_role' then
+  if not exists(select 1 from app_private.memberships m where m.user_id=(p_data->>'user_id')::uuid and m.status='Active') then
+   raise exception 'Roles, including Administrator, can only go to Active members. This account has no Active membership.';
+  end if;
+  insert into app_private.role_assignments(user_id,role_id,position,starts_at,ends_at,assigned_by,reason)
+  values((p_data->>'user_id')::uuid,p_data->>'role_id',app_private.required(p_data,'position',160),coalesce((p_data->>'starts_at')::timestamptz,now()),(p_data->>'ends_at')::timestamptz,u,app_private.required(p_data,'reason')) returning id into v_id;
+ -- Change an existing appointment's title or end date (extend or shorten a term) without making a new one.
+ -- The previous values go into the audit log with the reason, so turnover history stays complete.
+ when 'update_role_term' then
+  select * into ra from app_private.role_assignments where id=(p_data->>'id')::uuid and retired_at is null for update;
+  if not found then raise exception 'That role is no longer active. Assign it again instead.'; end if;
+  v_ends:=(app_private.required(p_data,'ends_at'))::timestamptz;
+  if v_ends<=ra.starts_at then raise exception 'The term must end after it starts (%).', to_char(ra.starts_at at time zone 'Asia/Manila','Mon DD, YYYY'); end if;
+  if v_ends>ra.ends_at and not exists(select 1 from app_private.memberships m where m.user_id=ra.user_id and m.status='Active') then
+   raise exception 'Only Active members can have a term extended. This account has no Active membership.';
+  end if;
+  update app_private.role_assignments set ends_at=v_ends,position=app_private.required(p_data,'position',160),
+   reason=reason||E'\nChanged: '||app_private.required(p_data,'reason') where id=ra.id returning id into v_id;
+  p_data:=p_data||jsonb_build_object('previous',jsonb_build_object('ends_at',ra.ends_at,'position',ra.position));
+ when 'retire_role' then
+  update app_private.role_assignments set retired_at=now(),reason=reason||E'\nRetired: '||app_private.required(p_data,'reason') where id=(p_data->>'id')::uuid returning id into v_id;
+ when 'set_account_status' then
+  v_id:=(p_data->>'user_id')::uuid; perform app_private.required(p_data,'reason');
+  update app_private.profiles set enabled=(p_data->>'enabled')::boolean,updated_at=now() where id=v_id;
+ else raise exception 'Unknown administrative action.';
+ end case;
+ if not exists(select 1 from app_private.role_assignments a join app_private.roles r on r.id=a.role_id join app_private.profiles p on p.id=a.user_id
+ where p.enabled and 'administration'=any(r.permissions) and a.retired_at is null and now()>=a.starts_at and now()<a.ends_at) then raise exception 'Keep at least one active administrator.'; end if;
+ perform app_private.note(14,v_id,p_action,p_data); return jsonb_build_object('id',v_id); end
+$$;
+
+-- SOURCE: 202611200043_fee_notice_on_submit.sql
+-- The "pay your fee" notice closes as soon as the payment is sent for checking (20 Nov testing).
+-- Before, it stayed open until the Treasurer verified, so members who had already paid kept seeing "pay the fee".
+--  * Sent for checking: the open fee notice for the same purpose is marked done.
+--  * Sent back, incomplete or not accepted: the fee is still unpaid, so the notice comes back (alongside the
+--    "Your payment was sent back" notice the payer already gets), unless another payment for it is still being checked.
+--  * Verified: unchanged; linking the payment to the fee completes the notice as before.
+-- A separate trigger, so sync_workflow_notices stays as it is.
+
+create or replace function app_private.fee_notice_follows_payment() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if new.kind<>'payment' or new.status is not distinct from (case when tg_op='UPDATE' then old.status end) then return new; end if;
+ if new.status='pending_verification' then
+  update app_private.notifications n set completed_at=now()
+   from app_private.fee_assessments f
+   where n.kind='fee' and n.record_id=f.id and n.completed_at is null
+     and f.user_id=new.user_id and f.purpose=new.purpose and f.payment_id is null;
+ elsif new.status in ('returned_for_correction','incomplete','rejected') then
+  update app_private.notifications n set completed_at=null, acknowledged_at=null, notified_at=now()
+   from app_private.fee_assessments f
+   where n.kind='fee' and n.record_id=f.id and n.completed_at is not null
+     and f.user_id=new.user_id and f.purpose=new.purpose and f.payment_id is null
+     and not exists(select 1 from app_private.financial_records r where r.user_id=new.user_id and r.kind='payment'
+                    and r.purpose=new.purpose and r.id<>new.id and r.status in ('pending_verification','verified'));
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.fee_notice_follows_payment() from public,anon,authenticated;
+drop trigger if exists fee_notice_follows_payment on app_private.financial_records;
+create trigger fee_notice_follows_payment after insert or update on app_private.financial_records
+ for each row execute function app_private.fee_notice_follows_payment();
+
+-- Payments already waiting to be checked: close their fee notices now.
+update app_private.notifications n set completed_at=now()
+ from app_private.fee_assessments f
+ where n.kind='fee' and n.record_id=f.id and n.completed_at is null and f.payment_id is null
+   and exists(select 1 from app_private.financial_records r where r.user_id=f.user_id and r.kind='payment'
+              and r.purpose=f.purpose and r.status='pending_verification');
+
+-- SOURCE: 202611200044_partner_invite_codes.sql
+-- Partner representatives join with an invite code (20 Nov testing: a UP rep was sent into the DLSU membership
+-- application and asked for a DLSU ID number).
+--  * The Interclub officer creates a single-use code for one event and one partner club and sends it through that
+--    club's official channel. It expires when the event's partner sign-ups close.
+--  * Whoever signs up and enters the code becomes that club's representative for that event only. Holding the code is
+--    what grants access, not the email address used to sign up (email confirmation is off, so emails prove nothing).
+--  * The rep gives their name, university and a Philippine mobile number; no DLSU ID and no membership application.
+--  * Wrong codes are counted: 8 wrong tries in an hour locks claiming for that account for the rest of the hour.
+--  * One person, one club: an account with a DLSU membership or a submitted application can't claim a partner code.
+
+alter table app_private.profiles add column if not exists university text not null default '';
+alter table app_private.profiles add column if not exists account_type text not null default 'member'
+ check (account_type in ('member','partner'));
+
+create table if not exists app_private.partner_invites (
+ id uuid primary key default gen_random_uuid(),
+ code text not null unique,
+ event_id uuid not null references app_private.interclub_events,
+ partner_id uuid not null references app_private.partner_clubs,
+ created_by uuid not null references app_private.profiles,
+ created_at timestamptz not null default now(),
+ expires_at timestamptz not null,
+ claimed_by uuid references app_private.profiles,
+ claimed_at timestamptz,
+ revoked_at timestamptz
+);
+create table if not exists app_private.partner_invite_attempts (
+ user_id uuid not null references app_private.profiles, at timestamptz not null default now()
+);
+alter table app_private.partner_invites enable row level security;
+alter table app_private.partner_invite_attempts enable row level security;
+grant select on app_private.partner_invites to authenticated;
+drop policy if exists partner_invites_read on app_private.partner_invites;
+create policy partner_invites_read on app_private.partner_invites for select to authenticated
+ using (app_private.event_staff(event_id) or claimed_by=auth.uid());
+
+-- Interclub officer: a new code for one partner club and one shared event.
+create or replace function public.create_partner_invite(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); i app_private.interclub_events; v_code text; v_id uuid; v_partner uuid;
+begin
+ select * into i from app_private.interclub_events where event_id=(p_data->>'event_id')::uuid;
+ if not found then raise exception 'That shared event no longer exists.'; end if;
+ if not app_private.event_staff(i.event_id) then raise exception 'Only the event''s interclub staff can invite partner clubs.' using errcode='42501'; end if;
+ if i.status<>'preparation' or now()>i.registration_closes then raise exception 'Partner sign-ups for this event have closed.'; end if;
+ v_partner:=(p_data->>'partner_id')::uuid;
+ if not exists(select 1 from app_private.partner_clubs where id=v_partner) then raise exception 'Choose a partner club.'; end if;
+ loop
+  v_code:=upper(substr(md5(gen_random_uuid()::text),1,4)||'-'||substr(md5(gen_random_uuid()::text),1,4));
+  exit when not exists(select 1 from app_private.partner_invites where code=v_code);
+ end loop;
+ insert into app_private.partner_invites(code,event_id,partner_id,created_by,expires_at)
+  values(v_code,i.event_id,v_partner,u,i.registration_closes) returning id into v_id;
+ perform app_private.note(15,v_id,'create_partner_invite',jsonb_build_object('event_id',i.event_id,'partner_id',v_partner));
+ return jsonb_build_object('id',v_id,'code',v_code,'expires_at',i.registration_closes);
+end $$;
+
+-- Interclub officer: cancel an unused code (for example, sent to the wrong person).
+create or replace function public.revoke_partner_invite(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v app_private.partner_invites;
+begin
+ select * into v from app_private.partner_invites where id=(p_data->>'id')::uuid for update;
+ if not found then raise exception 'That invite no longer exists.'; end if;
+ if not app_private.event_staff(v.event_id) then raise exception 'Only the event''s interclub staff can cancel invites.' using errcode='42501'; end if;
+ if v.claimed_by is not null then raise exception 'This code was already used. Remove the representative from the event instead.'; end if;
+ update app_private.partner_invites set revoked_at=now() where id=v.id;
+ perform app_private.note(15,v.id,'revoke_partner_invite','{}');
+ return jsonb_build_object('id',v.id);
+end $$;
+
+-- A new account claims a code. Returns {ok:false,message} for a wrong code (so the try is still counted), or
+-- {ok:true,event_id} once the account is that club's representative.
+create or replace function public.claim_partner_invite(p_data jsonb) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare u uuid:=app_private.require_user(); v app_private.partner_invites; v_code text; v_phone text; v_name text; v_school text;
+begin
+ if (select count(*) from app_private.partner_invite_attempts where user_id=u and at>now()-interval '1 hour')>=8 then
+  raise exception 'Too many wrong codes. Try again in an hour, or ask the host club to check the code.'; end if;
+ if exists(select 1 from app_private.memberships where user_id=u)
+    or exists(select 1 from app_private.applications where user_id=u and status<>'draft') then
+  raise exception 'This account belongs to a DLSU Archery Club member or applicant. Partner representatives need their own account.'; end if;
+ v_name:=app_private.required(p_data,'full_name',160);
+ v_school:=app_private.required(p_data,'university',160);
+ v_phone:=trim(coalesce(p_data->>'phone',''));
+ if v_phone='' or not app_private.valid_mobile(v_phone) then
+  raise exception 'Enter a Philippine mobile number (09XXXXXXXXX or +639XXXXXXXXX).'; end if;
+ v_code:=upper(regexp_replace(coalesce(p_data->>'code',''),'[^A-Za-z0-9]','','g'));
+ v_code:=substr(v_code,1,4)||'-'||substr(v_code,5,4);
+ select * into v from app_private.partner_invites where code=v_code for update;
+ if not found or v.revoked_at is not null or v.expires_at<now() or (v.claimed_by is not null and v.claimed_by<>u) then
+  insert into app_private.partner_invite_attempts(user_id) values(u);
+  return jsonb_build_object('ok',false,'message','That invite code isn''t valid or has expired. Check it with the host club.');
+ end if;
+ update app_private.profiles set full_name=v_name, university=v_school, phone=v_phone, account_type='partner', updated_at=now() where id=u;
+ insert into app_private.event_access(event_id,user_id,partner_id,role,invited_by) values(v.event_id,u,v.partner_id,'partner',v.created_by)
+  on conflict(event_id,user_id) do update set partner_id=excluded.partner_id, role='partner', revoked_at=null;
+ update app_private.partner_invites set claimed_by=u, claimed_at=coalesce(claimed_at,now()) where id=v.id;
+ perform app_private.notify(v.created_by,15,v.event_id,'invitation',
+  v_name||' joined as the representative of '||(select name from app_private.partner_clubs where id=v.partner_id));
+ perform app_private.note(15,v.id,'claim_partner_invite',jsonb_build_object('event_id',v.event_id,'partner_id',v.partner_id));
+ return jsonb_build_object('ok',true,'event_id',v.event_id);
+end $$;
+
+revoke all on function public.create_partner_invite(jsonb),public.revoke_partner_invite(jsonb),public.claim_partner_invite(jsonb) from public,anon;
+grant execute on function public.create_partner_invite(jsonb),public.revoke_partner_invite(jsonb),public.claim_partner_invite(jsonb) to authenticated;
+
+-- The codes reach the app with the rest of the workspace (only the rows the reader may see, by the policy above).
+create or replace function public.club_workspace() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin
+ return app_private.club_workspace_base()||jsonb_build_object(
+  'waitlist',(select coalesce(jsonb_agg(w),'[]') from app_private.waitlist w),
+  'event_stats',app_private.event_stats(),
+  'equipment_status',app_private.equipment_status(),
+  'name_corrections',(select coalesce(jsonb_agg(n),'[]') from app_private.name_corrections n),
+  'inventory_categories',(select coalesce(jsonb_agg(c order by c.position,c.name),'[]') from app_private.inventory_categories c),
+  'inventory_places',(select coalesce(jsonb_agg(p order by p.position,p.name),'[]') from app_private.inventory_places p),
+  'announcement_reads',(select coalesce(jsonb_agg(r),'[]') from app_private.announcement_reads r),
+  'member_standing',app_private.member_standing(),
+  'partner_invites',(select coalesce(jsonb_agg(v order by v.created_at desc),'[]') from app_private.partner_invites v));
+end $$;
+revoke all on function public.club_workspace() from public,anon;
+grant execute on function public.club_workspace() to authenticated;
+
+-- SOURCE: 202611210045_interclub_partner_clarity.sql
+-- Interclub run, 21 Nov testing.
+--  * A concern's reply reached nobody: the partner rep's concern simply vanished once the officer resolved it.
+--    Resolving now sends the rep a notice with the reply (the app also shows answered concerns on the event page).
+--  * "Responsibility" was required when giving an archer a target, which makes no sense for an archer. It is now
+--    optional. Only that one expression in interclub_command changes: the live definition is read, checked to contain
+--    exactly the expected text, and re-created with the replacement, so nothing else in the function is retyped.
+--  * The invite code list said "Used by Club member": officers can't read a partner rep's profile. The invite now
+--    keeps the name the rep gave when claiming it.
+
+-- 1. The rep hears back.
+create or replace function app_private.concern_reply_notice() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if new.status='resolved' and old.status is distinct from 'resolved' then
+  perform app_private.notify(new.submitted_by,15,new.event_id,'interclub',
+   'DLSU replied to your concern about '||coalesce((select shared_title from app_private.interclub_events where event_id=new.event_id),'the event')
+   ||': '||new.resolution);
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.concern_reply_notice() from public,anon,authenticated;
+drop trigger if exists concern_reply_notice on app_private.interclub_concerns;
+create trigger concern_reply_notice after update on app_private.interclub_concerns
+ for each row execute function app_private.concern_reply_notice();
+
+-- 2. Responsibility optional when assigning a target.
+do $do$
+declare d text; v_old text:='app_private.required(p_data,''responsibility'')'; v_new text:='coalesce(p_data->>''responsibility'','''')';
+begin
+ d:=pg_get_functiondef('app_private.interclub_command(text,jsonb)'::regprocedure);
+ if (length(d)-length(replace(d,v_old,'')))/length(v_old)<>1 then
+  raise exception 'interclub_command is not the expected version (responsibility check not found exactly once); nothing changed.';
+ end if;
+ execute replace(d,v_old,v_new);
+end $do$;
+
+-- 3. The rep's name on the invite they used.
+alter table app_private.partner_invites add column if not exists claimed_name text not null default '';
+create or replace function app_private.invite_claimed_name() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if new.claimed_by is not null and (tg_op='INSERT' or old.claimed_by is distinct from new.claimed_by) then
+  new.claimed_name:=coalesce((select full_name from app_private.profiles where id=new.claimed_by),'');
+ end if;
+ return new;
+end $$;
+revoke all on function app_private.invite_claimed_name() from public,anon,authenticated;
+drop trigger if exists invite_claimed_name on app_private.partner_invites;
+create trigger invite_claimed_name before insert or update on app_private.partner_invites
+ for each row execute function app_private.invite_claimed_name();
+update app_private.partner_invites v set claimed_name=p.full_name from app_private.profiles p
+ where p.id=v.claimed_by and v.claimed_name='';
+
+-- SOURCE: 202611210046_result_recorded_by.sql
+-- Interclub results, 21 Nov testing: the officer who recorded a result was offered "Verify", tapped it, and got a vague
+-- "no permission" (the server rightly refuses: someone else must verify). The app couldn't tell who recorded a result,
+-- because that was only in the audit log. Each result now keeps who recorded it, so the app can say
+-- "Another officer verifies this" instead of offering the button. The server's check is unchanged.
+
+alter table app_private.interclub_results add column if not exists recorded_by uuid references app_private.profiles;
+
+-- Whoever enters or changes the result is its recorder (a changed result also loses its verification, as before).
+create or replace function app_private.result_recorder() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if tg_op='INSERT' or new.result is distinct from old.result then new.recorded_by:=coalesce(auth.uid(),new.recorded_by); end if;
+ return new;
+end $$;
+revoke all on function app_private.result_recorder() from public,anon,authenticated;
+drop trigger if exists result_recorder on app_private.interclub_results;
+create trigger result_recorder before insert or update on app_private.interclub_results
+ for each row execute function app_private.result_recorder();
+
+-- Results already recorded: take the recorder from the audit log (the same source the server's check uses).
+update app_private.interclub_results r set recorded_by=(select a.actor from app_private.audit_log a
+  where a.module=15 and a.record_id=r.id and a.action='record_result' order by a.created_at desc, a.id desc limit 1)
+ where r.recorded_by is null;
+
+-- SOURCE: 202611210047_developer_accounts.sql
+-- Developer accounts (21 Nov testing, the developer's decision): the developer's own account, which has no club
+-- membership, may hold roles so one person can test every desk end to end. Everyone else still needs an Active
+-- membership for any role (migration 042, "no exceptions").
+--  * The flag is set only here, in the database. No app screen or command can set it.
+--  * The app shows a flagged account as "Developer account (testing)" in the role picker and the accounts list.
+--  * Separation of duties is unchanged: whoever records a result still can't verify it, and so on.
+--  * TO REMOVE BEFORE GOING OFFICIAL: update app_private.profiles set developer=false; then retire the roles the
+--    developer account holds. (Or apply a migration that drops the column and restores the 042 checks.)
+-- admin_command is not retyped: its live definition is read, each membership check is confirmed to appear exactly
+-- once, and only those two expressions are replaced.
+
+alter table app_private.profiles add column if not exists developer boolean not null default false;
+
+create or replace function app_private.role_eligible(p_user uuid) returns boolean language sql stable security definer set search_path='' as $$
+ select exists(select 1 from app_private.memberships m where m.user_id=p_user and m.status='Active')
+     or exists(select 1 from app_private.profiles p where p.id=p_user and p.developer)
+$$;
+revoke all on function app_private.role_eligible(uuid) from public,anon,authenticated;
+
+do $do$
+declare d text;
+ v_assign text:='not exists(select 1 from app_private.memberships m where m.user_id=(p_data->>''user_id'')::uuid and m.status=''Active'')';
+ v_extend text:='not exists(select 1 from app_private.memberships m where m.user_id=ra.user_id and m.status=''Active'')';
+begin
+ d:=pg_get_functiondef('app_private.admin_command(text,jsonb)'::regprocedure);
+ if (length(d)-length(replace(d,v_assign,'')))/length(v_assign)<>1 or (length(d)-length(replace(d,v_extend,'')))/length(v_extend)<>1 then
+  raise exception 'admin_command is not the expected version (membership checks not found exactly once); nothing changed.';
+ end if;
+ d:=replace(d,v_assign,'not app_private.role_eligible((p_data->>''user_id'')::uuid)');
+ d:=replace(d,v_extend,'not app_private.role_eligible(ra.user_id)');
+ execute d;
+end $do$;
+
+-- The role picker's standing list: a developer account without an Active membership shows as "Developer".
+create or replace function app_private.member_standing() returns jsonb language sql stable security definer set search_path='' as $$
+ select case when app_private.can('administration') or app_private.can('membership')
+  then (select coalesce(jsonb_agg(x),'[]') from (
+    select jsonb_build_object('user_id',m.user_id,'status',m.status) x from app_private.memberships m
+    union all
+    select jsonb_build_object('user_id',p.id,'status','Developer') from app_private.profiles p
+     where p.developer and not exists(select 1 from app_private.memberships m where m.user_id=p.id and m.status='Active')) s)
+  else '[]'::jsonb end
+$$;
+revoke all on function app_private.member_standing() from public,anon;
+grant execute on function app_private.member_standing() to authenticated;
+
 notify pgrst, 'reload schema';
 commit;
