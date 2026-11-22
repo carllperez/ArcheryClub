@@ -1,6 +1,7 @@
 package ph.capstone.archeryclub.connected
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -608,6 +609,7 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
     val signupsOpen = stage == PartnerStage.OPEN && (e.instant("registration_closes")?.let { now.isBefore(it) } ?: true)
     var showConcerns by rememberSaveable { mutableStateOf(false) }
     var showDelegation by rememberSaveable { mutableStateOf(false) }
+    var openResult by remember { mutableStateOf<JsonObject?>(null) }
     fun ask() = onStart("raise_concern", buildJsonObject { put("event_id", eid) })
 
     HeroScaffold(e.text("shared_title"), onBack, snackbar, overlap = 44.dp, busy = busy,
@@ -691,7 +693,7 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
                         val r = results[d.text("id")]?.takeIf { it.text("verified_by").isNotBlank() }
                         GroupRow("target", d.text("full_name"), listOfNotNull(d.text("category").ifBlank { null }, r?.text("result")).joinToString(" · "),
                             divider = i < competed.lastIndex, trailing = { if (r != null) Pill("Published", Club.mint, Club.forestDeep) else Pill("Being checked", Club.amberSoft, Club.amberInk) },
-                            onClick = null)
+                            onClick = r?.let { { openResult = it } })
                     }
                     if (competed.isEmpty()) Text("None of your archers checked in.", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall)
                 }
@@ -715,20 +717,21 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
                                 }
                             }
                         }
+                        if (published.isNotEmpty()) Text("Tap a score for how it was recorded.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (published.isEmpty()) Text("No results were published for your archers.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         published.forEach { r ->
                             val d = byId[r.text("delegate_id")]
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // The score's detail goes under the name: on the right it squeezed names into stacked words (22 Nov).
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { openResult = r }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Initials(d?.text("full_name") ?: "?", 40)
                                 Column(Modifier.weight(1f)) {
-                                    Text(d?.text("full_name") ?: "Archer", style = MaterialTheme.typography.titleSmall)
-                                    Text(d?.text("category").orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(d?.text("full_name") ?: "Archer", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(listOf(d?.text("category").orEmpty(), r.text("result").replaceFirst(Regex("""^\s*\d{1,4}\s*"""), "").trim())
+                                        .filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
-                                Column(horizontalAlignment = Alignment.End, modifier = Modifier.widthIn(max = 150.dp)) {
-                                    Text(icScore(r.text("result"))?.toString() ?: r.text("result"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                                    Text(r.text("result").replaceFirst(Regex("""^\s*\d{1,4}\s*"""), "").trim(), style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, textAlign = TextAlign.End)
-                                }
+                                Text(icScore(r.text("result"))?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
@@ -762,6 +765,36 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
         if (showConcerns) answered.forEach { NoticeCard("DLSU replied", "${it.text("resolution")}\n\nYou asked: ${it.text("concern")}", Tone.POSITIVE) }
         // Asking DLSU stays available until the event is archived, as a smaller button than before.
         if (stage != PartnerStage.FINAL) CardButton("Ask DLSU a question", Modifier.fillMaxWidth(), enabled = !busy) { ask() }
+        // Reviewing a score: what DLSU recorded, where and when the archer shot, when it was checked, and (until the
+        // event is archived) a question to DLSU already naming the archer and score.
+        openResult?.let { r ->
+            val d = mine.find { it.text("id") == r.text("delegate_id") }
+            val a = assignments[r.text("delegate_id")]
+            val name = d?.text("full_name") ?: "this archer"
+            AlertDialog(onDismissRequest = { openResult = null },
+                title = { Text(name) },
+                text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(icScore(r.text("result"))?.toString() ?: r.text("result"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                    listOfNotNull(
+                        "Score as recorded" to r.text("result"),
+                        d?.text("category")?.ifBlank { null }?.let { "Division" to it },
+                        a?.let { "Target" to "${it.text("target_group")} · ${fmtTime(it.instant("starts_at"))}" },
+                        r.instant("verified_at")?.let { "Checked by DLSU" to fmtDateTime(it) },
+                    ).forEach { (k, v) ->
+                        Column { Text(k, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(v, style = MaterialTheme.typography.bodyMedium) }
+                    }
+                    Text(if (stage == PartnerStage.FINAL) "This event is archived, so its results are final."
+                        else "Compare it with your copy of the signed scoresheet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } },
+                confirmButton = {
+                    if (stage != PartnerStage.FINAL) TextButton(onClick = { openResult = null
+                        onStart("raise_concern", buildJsonObject { put("event_id", eid); put("concern", "About $name's score (${r.text("result")}): ") }) }) {
+                        Text("Ask DLSU about this score") }
+                    else TextButton(onClick = { openResult = null }) { Text("Close") }
+                },
+                dismissButton = { if (stage != PartnerStage.FINAL) TextButton(onClick = { openResult = null }) { Text("Close") } })
+        }
         Text(when (stage) {
             PartnerStage.OPEN -> "Targets and times show here once DLSU makes the schedule."
             PartnerStage.DAY -> "Scores show here after DLSU checks each signed scoresheet."

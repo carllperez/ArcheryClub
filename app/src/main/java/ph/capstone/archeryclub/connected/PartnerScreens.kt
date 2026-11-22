@@ -216,12 +216,6 @@ fun PartnerProfilePage(workspace: JsonObject, fullName: String, noticeCount: Int
                 }
             }
         }
-        // How DLSU reaches them.
-        val contact = listOf("account" to profile?.text("email").orEmpty(), "profile" to profile?.text("phone").orEmpty()).filter { it.second.isNotBlank() }
-        if (contact.isNotEmpty()) {
-            DeskLabel("Contact")
-            RowGroup { contact.forEachIndexed { i, (icon, value) -> GroupRow(icon, value, divider = i < contact.lastIndex, onClick = null) } }
-        }
         DeskLabel("Your club's events")
         RowGroup {
             GroupRow("calendar", "Your events", "${events.size} shared with your club", onClick = { onPage("home") })
