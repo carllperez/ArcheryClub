@@ -40,6 +40,12 @@ fun MemberActivitiesPage(
     HeroScaffold("Activities", snackbar = snackbar, overlap = 0.dp, busy = state.busy, bottomBar = bottomBar,
         heroExtra = { HeroTabs(listOf("open" to "Open · $open", "mine" to "Mine · $mine", "history" to "History"), tab) { tab = it } }) {
         Spacer(Modifier.height(4.dp))
+        // An Activity officer who is also a member lands here from the Activities tab; the management screen used to be
+        // reachable only from the Home desk (22 Nov feedback). Members without the role don't see this.
+        val manages = (workspace["permissions"] as? JsonArray).orEmpty().any { (it as? JsonPrimitive)?.contentOrNull == "activities" }
+        if (manages) RowGroup {
+            GroupRow("settings", "Manage activities", "Create, publish and take attendance", divider = false, onClick = { onRoute("officer_activities") })
+        }
         AnnouncementsCard(workspace, vm, state.busy, limit = 2) { onRoute("records:3") }
         // List or Calendar, as a switch right after the announcements.
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp)) {

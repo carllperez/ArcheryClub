@@ -44,19 +44,23 @@ fun ClubMark(size: Int = 72, pulse: Boolean = false) {
 
 /** Full-screen green splash while the club workspace loads, or when it can't be reached. */
 @Composable
-fun ClubSplash(busy: Boolean, message: String?, onRetry: () -> Unit, onSignOut: () -> Unit) {
+fun ClubSplash(busy: Boolean, message: String?, onRetry: () -> Unit, onSignOut: () -> Unit, problem: SplashProblem = SplashProblem.OFFLINE) {
     LightStatusBarIcons()
+    val off = problem == SplashProblem.ACCOUNT_OFF
     Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Club.forestDeep, Club.forest))), contentAlignment = Alignment.Center) {
         Column(Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ClubMark(84, pulse = busy)
-            Text(if (busy) "Loading your club" else "Can't reach your club", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+            // Say which of the three it is: no connection, the account is turned off, or access couldn't be verified.
+            Text(when { busy -> "Loading your club"; off -> "This account is turned off"; problem == SplashProblem.OFFLINE -> "Can't reach the club"
+                else -> "Couldn't open your club" }, style = MaterialTheme.typography.headlineSmall, color = Color.White, textAlign = TextAlign.Center)
             if (busy) LinearProgressIndicator(Modifier.width(140.dp).clip(CircleShape), color = Club.lime, trackColor = Color.White.copy(alpha = .2f))
             else {
                 Text(message ?: "Check your connection and retry. If access has changed, sign in again or contact your club administrator.",
                     style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .9f), textAlign = TextAlign.Center)
-                Button(onClick = onRetry, shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Club.forestDeep),
-                    modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again", fontWeight = FontWeight.ExtraBold) }
-                TextButton(onClick = onSignOut) { Text("Sign out", color = Color.White) }
+                // Retrying can't fix a turned-off account, so signing out (e.g. into another account) comes first there.
+                Button(onClick = if (off) onSignOut else onRetry, shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Club.forestDeep),
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text(if (off) "Sign out" else "Try again", fontWeight = FontWeight.ExtraBold) }
+                TextButton(onClick = if (off) onRetry else onSignOut) { Text(if (off) "It's been turned back on? Check again" else "Sign out", color = Color.White) }
             }
         }
     }
@@ -77,7 +81,9 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
     androidx.activity.compose.BackHandler(creating) { creating = false }
     LightStatusBarIcons()
     Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0, 0, 0, 0), snackbarHost = { SnackbarHost(snackbar) }) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).imePadding()) {
+        // imePadding before verticalScroll: the visible area shrinks above the keyboard, so the field being typed in scrolls
+        // into view. After it, the keyboard covered the password field on a small phone (22 Nov).
+        Column(Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState())) {
             HeroBand(bottomPadding = 104.dp) {
                 Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ClubMark()

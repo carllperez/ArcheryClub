@@ -89,7 +89,7 @@ fun ConnectedApp(vm:SystemViewModel){
     }
     if(!state.signedIn){ClubAuthScreen(state,vm,snackbar);return}
     val workspace=state.workspace
-    if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")});return}
+    if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")},problem=state.problem);return}
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}

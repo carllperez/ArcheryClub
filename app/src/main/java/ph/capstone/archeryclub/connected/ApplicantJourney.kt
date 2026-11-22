@@ -271,7 +271,9 @@ fun ApplicantProfilePage(
 @Composable
 fun WelcomeActive(firstName: String, feeAmount: String?, onContinue: () -> Unit) {
     LightStatusBarIcons()
-    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Club.forestDeep, Club.forest))).verticalScroll(rememberScrollState()).padding(24.dp).padding(top = 40.dp),
+    // systemBarsPadding: the green fills the screen but the content stays clear of the status and gesture bars
+    // (the gesture bar sat on top of "Go to my Home" on a small phone, 22 Nov).
+    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Club.forestDeep, Club.forest))).systemBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp).padding(top = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ClubMark(104)
         Pill("ACTIVE MEMBER", Club.lime, Club.forestDeep)

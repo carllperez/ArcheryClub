@@ -41,3 +41,14 @@ fun fitProblems(itemHand: String, itemWeight: Double?, hand: String, maxWeight: 
     if (hand.isNotBlank() && itemHand in setOf("left", "right") && itemHand != hand) add("${itemHand.replaceFirstChar { it.uppercase() }}-handed")
     if (itemWeight != null && maxWeight != null && itemWeight > maxWeight) add("Heavier than your ${if (maxWeight % 1.0 == 0.0) maxWeight.toLong() else maxWeight} lb")
 }
+
+/** Why the club couldn't open (22 Nov feedback: Mikaela's turned-off account showed "Can't reach your club" and a
+ *  Try again that could never work). OFFLINE: no answer from the server. ACCOUNT_OFF: the server says this account is
+ *  turned off. NO_ACCESS: the server answered but refused for another reason. */
+enum class SplashProblem { OFFLINE, ACCOUNT_OFF, NO_ACCESS }
+
+fun splashProblem(serverReplied: Boolean, message: String?): SplashProblem = when {
+    !serverReplied -> SplashProblem.OFFLINE
+    message.orEmpty().contains("enabled account", ignoreCase = true) -> SplashProblem.ACCOUNT_OFF
+    else -> SplashProblem.NO_ACCESS
+}

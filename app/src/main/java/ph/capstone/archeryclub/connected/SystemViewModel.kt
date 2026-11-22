@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.BuildConfig
 
-data class SystemState(val signedIn:Boolean=false,val busy:Boolean=false,val workspace:JsonObject?=null,val message:String?=null,val error:String?=null,val recovery:Boolean=false,val refreshError:String?=null)
+data class SystemState(val signedIn:Boolean=false,val busy:Boolean=false,val workspace:JsonObject?=null,val message:String?=null,val error:String?=null,val recovery:Boolean=false,val refreshError:String?=null,val problem:SplashProblem=SplashProblem.OFFLINE)
 class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
     private val mutable=MutableStateFlow(SystemState(busy=true))
     val state=mutable.asStateFlow()
@@ -61,18 +61,26 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
         }
     }
     fun refresh()=runAction {
-        if(mutable.value.workspace==null)gateway.initialize()
-        try{mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),refreshError=null)}
+        // initialize() is inside the try: a turned-off account is refused there first, and that refusal used to skip
+        // the message below, leaving a "check your connection" splash with a Try again that could never work.
+        try{
+            if(mutable.value.workspace==null)gateway.initialize()
+            mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),refreshError=null)
+        }
         catch(e:CancellationException){throw e}
         catch(e:Exception){
             // A failed background read must not replace the last usable screen with an
             // indefinite loading page. Authority failures still discard protected data.
             // 403 = the account really lost access. A 401 after the retry is usually the phone still reconnecting,
             // so keep showing the last records instead of dropping to an empty screen.
-            val denied=e is RestException && e.statusCode==403
-            mutable.value=mutable.value.copy(workspace=if(denied)null else mutable.value.workspace,
-                refreshError=if(denied)"Access could not be verified. Sign in again or contact your club administrator."
-                else "Could not refresh. Showing the last loaded records; reconnect and refresh before making changes.")
+            val problem=splashProblem(e is RestException, e.message)
+            val denied=(e is RestException && e.statusCode==403)||problem==SplashProblem.ACCOUNT_OFF
+            mutable.value=mutable.value.copy(workspace=if(denied)null else mutable.value.workspace,problem=problem,
+                refreshError=when{
+                    problem==SplashProblem.ACCOUNT_OFF->"A club administrator has turned off this account, so it can't open the club. If you think this is a mistake, ask a club officer to turn it back on."
+                    problem==SplashProblem.OFFLINE->"Your phone couldn't reach the club's server. Check your internet connection, then try again."
+                    denied->"Your account couldn't be verified. Sign out and sign in again; if it keeps happening, contact your club administrator."
+                    else->"Could not refresh. Showing the last loaded records; reconnect and refresh before making changes."})
             throw e
         }
     }

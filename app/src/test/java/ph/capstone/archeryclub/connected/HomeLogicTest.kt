@@ -60,4 +60,11 @@ class HomeLogicTest {
         assertEquals("Candidacy closed", electionStageLabel(e("announced", "candidacy_closes", "2026-11-12T15:00:00Z"), now))
         assertEquals("Voting open", electionStageLabel(e("voting", "voting_closes", "2026-11-14T15:00:00Z"), now))
     }
+
+    @org.junit.Test fun theSplashSaysWhichProblemItIs() {
+        // Mikaela, 22 Nov: the server refuses a turned-off account with this message.
+        assertEquals(SplashProblem.ACCOUNT_OFF, splashProblem(true, "Sign in with a verified, enabled account.\nURL: https://example/rpc/club_workspace"))
+        assertEquals(SplashProblem.OFFLINE, splashProblem(false, "Unable to resolve host"))
+        assertEquals(SplashProblem.NO_ACCESS, splashProblem(true, "JWT expired"))
+    }
 }
