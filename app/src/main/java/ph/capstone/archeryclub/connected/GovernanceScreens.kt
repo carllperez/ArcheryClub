@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -292,16 +293,12 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         DeskLabel("Officers and terms", "+ Assign roles") { onAssign("") }
         if (officers.isEmpty()) EmptyState("No officer roles", "Assign time-limited roles so officers can use their desks.")
         else RaisedCard(onClick = { onOfficers("") }) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // A few faces so the card reads as "people", then the counts.
-                Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
-                    officers.take(4).forEach { o -> Box(Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)) { Initials(o.name, 32) } }
-                    if (officers.size > 4) Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
-                        Text("+${officers.size - 4}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(summary.line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            // Three numbers instead of overlapping initials: the faces clipped each other's letters and pushed the
+            // summary onto two lines (22 Nov). Same width however many officers there are.
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(vertical = 12.dp)) {
+                OfficerStat("${summary.total}", if (summary.total == 1) "officer" else "officers", MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
+                OfficerStat("${summary.expired}", "expired", if (summary.expired > 0) Club.roseInk else MaterialTheme.colorScheme.onSurfaceVariant, Modifier.weight(1f))
+                OfficerStat("${summary.ending}", "ending soon", if (summary.ending > 0) Club.amberInk else MaterialTheme.colorScheme.onSurfaceVariant, Modifier.weight(1f))
             }
             // Only the people who need something done; everyone else is one tap away.
             val attention = officers.filter { it.worst != TermState.ACTIVE }
@@ -346,6 +343,15 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
 // ---------------------------------------------------------------- Interclub
 
 
+
+/** One number with a small label under it, for the Officers and terms card. */
+@Composable
+private fun OfficerStat(value: String, label: String, color: Color, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = color)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
 
 /** The row's pill: "Expired Nov 20" / "Ends Dec 3" / "2 roles". Short date so the pill leaves room for the name. */
 private fun officerStatus(o: OfficerView): Pair<String, Tone> = when (o.worst) {
