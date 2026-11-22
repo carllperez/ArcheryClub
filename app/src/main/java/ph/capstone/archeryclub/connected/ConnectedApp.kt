@@ -142,6 +142,13 @@ fun ConnectedApp(vm:SystemViewModel){
         editingVar=form to initial
     }
     fun openNotice(notice:JsonObject) {
+        // Club requests (migration 052) are filed under module 14, whose generic record page isn't where they're decided:
+        // the platform administrator decides them on Clubs; an approved requester goes on to Club setup.
+        if(notice.text("kind")=="club_request"){
+            if(isPlatformAdmin(workspace)){stackVar="platform_clubs";return}
+            if(allowed("administration")){stackVar="club_setup";return}
+            return
+        }
         val destination=notice.text("module").toIntOrNull()?:return
         val record=notice.text("record_id")
         if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){stackVar="activity:$record";return}
