@@ -191,7 +191,21 @@ fun ClubLanding(
                 if(notices.isEmpty())InfoCard("You're all caught up","New notices will appear here when a club record needs your attention.")
                 notices.forEach{notice->NoticeItem(notice,state.busy,onOpen={onNotice(notice)},onAcknowledge={onAcknowledge(notice)})}
             }
-            "account"->{
+            // A partner representative's profile: who they represent and their events. The member version offered
+            // "My application" (the DLSU membership application) and "All modules" (22 Nov testing).
+            "account"->if(partnerRep){
+                Text(fullName,style=MaterialTheme.typography.titleLarge)
+                Text("Partner representative"+partnerClubNames(workspace).firstOrNull()?.let{" · $it"}.orEmpty(),color=MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(profile?.text("university").orEmpty(),profile?.text("email").orEmpty()).filter{it.isNotBlank()}.forEach{
+                    Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                if(state.recovery)recovery()
+                Column {
+                    QuietRow("Your events","${partnerEvents(workspace).size} shared with your club"){onPage("home")}
+                    QuietRow("Notices","${notices.size} to review"){onPage("notices")}
+                    QuietRow("Have a code for another event?","Enter the invite code the host club sent"){onRoute("partner_claim")}
+                }
+                TextButton(onClick=onSignOut,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Sign out")}
+            } else {
                 Text(fullName,style=MaterialTheme.typography.titleLarge)
                 Text(membership?.text("status")?.let{"$it membership"}?:"Club account",color=MaterialTheme.colorScheme.onSurfaceVariant)
                 if(state.recovery)recovery()

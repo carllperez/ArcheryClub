@@ -60,3 +60,11 @@ fun partnerEvents(workspace: JsonObject): List<JsonObject> {
     val mine = workspace.records("event_access").filter { it.text("user_id") == me && it.text("revoked_at").isBlank() }.map { it.text("event_id") }.toSet()
     return workspace.records("interclub_events").filter { it.text("event_id") in mine }.sortedBy { it.text("shared_start") }
 }
+
+/** The partner club(s) this representative speaks for, from their event access ("UP Archery Club (UP Diliman)"). */
+fun partnerClubNames(workspace: JsonObject): List<String> {
+    val me = workspace.text("user_id")
+    val clubs = workspace.records("partner_clubs").associate { it.text("id") to it.text("name") }
+    return workspace.records("event_access").filter { it.text("user_id") == me && it.text("revoked_at").isBlank() }
+        .mapNotNull { clubs[it.text("partner_id")] }.distinct()
+}

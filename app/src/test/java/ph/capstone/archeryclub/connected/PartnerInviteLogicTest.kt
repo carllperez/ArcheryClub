@@ -52,4 +52,15 @@ class PartnerInviteLogicTest {
         }
         assertEquals("Uma Reyes", inviteViews(w, "e", now) { "Club member" }.single().claimedBy)
     }
+
+    @Test fun aRepresentativesProfileNamesTheirClub() {
+        val w = buildJsonObject {
+            put("user_id", "rep")
+            put("partner_clubs", JsonArray(listOf(buildJsonObject { put("id", "up"); put("name", "UP Archery Club (UP Diliman)") })))
+            put("event_access", JsonArray(listOf(buildJsonObject { put("user_id", "rep"); put("partner_id", "up"); put("event_id", "e1") },
+                buildJsonObject { put("user_id", "rep"); put("partner_id", "up"); put("event_id", "e2") },
+                buildJsonObject { put("user_id", "other"); put("partner_id", "x"); put("event_id", "e1") })))
+        }
+        assertEquals(listOf("UP Archery Club (UP Diliman)"), partnerClubNames(w))
+    }
 }
