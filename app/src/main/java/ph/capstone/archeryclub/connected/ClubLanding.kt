@@ -156,6 +156,10 @@ fun ClubLanding(
         ApplicantHome(workspace,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onCommand,recovery,vm){onRoute("partner_claim")}
         return
     }
+    if(staff&&!isMember&&page=="account"){
+        OfficerProfilePage(workspace,fullName,notices.size,permissions,state,snackbar,bottomBar,onPage,onRoute,onScan,onSignOut,recovery)
+        return
+    }
     if(isMember&&page=="account"){
         MemberProfilePage(workspace,profile,fullName,notices.size,state,snackbar,bottomBar,onPage,onModule,onRoute,onScan,onRefresh,onSignOut,recovery)
         return

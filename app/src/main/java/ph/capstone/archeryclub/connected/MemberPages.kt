@@ -123,25 +123,7 @@ fun MemberProfilePage(
                 state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING) }
                 if (state.recovery) recovery()
                 val myRoles = myRoleLines(workspace, Instant.now())
-                if (myRoles.isNotEmpty()) RaisedCard {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (myRoles.size == 1) "YOUR ROLE" else "YOUR ROLES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        val roleRows = workspace.records("roles").associateBy { it.text("id") }
-                        myRoles.forEach { r ->
-                            val desks = (roleRows[r.assignment.text("role_id")]?.get("permissions") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(r.roleName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                                    Text(r.ends?.let { "Until ${fmtDate(it.atZone(java.time.ZoneId.systemDefault()).toLocalDate())}" }.orEmpty(),
-                                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
-                                        color = if (r.state == TermState.ENDING) Club.amberInk else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Text(if (desks.isEmpty()) "Opens no desks" else "Opens: " + deskOrder(desks).joinToString(", ") { deskTitle(it) },
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
+                YourRolesCard(workspace, myRoles)
                 RaisedCard(onClick = { onRoute("profile") }) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -273,4 +255,67 @@ fun ApplicantHome(
         if (view.stage != ApplicationStage.NOT_STARTED && (pendingPayment || !view.stage.editable))
             TextButton(onClick = { onModule(2) }, modifier = Modifier.fillMaxWidth()) { Text("View what I submitted") }
     }
+}
+
+/** "Your role(s)" with each term's end date and the desks it opens. Shared by the member and officer Profile pages. */
+@Composable
+fun YourRolesCard(workspace: JsonObject, myRoles: List<RoleLine>) {
+    if (myRoles.isEmpty()) return
+    RaisedCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(if (myRoles.size == 1) "YOUR ROLE" else "YOUR ROLES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val roleRows = workspace.records("roles").associateBy { it.text("id") }
+            myRoles.forEach { r ->
+                val desks = (roleRows[r.assignment.text("role_id")]?.get("permissions") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(r.roleName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                        Text(r.ends?.let { "Until ${fmtDate(it.atZone(java.time.ZoneId.systemDefault()).toLocalDate())}" }.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+                            color = if (r.state == TermState.ENDING) Club.amberInk else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(if (desks.isEmpty()) "Opens no desks" else "Opens: " + deskOrder(desks).joinToString(", ") { deskTitle(it) },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/** Profile tab for an officer who isn't a club member (for now, the developer account). It used to fall through to the
+ *  plain list, which offered "My application" although they hold roles (22 Nov). Same green hero as the other profiles. */
+@Composable
+fun OfficerProfilePage(workspace: JsonObject, fullName: String, noticeCount: Int, permissions: Set<String>, state: SystemState, snackbar: SnackbarHostState,
+                       bottomBar: @Composable () -> Unit, onPage: (String) -> Unit, onRoute: (String) -> Unit, onScan: () -> Unit, onSignOut: () -> Unit,
+                       recovery: @Composable () -> Unit) {
+    val me = workspace.text("user_id")
+    val developer = workspace.records("profiles").find { it.text("id") == me }?.text("developer") == "true"
+    val myRoles = myRoleLines(workspace, Instant.now())
+    val deskCount = permissions.size
+    var signOut by remember { mutableStateOf(false) }
+    HeroScaffold(fullName, snackbar = snackbar, busy = state.busy, bottomBar = bottomBar,
+        eyebrow = {
+            Pill("OFFICER", Club.lime, Club.forestDeep)
+            if (developer) Pill("DEVELOPER", Color.White.copy(alpha = .18f), Color.White)
+        },
+        heroExtra = {
+            Text(listOf("${myRoles.size} role${if (myRoles.size == 1) "" else "s"}", "$deskCount desk${if (deskCount == 1) "" else "s"}").joinToString(" · "),
+                color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
+        }) {
+        state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING) }
+        if (state.recovery) recovery()
+        if (developer) InfoCard("Developer account", "Can hold roles without a membership, for testing. Turn this off before the club uses the app for real.")
+        YourRolesCard(workspace, myRoles)
+        RowGroup {
+            GroupRow("home", "Your desks", "Everything your roles open", onClick = { onPage("home") })
+            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
+                trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
+            if ("equipment" in permissions) GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
+            GroupRow("modules", "All club records", "For anything not on your desks", divider = false, onClick = { onPage("modules") })
+        }
+        OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.roseSoft)) { Text("Sign out", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
+    }
+    if (signOut) ConfirmDialog("Sign out?", "You'll need your email and password to sign back in.", "Sign out",
+        onConfirm = { signOut = false; onSignOut() }, onDismiss = { signOut = false }, destructive = true)
 }
