@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
+import ph.capstone.archeryclub.ui.ClubIcon
 import ph.capstone.archeryclub.ui.ScreenShell
 import java.time.Instant
 
@@ -130,6 +131,8 @@ fun InterclubScreen(
         }
         return
     }
+    // A partner representative gets their own page: one question per stage (22 Nov mockups).
+    if (!coordinator) { PartnerEventPage(workspace, e, busy, snackbar, onBack, onStart); return }
     val eid = e.text("event_id"); val status = e.text("status"); val now = Instant.now()
     val step = interclubStep(e, workspace, now)
     val next = interclubNext(e, workspace, now)
@@ -544,3 +547,226 @@ fun InterclubPastScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
         }
         Text("Archived events can't be edited, so the next officers find the same records after turnover.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+
+// ---------------------------------------------------------------- Partner representative's event page
+
+/** The partner's four steps in the hero, in place of the officers' six (22 Nov mockups). */
+@Composable
+private fun PartnerTracker(step: Int) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        listOf("Sign-up", "Event day", "Results", "Done").forEachIndexed { i, label ->
+            val done = i < step; val current = i == step
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(26.dp).clip(CircleShape).background(when { done -> Club.lime; current -> Color.White; else -> Color.White.copy(alpha = .16f) }),
+                    contentAlignment = Alignment.Center) {
+                    if (done) ClubIcon("check", Modifier.size(15.dp), Club.forestDeep)
+                    else Text("${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = if (current) Club.forestDeep else Color.White.copy(alpha = .75f))
+                }
+                Text(label, fontSize = 11.sp, fontWeight = if (current) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    color = if (done || current) Color.White else Color.White.copy(alpha = .7f))
+            }
+        }
+    }
+}
+
+/** The card that leads each stage: a label, the one thing that matters now, and its detail. */
+@Composable
+private fun LeadCard(label: String, title: String, body: String, extra: @Composable ColumnScope.() -> Unit = {}) = RaisedCard {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        if (body.isNotBlank()) Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        extra()
+    }
+}
+
+@Composable
+private fun SplitBar(first: Int, second: Int, total: Int) {
+    if (total <= 0) return
+    Row(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Club.line)) {
+        if (first > 0) Box(Modifier.weight(first.toFloat()).fillMaxHeight().background(Club.forest))
+        if (second > 0) Box(Modifier.weight(second.toFloat()).fillMaxHeight().background(Color(0xFFE3B341)))
+        if (total - first - second > 0) Spacer(Modifier.weight((total - first - second).toFloat()))
+    }
+}
+
+/** A partner representative's event page: one question per stage (22 Nov mockups). Sign-ups open: who to add by when.
+ *  Event day: each archer's target and time. Finished: which results are out. Final: how the club did, with the
+ *  delegation and the questions folded into one row each. */
+@Composable
+fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
+                     onStart: (String, JsonObject) -> Unit) {
+    val eid = e.text("event_id"); val now = Instant.now()
+    val stage = partnerStage(e)
+    val me = workspace.text("user_id")
+    val partnerId = workspace.records("event_access").find { it.text("event_id") == eid && it.text("user_id") == me }?.text("partner_id").orEmpty()
+    val clubName = workspace.records("partner_clubs").find { it.text("id") == partnerId }?.text("name") ?: "Your club"
+    val mine = icDelegates(workspace, eid).sortedBy { it.text("full_name") }
+    val assignments = icAssignments(workspace, eid).associateBy { it.text("delegate_id") }
+    val results = icResults(workspace, eid).associateBy { it.text("delegate_id") }
+    val concerns = workspace.records("interclub_concerns").filter { it.text("event_id") == eid && it.text("submitted_by") == me }.sortedByDescending { it.text("created_at") }
+    val signupsOpen = stage == PartnerStage.OPEN && (e.instant("registration_closes")?.let { now.isBefore(it) } ?: true)
+    var showConcerns by rememberSaveable { mutableStateOf(false) }
+    var showDelegation by rememberSaveable { mutableStateOf(false) }
+    fun ask() = onStart("raise_concern", buildJsonObject { put("event_id", eid) })
+
+    HeroScaffold(e.text("shared_title"), onBack, snackbar, overlap = 44.dp, busy = busy,
+        eyebrow = { Pill("INTERCLUB", Color.White.copy(alpha = .16f), Color.White)
+            Pill(stage.pill, if (stage == PartnerStage.DAY) Club.amberSoft else Club.lime, if (stage == PartnerStage.DAY) Club.amberInk else Club.forestDeep) },
+        heroExtra = {
+            Text(when (stage) {
+                PartnerStage.DAY -> "Today · ${e.text("shared_venue")}"
+                PartnerStage.CHECKING -> "${fmtDay(e.instant("shared_start"))} · results coming in"
+                else -> "${fmtDay(e.instant("shared_start"))} · ${e.text("shared_venue")}"
+            }, color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
+            PartnerTracker(stage.step)
+        }) {
+        when (stage) {
+            PartnerStage.OPEN -> {
+                val approved = mine.count { it.text("status") in setOf("eligible", "checked_in") }
+                val waiting = mine.count { it.text("status") == "pending" }
+                if (signupsOpen) LeadCard("YOUR NEXT STEP", "Add your archers by ${fmtDay(e.instant("registration_closes"))}",
+                    "DLSU reviews each one.${daysLeftLabel(e.instant("registration_closes"), now)?.let { " $it to add or fix delegates." }.orEmpty()}") {
+                    if (mine.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) { SplitBar(approved, waiting, mine.size) }
+                            Text("$approved approved" + if (waiting > 0) " · $waiting waiting" else "", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    CardButton("Add a delegate", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
+                        onStart("save_delegate", buildJsonObject { put("event_id", eid); put("partner_id", partnerId) }) }
+                }
+                else LeadCard("SIGN-UPS CLOSED", "DLSU is making the schedule", "Each archer's target and time will show here before the event.")
+                DeskLabel("Your delegation · ${mine.size}")
+                if (mine.isEmpty()) EmptyState("No archers yet", "Add each archer from your club with their division and requirements.")
+                mine.forEach { d ->
+                    val a = assignments[d.text("id")]
+                    val fix = signupsOpen && d.text("status") in setOf("pending", "incomplete")
+                    DeskRow(d.text("full_name"), listOfNotNull(d.text("category"), a?.let { "${it.text("target_group")} · ${fmtTime(it.instant("starts_at"))}" }).joinToString(" · "),
+                        leading = { Initials(d.text("full_name"), 36) },
+                        status = (if (d.text("status") == "incomplete") "Fix" else delegateLabel(d.text("status"))) to delegateTone(d.text("status")),
+                        onClick = if (fix) ({ onStart("save_delegate", JsonObject(d + ("partner_id" to JsonPrimitive(partnerId)))) }) else null) {
+                        if (d.text("status") == "incomplete" && d.text("remark").isNotBlank()) Text("DLSU: ${d.text("remark")}", style = MaterialTheme.typography.bodySmall, color = Club.roseInk)
+                    }
+                }
+            }
+            PartnerStage.DAY -> {
+                val first = assignments.values.mapNotNull { it.instant("starts_at") }.minOrNull() ?: e.instant("shared_start")
+                LeadCard("TODAY AT THE RANGE", e.text("shared_venue"), "Check in when you arrive. The first flight starts at ${fmtTime(first)}.")
+                val here = mine.count { it.text("status") == "checked_in" }
+                val going = mine.filter { it.text("status") in setOf("eligible", "checked_in") }
+                DeskLabel("Your archers · $here of ${going.size} here")
+                if (going.isEmpty()) EmptyState("No approved archers", "Archers DLSU approved for this event appear here.")
+                RowGroup { going.forEachIndexed { i, d ->
+                    val a = assignments[d.text("id")]
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.size(54.dp).clip(RoundedCornerShape(14.dp)).background(Club.forestDeep), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center) {
+                            Text("TARGET", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = .8f), letterSpacing = .8.sp)
+                            Text(a?.text("target_group")?.removePrefix("Target ")?.ifBlank { null } ?: "—", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 1)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(d.text("full_name"), style = MaterialTheme.typography.titleSmall)
+                            Text(listOfNotNull(d.text("category").ifBlank { null }, a?.let { fmtTime(it.instant("starts_at")) }).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (d.text("status") == "checked_in") Pill("Here", Club.mint, Club.forestDeep) else Pill("Not yet", Club.amberSoft, Club.amberInk)
+                    }
+                    if (i < going.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
+                } }
+            }
+            PartnerStage.CHECKING -> {
+                val t = partnerTally(workspace, eid)
+                LeadCard("RESULTS", if (t.pending == 0 && t.published > 0) "All results are published" else "Being checked by DLSU",
+                    if (t.pending == 0 && t.published > 0) "DLSU will archive the event soon." else "Each score is checked against the signed scoresheet before it shows here. You'll get a notice when they're out.") {
+                    if (t.competed > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f)) { SplitBar(t.published, 0, t.competed) }
+                        Text("${t.published} of ${t.competed} published", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                DeskLabel("Your archers")
+                RowGroup { val competed = mine.filter { it.text("status") == "checked_in" }
+                    competed.forEachIndexed { i, d ->
+                        val r = results[d.text("id")]?.takeIf { it.text("verified_by").isNotBlank() }
+                        GroupRow("target", d.text("full_name"), listOfNotNull(d.text("category").ifBlank { null }, r?.text("result")).joinToString(" · "),
+                            divider = i < competed.lastIndex, trailing = { if (r != null) Pill("Published", Club.mint, Club.forestDeep) else Pill("Being checked", Club.amberSoft, Club.amberInk) },
+                            onClick = null)
+                    }
+                    if (competed.isEmpty()) Text("None of your archers checked in.", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            PartnerStage.FINAL -> {
+                val t = partnerTally(workspace, eid)
+                val published = icRanked(results.values.filter { it.text("verified_by").isNotBlank() })
+                val byId = mine.associateBy { it.text("id") }
+                RaisedCard {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("HOW ${clubName.uppercase()} DID", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+                            ClubIcon("target", Modifier.size(22.dp), Club.amberInk)
+                        }
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Club.mint.copy(alpha = .45f)).padding(vertical = 10.dp)) {
+                            listOf("${t.competed}" to "competed", "${t.published}" to "results", (t.best?.toString() ?: "—") to "best score").forEach { (v, l) ->
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(v, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                                    Text(l, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        if (published.isEmpty()) Text("No results were published for your archers.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        published.forEach { r ->
+                            val d = byId[r.text("delegate_id")]
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Initials(d?.text("full_name") ?: "?", 40)
+                                Column(Modifier.weight(1f)) {
+                                    Text(d?.text("full_name") ?: "Archer", style = MaterialTheme.typography.titleSmall)
+                                    Text(d?.text("category").orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.End, modifier = Modifier.widthIn(max = 150.dp)) {
+                                    Text(icScore(r.text("result"))?.toString() ?: r.text("result"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                                    Text(r.text("result").replaceFirst(Regex("""^\s*\d{1,4}\s*"""), "").trim(), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, textAlign = TextAlign.End)
+                                }
+                            }
+                        }
+                    }
+                }
+                Surface(shape = RoundedCornerShape(16.dp), color = Club.mint, modifier = Modifier.fillMaxWidth()) {
+                    Text("Thanks for shooting with DLSU Archery Club. These results are final and kept with the event.",
+                        Modifier.padding(horizontal = 14.dp, vertical = 12.dp), style = MaterialTheme.typography.bodyMedium, color = Club.forestDeep)
+                }
+                RowGroup {
+                    GroupRow("users", "Your delegation", "${t.competed} archer${if (t.competed == 1) "" else "s"} competed",
+                        trailing = { Text(if (showDelegation) "Hide" else "Show", style = MaterialTheme.typography.labelLarge, color = Club.forest) },
+                        divider = showDelegation || concerns.isNotEmpty(), onClick = { showDelegation = !showDelegation })
+                    if (showDelegation) mine.forEach { d ->
+                        Text("${d.text("full_name")} · ${d.text("category")} · ${delegateLabel(d.text("status"))}", Modifier.padding(start = 62.dp, end = 14.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (concerns.isNotEmpty()) GroupRow("bell", "Questions to DLSU", "${concerns.size} asked, ${concerns.count { it.text("status") != "open" }} answered",
+                        trailing = { Text(if (showConcerns) "Hide" else "Show", style = MaterialTheme.typography.labelLarge, color = Club.forest) },
+                        divider = false, onClick = { showConcerns = !showConcerns })
+                }
+            }
+        }
+        // Questions: an open one always shows (it's waiting on DLSU); answered ones fold into one row.
+        concerns.filter { it.text("status") == "open" }.forEach { NoticeCard("Waiting for DLSU's reply", it.text("concern"), Tone.WARNING) }
+        val answered = concerns.filter { it.text("status") != "open" }
+        if (stage != PartnerStage.FINAL && answered.isNotEmpty()) RowGroup {
+            GroupRow("bell", "Questions to DLSU", "${concerns.size} asked, ${answered.size} answered",
+                trailing = { Text(if (showConcerns) "Hide" else "Show", style = MaterialTheme.typography.labelLarge, color = Club.forest) },
+                divider = false, onClick = { showConcerns = !showConcerns })
+        }
+        if (showConcerns) answered.forEach { NoticeCard("DLSU replied", "${it.text("resolution")}\n\nYou asked: ${it.text("concern")}", Tone.POSITIVE) }
+        // Asking DLSU stays available until the event is archived, as a smaller button than before.
+        if (stage != PartnerStage.FINAL) CardButton("Ask DLSU a question", Modifier.fillMaxWidth(), enabled = !busy) { ask() }
+        Text(when (stage) {
+            PartnerStage.OPEN -> "Targets and times show here once DLSU makes the schedule."
+            PartnerStage.DAY -> "Scores show here after DLSU checks each signed scoresheet."
+            PartnerStage.CHECKING -> "If a score doesn't match your scoresheet, ask DLSU before the event is archived."
+            PartnerStage.FINAL -> ""
+        }, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}

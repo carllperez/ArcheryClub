@@ -68,4 +68,32 @@ class InterclubLogicTest {
         assertEquals("1 not verified yet" to Tone.WARNING, resultsBanner(listOf(buildJsonObject { put("id", "r") })))
         assertEquals(Tone.POSITIVE, resultsBanner(listOf(buildJsonObject { put("id", "r"); put("verified_by", "U") })).second)
     }
+
+    @Test fun aPartnerSeesOneStagePerEventStatus() {
+        fun e(s: String) = buildJsonObject { put("status", s) }
+        assertEquals(PartnerStage.OPEN, partnerStage(e("preparation")))
+        assertEquals(PartnerStage.DAY, partnerStage(e("active")))
+        assertEquals(PartnerStage.CHECKING, partnerStage(e("completed")))
+        assertEquals(PartnerStage.FINAL, partnerStage(e("archived")))
+    }
+
+    @Test fun signUpDeadlinesCountWholeManilaDays() {
+        val now = Instant.parse("2026-11-21T01:00:00Z") // 9:00 AM Nov 21, Manila
+        assertEquals("4 days left", daysLeftLabel(Instant.parse("2026-11-25T08:00:00Z"), now))
+        assertEquals("Last day", daysLeftLabel(Instant.parse("2026-11-21T10:00:00Z"), now))
+        assertNull(daysLeftLabel(Instant.parse("2026-11-20T10:00:00Z"), now))
+    }
+
+    @Test fun aPartnerTallyCountsCompetedPublishedAndBest() {
+        val w = buildJsonObject {
+            put("delegates", JsonArray(listOf(
+                buildJsonObject { put("id", "a"); put("event_id", "E"); put("status", "checked_in") },
+                buildJsonObject { put("id", "m"); put("event_id", "E"); put("status", "checked_in") },
+                buildJsonObject { put("id", "x"); put("event_id", "E"); put("status", "eligible") })))
+            put("interclub_results", JsonArray(listOf(
+                buildJsonObject { put("id", "r1"); put("event_id", "E"); put("delegate_id", "a"); put("result", "612 / 720"); put("verified_by", "U") },
+                buildJsonObject { put("id", "r2"); put("event_id", "E"); put("delegate_id", "m"); put("result", "655 / 720") })))
+        }
+        assertEquals(PartnerTally(competed = 2, published = 1, pending = 1, best = 612), partnerTally(w, "E"))
+    }
 }

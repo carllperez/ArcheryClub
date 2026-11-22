@@ -113,3 +113,31 @@ fun resultsBanner(results: List<JsonObject>): Pair<String, Tone> {
 
 /** Whether the person looking recorded this result (and so can't verify it). */
 fun recordedByMe(result: JsonObject, workspace: JsonObject) = result.text("recorded_by").isNotBlank() && result.text("recorded_by") == workspace.text("user_id")
+
+/** The four stages a partner representative sees (22 Nov mockups): each answers "what does my club need now?". */
+enum class PartnerStage(val pill: String, val step: Int) { OPEN("SIGN-UPS OPEN", 0), DAY("EVENT DAY", 1), CHECKING("FINISHED", 2), FINAL("FINAL", 4) }
+
+fun partnerStage(event: JsonObject): PartnerStage = when (event.text("status")) {
+    "active" -> PartnerStage.DAY
+    "completed" -> PartnerStage.CHECKING
+    "archived" -> PartnerStage.FINAL
+    else -> PartnerStage.OPEN
+}
+
+/** "4 days left", "Last day", or null once closed. Whole days in Manila time. */
+fun daysLeftLabel(closes: Instant?, now: Instant): String? {
+    if (closes == null || !now.isBefore(closes)) return null
+    val days = java.time.temporal.ChronoUnit.DAYS.between(now.atZone(CLUB_ZONE).toLocalDate(), closes.atZone(CLUB_ZONE).toLocalDate())
+    return if (days <= 0) "Last day" else "$days day${if (days == 1L) "" else "s"} left"
+}
+
+/** A partner club's published results: how many archers competed, how many results are out, and the best score. */
+data class PartnerTally(val competed: Int, val published: Int, val pending: Int, val best: Int?)
+
+fun partnerTally(workspace: JsonObject, eventId: String): PartnerTally {
+    val mine = icDelegates(workspace, eventId)
+    val results = icResults(workspace, eventId)
+    val published = results.filter { it.text("verified_by").isNotBlank() }
+    val competed = mine.count { it.text("status") == "checked_in" }
+    return PartnerTally(competed, published.size, (competed - published.size).coerceAtLeast(0), published.mapNotNull { icScore(it.text("result")) }.maxOrNull())
+}
