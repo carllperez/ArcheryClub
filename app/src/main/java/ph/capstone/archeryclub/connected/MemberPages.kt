@@ -322,7 +322,8 @@ fun OfficerProfilePage(workspace: JsonObject, fullName: String, noticeCount: Int
                 trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
             if ("equipment" in permissions) GroupRow("qr", "Scan club code", "Attendance and gear", onClick = onScan)
             GroupRow("modules", "All club records", "For anything not on your desks", divider = !isPlatformAdmin(workspace), onClick = { onPage("modules") })
-            if (isPlatformAdmin(workspace)) GroupRow("users", "Clubs", "${allClubs(workspace).size} in the app · create a club for another school", divider = false,
+            if (isPlatformAdmin(workspace)) GroupRow("users", "Clubs", pendingClubRequests(workspace).size.let { n -> if (n > 0) "$n club request${if (n == 1) "" else "s"} waiting" else "${allClubs(workspace).size} in the app · create a club for another school" },
+                tint = if (pendingClubRequests(workspace).isNotEmpty()) Club.amberInk else Club.forest, chip = if (pendingClubRequests(workspace).isNotEmpty()) Club.amberSoft else Club.mint, divider = false,
                 onClick = { onRoute("platform_clubs") })
         }
         OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),

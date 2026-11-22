@@ -103,4 +103,16 @@ class HomeLogicTest {
         assertEquals("club_setup", focus.route); assertTrue(focus.title.startsWith("Set up your club"))
         assertEquals(null, officerFocus(ws, setOf("finance"), java.time.Instant.now()))
     }
+
+    @org.junit.Test fun clubRequestsShowTheStudentTheirStatusAndThePlatformAdminWhatsWaiting() {
+        assertEquals("feu.edu.ph", emailDomain("Maria@FEU.edu.ph")); assertTrue(isPersonalEmail("someone@gmail.com")); assertEquals(false, isPersonalEmail("maria@feu.edu.ph"))
+        fun o(vararg p: Pair<String, String>) = kotlinx.serialization.json.JsonObject(p.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })
+        val reqs = kotlinx.serialization.json.JsonArray(listOf(
+            o("id" to "1", "user_id" to "u", "status" to "declined", "created_at" to "2026-11-22T10:00:00Z"),
+            o("id" to "2", "user_id" to "u", "status" to "pending", "created_at" to "2026-11-23T10:00:00Z"),
+            o("id" to "3", "user_id" to "v", "status" to "pending", "created_at" to "2026-11-21T10:00:00Z")))
+        val ws = kotlinx.serialization.json.JsonObject(mapOf("user_id" to kotlinx.serialization.json.JsonPrimitive("u"), "club_requests" to reqs))
+        assertEquals("2", myClubRequest(ws)!!.text("id"))
+        assertEquals(listOf("3", "2"), pendingClubRequests(ws).map { it.text("id") })
+    }
 }

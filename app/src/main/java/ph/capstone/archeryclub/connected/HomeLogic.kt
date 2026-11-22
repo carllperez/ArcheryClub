@@ -78,3 +78,15 @@ fun nameFromEmail(email: String?): String = email.orEmpty().substringBefore('@')
 /** The club's short name for a pill on Home (DLSU, UP, ADMU); blank with a single club, where it adds nothing. */
 fun clubPill(workspace: JsonObject): String = if (allClubs(workspace).size < 2) "" else
     myClub(workspace)?.let { c -> c.text("short_name").ifBlank { c.text("name") } }.orEmpty().uppercase()
+
+/* Club requests (migration 052): a student whose school has no club asks for one; the platform administrator decides. */
+val PERSONAL_EMAIL_DOMAINS = setOf("gmail.com", "yahoo.com", "ymail.com", "outlook.com", "hotmail.com", "live.com", "icloud.com", "me.com",
+    "proton.me", "protonmail.com", "aol.com", "gmx.com")
+fun emailDomain(email: String?): String = email.orEmpty().substringAfter('@', "").trim().lowercase()
+fun isPersonalEmail(email: String?): Boolean = emailDomain(email) in PERSONAL_EMAIL_DOMAINS
+/** The signed-in student's latest request, if any. */
+fun myClubRequest(workspace: JsonObject): JsonObject? = workspace.records("club_requests")
+    .filter { it.text("user_id") == workspace.text("user_id") }.maxByOrNull { it.text("created_at") }
+/** Requests waiting for the platform administrator, oldest first. */
+fun pendingClubRequests(workspace: JsonObject): List<JsonObject> = workspace.records("club_requests")
+    .filter { it.text("status") == "pending" }.sortedBy { it.text("created_at") }

@@ -1160,3 +1160,44 @@ test('Club domains 23 Nov: the email domain decides the club, and an account can
  await db.query('update app_private.clubs set email_domain=null');
  await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
 });
+test('Club requests 23 Nov: a student whose school has no club asks for one; the platform administrator approves or declines',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ await db.query("update app_private.clubs set email_domain='example.test' where id=$1",[dlsu]);
+ await db.query('update app_private.profiles set platform_admin=true where id=$1',[ids.admin]);
+ const make=async(name,id,email)=>{ids[name]=id;await db.query('insert into auth.users values($1,$2,now())',[id,email]);await as(name,()=>db.exec('select public.initialize_account()'));};
+ await make('feu','00000000-0000-4000-8000-0000000000f1','maria@feu.test');
+ await make('feu2','00000000-0000-4000-8000-0000000000f2','jose@feu.test');
+ await make('gmailer','00000000-0000-4000-8000-0000000000f3','someone@gmail.com');
+ await make('mapua','00000000-0000-4000-8000-0000000000f4','lea@mapua.test');
+ const req=(n,d)=>rpc(n,'request_club',[JSON.stringify(d)],'$1::jsonb');
+ const decide=(n,d)=>rpc(n,'decide_club_request',[JSON.stringify(d)],'$1::jsonb');
+ // Only for your own school's domain, never a personal email, never from inside a club.
+ await denied(()=>req('gmailer',{name:'Gmail Archers',school:'None'}),/school email/);
+ await denied(()=>req('applicant',{name:'Another DLSU club',school:'DLSU'}),/already belongs|already has a club/);
+ const r=await req('feu',{name:'FEU Archery Club',short_name:'FEU',school:'Far Eastern University',theme:'green'});
+ await denied(()=>req('feu2',{name:'FEU Archers 2',school:'FEU'}),/already waiting/);
+ // The platform administrator is told and sees it; the requester sees their own; other students don't.
+ const aws=await as('admin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.ok(aws.club_requests.some(q=>q.id===r.id)); assert.ok(aws.notifications.some(n=>n.record_id===r.id&&n.kind==='club_request'));
+ const own=await as('feu',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(own.club_requests.length,1); assert.equal(own.club_requests[0].email_domain,'feu.test');
+ assert.equal((await as('mapua',async()=>(await db.query('select public.club_workspace() w')).rows[0].w)).club_requests.length,0);
+ // Only the platform administrator decides; a decline needs a reason.
+ await denied(()=>decide('upadmin',{id:r.id,decision:'approve'}),/platform administrator/);
+ const m=await req('mapua',{name:'Mapua Archery',school:'Mapua University'});
+ await denied(()=>decide('admin',{id:m.id,decision:'decline'}),/Say why/);
+ await decide('admin',{id:m.id,decision:'decline',remark:'Ask your school org office to endorse it first.'});
+ const mw=await as('mapua',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(mw.club_requests[0].status,'declined'); assert.ok(mw.notifications.some(n=>/endorse/.test(n.message)));
+ // Approving creates the club with the requester as its administrator; their next load is the new club.
+ const out=await decide('admin',{id:r.id,decision:'approve'});
+ const fw=await as('feu',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(fw.club.id,out.club_id); assert.equal(fw.club.email_domain,'feu.test'); assert.ok(fw.permissions.includes('administration'));
+ assert.ok(fw.notifications.some(n=>/approved/.test(n.message)));
+ await denied(()=>decide('admin',{id:r.id,decision:'approve'}),/already decided/);
+ // A second FEU student now lands in FEU's club automatically.
+ await make('feu3','00000000-0000-4000-8000-0000000000f5','ana@feu.test');
+ assert.equal((await db.query('select club_id from app_private.profiles where id=$1',[ids.feu3])).rows[0].club_id,out.club_id);
+ await db.query('update app_private.clubs set email_domain=null');
+ await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
+});
