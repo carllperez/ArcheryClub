@@ -44,9 +44,9 @@ fun PartnerChoiceCard(onPartner: () -> Unit) = RaisedCard(onClick = onPartner) {
 
 /** "I'm a partner club representative": the code plus the few details a host club needs, no DLSU ID or college. */
 @Composable
-fun PartnerClaimScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit, onJoined: () -> Unit) {
+fun PartnerClaimScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, vm: SystemViewModel?, onBack: () -> Unit, initialCode: String = "", onJoined: () -> Unit) {
     val profile = workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }
-    var code by rememberSaveable { mutableStateOf("") }
+    var code by rememberSaveable { mutableStateOf(initialCode) }
     var name by rememberSaveable { mutableStateOf(profile?.text("full_name").orEmpty()) }
     var school by rememberSaveable { mutableStateOf(profile?.text("university").orEmpty()) }
     var phone by rememberSaveable { mutableStateOf(profile?.text("phone").orEmpty()) }

@@ -115,4 +115,9 @@ class HomeLogicTest {
         assertEquals("2", myClubRequest(ws)!!.text("id"))
         assertEquals(listOf("3", "2"), pendingClubRequests(ws).map { it.text("id") })
     }
+
+    @org.junit.Test fun aPersonalEmailNeedsACodeAtSignUp() {
+        assertTrue(isPersonalEmail(" Rey_Gab@Gmail.com ".trim())); assertTrue(isPersonalEmail("a@yahoo.com"))
+        assertEquals(false, isPersonalEmail("ana@dlsu.edu.ph")); assertEquals(false, isPersonalEmail("dan_rey@feu.edu.ph"))
+    }
 }

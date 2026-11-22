@@ -1201,3 +1201,46 @@ test('Club requests 23 Nov: a student whose school has no club asks for one; the
  await db.query('update app_private.clubs set email_domain=null');
  await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
 });
+test('Join codes 23 Nov: an alumnus with a personal email joins a club only with that club\'s single-use code',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ await db.query("update app_private.clubs set email_domain='example.test' where id=$1",[dlsu]);
+ await db.query("update app_private.clubs set email_domain='up.example.test' where id=$1",[up]);
+ const make=(d)=>rpc('admin','create_join_code',[JSON.stringify(d)],'$1::jsonb');
+ // Only Membership or Administration makes codes, and only for emails no club already owns.
+ await denied(()=>rpc('other','create_join_code',[JSON.stringify({email:'alum@gmail.test',full_name:'Ana Alumna',reason:'Alumni'})],'$1::jsonb'),/Membership officer or an Administrator/);
+ await denied(()=>make({email:'new@example.test',full_name:'X Y',reason:'Alumni'}),/don.t need a code/);
+ await denied(()=>make({email:'juan@up.example.test',full_name:'X Y',reason:'Alumni'}),/belongs to UP Archery Club/);
+ await denied(()=>make({email:'admin@example.test',full_name:'X Y',reason:'Alumni'}),/don.t need a code|already exists/);
+ const c=await make({email:'Alum@Gmail.test',full_name:'Ana Alumna',reason:'Alumni, batch 2019'});
+ assert.match(c.code,/^[0-9A-F]{4}-[0-9A-F]{4}$/);
+ // Before sign-up: the code checks out for that email only; an interclub invite code is told apart.
+ const check=async(code,email)=>(await db.query('select public.check_signup_code($1,$2) r',[code,email])).rows[0].r;
+ const dlsuName=(await db.query('select name from app_private.clubs where id=$1',[dlsu])).rows[0].name;
+ assert.deepEqual(await check(c.code.toLowerCase(),'alum@gmail.test'),{kind:'join',club:dlsuName});
+ assert.equal((await check(c.code,'someone@gmail.test')).kind,null);
+ assert.equal((await check('0000-0000','alum@gmail.test')).kind,null);
+ // Sign up with the personal email: no club until the code is claimed, then DLSU; the guard accepts it.
+ ids.alum='00000000-0000-4000-8000-0000000000a9';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.alum,'alum@gmail.test']);
+ await as('alum',()=>db.exec('select public.initialize_account()'));
+ assert.equal((await db.query('select club_id from app_private.profiles where id=$1',[ids.alum])).rows[0].club_id,null);
+ await rpc('alum','claim_join_code',[JSON.stringify({code:c.code})],'$1::jsonb');
+ const p=(await db.query('select club_id,full_name from app_private.profiles where id=$1',[ids.alum])).rows[0];
+ assert.equal(p.club_id,dlsu); assert.equal(p.full_name,'Ana Alumna');
+ const w=await as('alum',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(w.club.id,dlsu);
+ // Single use, own email only, and still no route into another club.
+ ids.alum2='00000000-0000-4000-8000-0000000000ab';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.alum2,'other@gmail.test']);
+ await as('alum2',()=>db.exec('select public.initialize_account()'));
+ await denied(()=>rpc('alum2','claim_join_code',[JSON.stringify({code:c.code})],'$1::jsonb'),/isn.t valid/);
+ await assert.rejects(()=>db.query('update app_private.profiles set club_id=$1 where id=$2',[up,ids.alum]),/only for its own school/);
+ // A cancelled code can't be used; officers see their club's codes.
+ const c2=await make({email:'coach@gmail.test',full_name:'Coach Cruz',reason:'Coach'});
+ await rpc('admin','revoke_join_code',[JSON.stringify({id:c2.id})],'$1::jsonb');
+ assert.equal((await check(c2.code,'coach@gmail.test')).kind,null);
+ const aw=await as('admin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.ok(aw.join_codes.some(j=>j.id===c.id&&j.used_by===ids.alum));
+ await db.query('update app_private.clubs set email_domain=null');
+});

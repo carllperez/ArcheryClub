@@ -107,10 +107,16 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
                         AnimatedVisibility(creating) {
                             AuthField("Confirm password", confirm, { confirm = it }, KeyboardType.Password, err("confirm"), "", secret = true)
                         }
+                        // A personal email (no school) signs up only with a code: a club's join code (alumni, coaches) or
+                        // an interclub invite code (partner representatives). Migration 053.
+                        AnimatedVisibility(creating && isPersonalEmail(email.trim())) {
+                            AuthField("Join or invite code", code, { code = it.uppercase().take(12) }, KeyboardType.Text, null,
+                                "A personal email needs a code from the club that invited you, like 7F3A-91C2. With a school email you don't need one.")
+                        }
                         state.error?.let { NoticeCard("Couldn't continue", it, Tone.DANGER) }
                         state.message?.let { NoticeCard("Check this", it, Tone.INFO) }
                         if (creating) PrimaryAction(if (state.busy) "Creating…" else "Create account", !state.busy) {
-                            attempted = true; if (errors.isEmpty()) vm.auth("signup", email, password)
+                            attempted = true; if (errors.isEmpty()) vm.auth("signup", email, password, code)
                         } else PrimaryAction(if (state.busy) "Signing in…" else "Sign in", !state.busy && email.isNotBlank() && password.isNotBlank()) {
                             vm.auth("signin", email, password)
                         }

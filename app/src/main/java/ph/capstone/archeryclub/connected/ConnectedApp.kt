@@ -94,9 +94,10 @@ fun ConnectedApp(vm:SystemViewModel){
     val workspace=state.workspace
     if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")},problem=state.problem);return}
     // Several clubs (migration 050): a new account picks its club before anything else.
-    var inviteFromChooser by rememberSaveable{mutableStateOf(false)}
+    // Signed up with an interclub invite code (migration 053): go straight to joining the event with it filled in.
+    var inviteFromChooser by rememberSaveable{mutableStateOf(state.pendingInvite!=null)}
     if(needsClub(workspace)){
-        if(inviteFromChooser)PartnerClaimScreen(workspace,state.busy,snackbar,vm,{inviteFromChooser=false}){inviteFromChooser=false}
+        if(inviteFromChooser)PartnerClaimScreen(workspace,state.busy,snackbar,vm,{inviteFromChooser=false},state.pendingInvite.orEmpty()){inviteFromChooser=false}
         else ChooseClubScreen(workspace,state,vm,snackbar){inviteFromChooser=true}
         return
     }

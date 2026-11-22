@@ -266,7 +266,7 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onJoinCodes: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     // Same lines as the full activity log (who was affected, sign-ins hidden), just the latest few.
@@ -323,6 +323,7 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         DeskLabel("Accounts and history")
         RowGroup {
             GroupRow("users", "Accounts", "Membership, roles and sign-in", onClick = onAccounts)
+            GroupRow("qr", "Join codes", "For alumni and others without a school email", onClick = onJoinCodes)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
             GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
             GroupRow("doc", "Full activity log", "Who changed what, and when", divider = false, onClick = onLog)

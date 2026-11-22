@@ -262,9 +262,12 @@ fun ApplicationScreen(
 // ------------------------------------------------------------------ officer
 
 @Composable
-fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit, onRecords: () -> Unit) =
+fun ApplicationsQueueScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit,
+                            onJoinCodes: () -> Unit = {}, onRecords: () -> Unit) =
     ScreenShell("Applications", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        // Alumni and others with only a personal email get in with a join code from this desk (migration 053).
+        RowGroup { GroupRow("qr", "Join codes", "For alumni and others without a school email", divider = false, onClick = onJoinCodes) }
         val queue = applicationsToReview(workspace)
         val decided = decidedApplications(workspace)
         val me = workspace.text("user_id")
