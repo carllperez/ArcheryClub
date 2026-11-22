@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
+import ph.capstone.archeryclub.ui.InfoCard
 import ph.capstone.archeryclub.ui.ScreenShell
 
 /* Many clubs, one app (migration 050). Each account belongs to one club; the platform administrator creates clubs. */
