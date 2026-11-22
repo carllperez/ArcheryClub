@@ -31,11 +31,13 @@ private fun DeskChip(text: String) {
 @Composable
 fun RolesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit, onOpen: (String) -> Unit) {
     val roles = roleViews(workspace, Instant.now())
+    val locked = rolesLocked(workspace)
     ScreenShell("Roles & access", onBack, snackbar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (locked) NoticeCard("Shared by every club", "These roles and their desks are the same in every club, so only the platform administrator changes them. You decide who holds each role in Officers and terms.", Tone.NEUTRAL)
         Text("Each role unlocks the desks you tick. Every officer is also a member, so they keep their own Home, training and payments.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DeskLabel("Roles", "+ New role") { onOpen("new") }
+        if (locked) DeskLabel("Roles") else DeskLabel("Roles", "+ New role") { onOpen("new") }
         RowGroup {
             roles.forEachIndexed { i, r ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(r.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -65,7 +67,8 @@ fun RoleEditScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: S
     val roles = roleViews(workspace, Instant.now())
     val role = roles.find { it.id == id }
     val isNew = role == null
-    if (vm == null || (role == null && id != "new")) { ScreenShell("Role", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }; return }
+    val locked = rolesLocked(workspace)
+    if (vm == null || (role == null && id != "new") || (locked && isNew)) { ScreenShell("Role", onBack, snackbar) { EmptyState("This page is unavailable", "Go back and try again.") }; return }
     var name by rememberSaveable(id) { mutableStateOf(role?.name.orEmpty()) }
     // Saved as one comma-separated string so it survives rotation.
     var picked by rememberSaveable(id) { mutableStateOf(role?.permissions.orEmpty().joinToString(",")) }
@@ -86,18 +89,22 @@ fun RoleEditScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: S
         }) { confirming = false; onBack() }
     }
 
-    ScreenShell(role?.name ?: "New role", onBack, snackbar,
-        actions = { if (role?.changedFromDefault == true) TextButton(onClick = { resetting = true }, enabled = !busy) { Text("Reset", fontWeight = FontWeight.ExtraBold) } },
-        stickyAction = {
+    val saveBar: @Composable ColumnScope.() -> Unit = {
             Button(onClick = { if (isNew || (role!!.holders.isEmpty() && warnings.isEmpty())) save() else confirming = true }, enabled = canSave,
                 modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Club.forestDeep)) {
                 Text(if (isNew) "Create role" else "Save changes", fontWeight = FontWeight.ExtraBold)
             }
-        }) {
+    }
+
+    ScreenShell(role?.name ?: "New role", onBack, snackbar,
+        actions = { if (!locked && role?.changedFromDefault == true) TextButton(onClick = { resetting = true }, enabled = !busy) { Text("Reset", fontWeight = FontWeight.ExtraBold) } },
+        stickyAction = if (locked) null else saveBar) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (!locked && allClubs(workspace).size > 1) NoticeCard("Applies to every club", "Roles are shared, so this change reaches every club's holders of this role, not just yours.", Tone.WARNING)
+        if (locked) NoticeCard("View only", "Roles are shared by every club, so only the platform administrator changes what a role can open.", Tone.NEUTRAL)
         RaisedCard { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedTextField(name, { name = it.take(60) }, label = { Text("Role name") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            OutlinedTextField(name, { name = it.take(60) }, readOnly = locked, label = { Text("Role name") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 isError = nameTaken, supportingText = { if (nameTaken) Text("Another role already has this name.") })
             if (role != null) Text(if (role.holders.isEmpty()) "Nobody holds this role right now." else "Held by ${role.holders.joinToString(", ")}. Changes reach them on their next refresh.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -107,13 +114,13 @@ fun RoleEditScreen(workspace: JsonObject, id: String, busy: Boolean, snackbar: S
             DESKS.forEachIndexed { i, d ->
                 val on = d.permission in chosen
                 val toggle = { picked = (if (on) chosen - d.permission else chosen + d.permission).joinToString(",") }
-                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { toggle() }.padding(horizontal = 14.dp, vertical = 9.dp),
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy && !locked) { toggle() }.padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(d.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
                         Text(d.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(on, { toggle() }, enabled = !busy, colors = SwitchDefaults.colors(checkedTrackColor = Club.forest))
+                    Switch(on, { toggle() }, enabled = !busy && !locked, colors = SwitchDefaults.colors(checkedTrackColor = Club.forest))
                 }
                 if (i < DESKS.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
             }

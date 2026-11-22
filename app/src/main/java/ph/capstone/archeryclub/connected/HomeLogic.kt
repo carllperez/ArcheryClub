@@ -66,6 +66,8 @@ fun needsClub(workspace: JsonObject): Boolean {
 }
 fun isPlatformAdmin(workspace: JsonObject): Boolean =
     workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }?.text("platform_admin") == "true"
+/** Role definitions are shared by every club (migration 050): with several clubs only the platform administrator edits them. */
+fun rolesLocked(workspace: JsonObject): Boolean = allClubs(workspace).size > 1 && !isPlatformAdmin(workspace)
 /** The club's own name for headings and messages, falling back to the club's settings. */
 fun clubName(workspace: JsonObject): String = myClub(workspace)?.text("name")?.ifBlank { null }
     ?: workspace.records("settings").firstOrNull()?.text("club_name")?.ifBlank { null } ?: "your club"
