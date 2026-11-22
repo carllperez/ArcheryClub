@@ -42,6 +42,34 @@ private fun openPrivate(vm: SystemViewModel, context: Context, path: String) =
 private fun StepLabel(text: String) =
     Text(text.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+/** GCash's Android package. Declared under <queries> in the manifest so Android 11+ lets us find it. */
+private const val GCASH_PACKAGE = "com.globe.gcash.android"
+
+/**
+ * Copies the club's number, then opens GCash so the member can go straight to Send Money and paste it.
+ * GCash has no public link that pre-fills a transfer, so copy + open is as far as an app outside GCash can go.
+ * If GCash isn't installed, the Play Store page opens instead.
+ */
+@Composable
+private fun OpenGcashButton(number: String) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    CardButton("Copy number & open GCash", Modifier.fillMaxWidth(), primary = true) {
+        clipboard.setText(AnnotatedString(number.replace(" ", "")))
+        val launch = context.packageManager.getLaunchIntentForPackage(GCASH_PACKAGE)
+        if (launch != null) {
+            android.widget.Toast.makeText(context, "Number copied. In GCash, tap Send and paste it.", android.widget.Toast.LENGTH_LONG).show()
+            context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } else {
+            android.widget.Toast.makeText(context, "Number copied. GCash isn't installed on this phone.", android.widget.Toast.LENGTH_LONG).show()
+            val store = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GCASH_PACKAGE")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(store) }.onFailure {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$GCASH_PACKAGE")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PayToRow(icon: String, title: String, number: String) {
     val clipboard = LocalClipboardManager.current
@@ -146,7 +174,10 @@ fun MembershipFeeStep(workspace: JsonObject, fee: FeeView, busy: Boolean, vm: Sy
                 StepLabel("1 · Send ${peso(fee.amount)} to the club")
                 if (details.isEmpty) Text("The club hasn't added its GCash or bank details yet. Check back soon, or ask an officer where to pay.",
                     style = MaterialTheme.typography.bodySmall)
-                if (details.hasGcash) PayToRow("money", "GCash" + details.gcashName.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), details.gcashNumber)
+                if (details.hasGcash) {
+                    PayToRow("money", "GCash" + details.gcashName.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), details.gcashNumber)
+                    OpenGcashButton(details.gcashNumber)
+                }
                 if (details.hasBank) PayToRow("settings", listOf(details.bankName, details.bankAccountName).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Bank transfer" }, details.bankAccountNumber)
                 Text("GCash, Maya or a bank transfer all work, as long as the receipt shows a reference number.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
