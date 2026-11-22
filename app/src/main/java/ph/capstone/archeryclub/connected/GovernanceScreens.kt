@@ -178,7 +178,7 @@ fun ElectionScreen(
             DeskLabel("Election officer")
             RowGroup {
                 if (status == "draft") GroupRow("settings", "Edit details and dates") { onStart("update_election", e) }
-                GroupRow("check", "Change stage", electionStageLabel(status)) { onStart("set_election_status", e) }
+                GroupRow("check", "Change stage", changeStageHint(e, Instant.now())) { onStart("set_election_status", e) }
                 if (status in setOf("draft", "announced")) GroupRow("users", "Add an eligible voter", "${eligible.size} on the list") { onStart("confirm_voter", e) }
                 if (status == "closed" && e.text("method") != "digital") GroupRow("doc", "Record paper or external results") { onStart("record_external_results", e) }
                 if (status == "closed") GroupRow("vote", "Confirm official results") { onStart("confirm_results", e) }

@@ -295,7 +295,7 @@ fun FinanceDeskScreen(
     var editingPayTo by remember { mutableStateOf(false) }
     val payTo = paymentDetails(workspace.records("settings").firstOrNull())
     val records = workspace.records("financial_records"); val approvals = workspace.records("financial_approvals")
-    val funds = fundsSummary(records)
+    val funds = serverFunds(workspace) ?: fundsSummary(records)
     val toVerify = financeToVerify(workspace)
     val myOffice = if (president) "president" else "finance"
     val toApprove = toVerify.filter { it.text("kind") != "payment" && myOffice in missingApprovals(it, approvals) }
@@ -381,7 +381,13 @@ fun FinanceDeskScreen(
             }
             else -> {
                 val ledger = records.filter { it.text("status") == "verified" }.sortedByDescending { it.text("verified_at") }
-                if (ledger.isEmpty()) EmptyState("No verified records yet", "Verified payments and expenses build the ledger.")
+                // The President sees spending line by line; members' payments only as a total (their receipts stay with the Treasurer).
+                hiddenPayments(workspace, records)?.let { (count, amount) ->
+                    NoticeCard("Member payments: ${peso(amount)}", "$count verified payment${if (count == 1) "" else "s"}, counted in the balance above. " +
+                        "Who paid and their receipts stay with the Treasurer.", Tone.INFO)
+                }
+                if (ledger.isEmpty()) EmptyState(if (finance) "No verified records yet" else "No club spending yet",
+                    if (finance) "Verified payments and expenses build the ledger." else "Verified expenses and reimbursements appear here.")
                 if (ledger.isNotEmpty()) RowGroup {
                     ledger.take(25).forEachIndexed { i, r ->
                         val incoming = r.text("kind") == "payment"

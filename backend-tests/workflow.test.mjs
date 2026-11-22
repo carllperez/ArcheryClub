@@ -1014,3 +1014,17 @@ test('Developer accounts 21 Nov: the flagged developer account can hold roles wi
   assert.ok(s.some(x=>x.user_id===ids.devacct&&x.status==='Developer'));
  });
 });
+test('Club funds 22 Nov: President and Treasurer get the same verified totals; the President still cannot read members\' payments',async()=>{
+ await grant('officer','treasurer');await grant('successor','president');
+ await db.query("insert into app_private.financial_records(user_id,kind,purpose,amount,reference,status,verified_at) values($1,'payment','Membership fee',800,'7000000000048',$2,now())",[ids.other,'verified']);
+ const expected=(await db.query("select coalesce(sum(amount) filter (where kind='payment'),0)::float8 r,coalesce(sum(amount) filter (where kind in ('expense','reimbursement')),0)::float8 s,count(*) filter (where kind='payment')::int n from app_private.financial_records where status='verified'")).rows[0];
+ assert.ok(expected.r>=800);
+ const ws=name=>as(name,async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ const treasurer=await ws('officer'),president=await ws('successor'),member=await ws('other');
+ for(const w of [treasurer,president]){
+  assert.equal(Number(w.fund_totals.received),expected.r);assert.equal(Number(w.fund_totals.spent),expected.s);assert.equal(Number(w.fund_totals.payments),expected.n);
+ }
+ assert.equal(president.financial_records.filter(r=>r.kind==='payment'&&r.user_id!==ids.successor).length,0,'payment rows stay with the Treasurer');
+ assert.ok(treasurer.financial_records.some(r=>r.kind==='payment'&&r.user_id===ids.other));
+ assert.equal(member.fund_totals,null,'members get no club totals');
+});

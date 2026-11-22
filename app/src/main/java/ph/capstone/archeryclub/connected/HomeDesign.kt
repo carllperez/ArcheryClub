@@ -312,7 +312,9 @@ fun HeroStats(stats: List<Pair<String, String>>) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         stats.forEach { (value, label) ->
             Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = .13f)).padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Text(value, color = Color.White, style = MaterialTheme.typography.titleLarge)
+                val t = MaterialTheme.typography
+                Text(value, color = Color.White, maxLines = 1, softWrap = false,
+                    style = when (statSizeStep(value, 5)) { 0 -> t.titleLarge; 1 -> t.titleMedium; else -> t.titleSmall })
                 Text(label, color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodySmall)
             }
         }

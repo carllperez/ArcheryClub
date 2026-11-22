@@ -150,6 +150,23 @@ fun financeStatus(status: String): Pair<String, Tone> = when (status) {
 }
 
 data class FundsSummary(val received: Double, val spent: Double) { val balance get() = received - spent }
+/** The club's totals as the server counts them (migration 048). The President may not read members' payment records
+ *  (only expenses and reimbursements), so adding up the visible rows gave them ₱0 while the Treasurer saw ₱11,200
+ *  (22 Nov testing). The server sends the totals to both offices; null for anyone else or an older backend. */
+fun serverFunds(workspace: JsonObject): FundsSummary? {
+    val t = workspace["fund_totals"] as? JsonObject ?: return null
+    return FundsSummary(t.amount("received"), t.amount("spent"))
+}
+
+/** Verified payments the reader can't see one by one (the President's ledger): count and amount, from the server totals. */
+fun hiddenPayments(workspace: JsonObject, visible: List<JsonObject>): Pair<Int, Double>? {
+    val t = workspace["fund_totals"] as? JsonObject ?: return null
+    val seen = visible.filter { it.text("kind") == "payment" && it.text("status") == "verified" }
+    val count = (t.text("payments").toIntOrNull() ?: 0) - seen.size
+    val amount = t.amount("received") - seen.sumOf { it.amount() }
+    return if (count > 0) count to amount else null
+}
+
 /** Verified money only: payments in, expenses and reimbursements out. */
 fun fundsSummary(records: List<JsonObject>): FundsSummary {
     val verified = records.filter { it.text("status") == "verified" }
@@ -292,6 +309,26 @@ fun electionStageLabel(e: JsonObject, now: Instant): String = when {
     e.text("status") == "announced" && !electionStageOpen(e, now) -> "Candidacy closed"
     e.text("status") == "voting" && !electionStageOpen(e, now) -> "Voting closed"
     else -> electionStageLabel(e.text("status"))
+}
+
+/** Subtitle of the officer's "Change stage" row. It read the stored stage only ("Candidacy open") while the header,
+ *  which checks the deadline, said "Candidacy closed" (22 Nov testing). Now both agree, and a passed deadline says
+ *  what the officer should move it to. */
+fun changeStageHint(e: JsonObject, now: Instant): String {
+    val label = electionStageLabel(e, now)
+    return when {
+        e.text("status") == "announced" && !electionStageOpen(e, now) -> "$label · move it to Voting"
+        e.text("status") == "voting" && !electionStageOpen(e, now) -> "$label · move it to Counting"
+        else -> "Now: $label"
+    }
+}
+
+/** Big numbers in small tiles: the text steps down a size as it gets longer, so "₱11,200" or "181/228" stays on one line
+ *  on a small phone (22 Nov). 0 = the tile's normal size, 1 = one step smaller, 2 = two steps smaller. */
+fun statSizeStep(value: String, roomy: Int): Int = when {
+    value.length <= roomy -> 0
+    value.length <= roomy + 2 -> 1
+    else -> 2
 }
 
 /** Four-step timeline: Announced → Candidates → Voting → Results. */

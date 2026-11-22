@@ -100,7 +100,9 @@ fun StatTile(value: String, label: String, modifier: Modifier = Modifier, tone: 
     Surface(modifier.clubCard().clip(shape).then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier), shape = shape,
         color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.surface else c.container) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, style = MaterialTheme.typography.headlineMedium, color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.onSurface else c.content)
+            val t = MaterialTheme.typography
+            Text(value, maxLines = 1, softWrap = false, style = when (statSizeStep(value, 4)) { 0 -> t.headlineMedium; 1 -> t.headlineSmall; else -> t.titleLarge },
+                color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.onSurface else c.content)
             Text(label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold,
                 color = if (tone == Tone.NEUTRAL) MaterialTheme.colorScheme.onSurfaceVariant else c.content, maxLines = 2)
         }

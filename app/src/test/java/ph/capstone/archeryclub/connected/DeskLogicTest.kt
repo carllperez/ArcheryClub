@@ -532,4 +532,31 @@ class DeskLogicTest {
         assertEquals(emptyList<String>(), filterOfficers(all, "treas", OfficerFilter.RENEW).map { it.name })
         assertEquals("1 officer · all terms current", officerSummary(all.filter { it.worst == TermState.ACTIVE }.take(1)).line)
     }
+
+    @Test fun presidentSeesTheSameBalanceAsTheTreasurer() {
+        val totals = JsonObject(mapOf("received" to JsonPrimitive("11200"), "spent" to JsonPrimitive("0"), "payments" to JsonPrimitive("14")))
+        // The President's rows: no member payments, only spending (none yet).
+        val president = JsonObject(ws() + ("fund_totals" to totals))
+        assertTrue(kotlin.math.abs(serverFunds(president)!!.balance - 11200.0) < 0.001)
+        assertEquals(14 to 11200.0, hiddenPayments(president, emptyList()))
+        // The Treasurer sees every payment, so nothing is hidden.
+        val rows = (1..14).map { obj("kind" to "payment", "status" to "verified", "amount" to "800") }
+        assertNull(hiddenPayments(president, rows))
+        // An older backend without totals: fall back to adding up the rows.
+        assertNull(serverFunds(ws()))
+    }
+
+    @Test fun changeStageAgreesWithTheHeaderOnceCandidacyCloses() {
+        val now = Instant.parse("2026-11-22T12:00:00Z")
+        val passed = obj("status" to "announced", "candidacy_closes" to "2026-11-20T00:00:00Z")
+        assertEquals("Candidacy closed", electionStageLabel(passed, now))
+        assertEquals("Candidacy closed · move it to Voting", changeStageHint(passed, now))
+        assertEquals("Now: Candidacy open", changeStageHint(obj("status" to "announced", "candidacy_closes" to "2026-12-01T00:00:00Z"), now))
+        assertEquals("Voting closed · move it to Counting", changeStageHint(obj("status" to "voting", "voting_closes" to "2026-11-21T00:00:00Z"), now))
+    }
+
+    @Test fun longNumbersStepDownASize() {
+        assertEquals(0, statSizeStep("₱800", 5)); assertEquals(1, statSizeStep("₱11,200", 5)); assertEquals(2, statSizeStep("₱1,234,500", 5))
+        assertEquals(0, statSizeStep("12", 4)); assertEquals(1, statSizeStep("12/40", 4)); assertEquals(2, statSizeStep("181/228", 4))
+    }
 }
