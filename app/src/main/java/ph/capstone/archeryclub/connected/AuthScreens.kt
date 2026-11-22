@@ -101,7 +101,7 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
                 RaisedCard(radius = 24.dp) {
                     Column(Modifier.padding(20.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         AuthField("Email", email, { email = it }, KeyboardType.Email, err("email"),
-                            if (creating) "Use your school email so officers can recognise you." else "")
+                            if (creating) "Use your school email (like @dlsu.edu.ph or @up.edu.ph). It decides which club you join." else "")
                         AuthField("Password", password, { password = it }, KeyboardType.Password, err("password"),
                             if (creating) "At least 8 characters, with letters and a number." else "", secret = true)
                         AnimatedVisibility(creating) {

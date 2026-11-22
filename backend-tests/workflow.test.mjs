@@ -1056,9 +1056,9 @@ test('Clubs 23 Nov: a second club is created by the platform administrator and k
  // Only the platform administrator creates clubs.
  await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'upadmin@up.example.test'})],'$1::jsonb'),/platform administrator/);
  await db.query('update app_private.profiles set platform_admin=true where id=$1',[ids.admin]);
- await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'applicant@example.test'})],'$1::jsonb'),/already belongs to a club/);
- await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',admin_email:'nobody@example.test'})],'$1::jsonb'),/No account uses/);
- const up=(await rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',short_name:'UPAC',school:'University of the Philippines',admin_email:'upadmin@up.example.test'})],'$1::jsonb')).id;
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',email_domain:'example.test',admin_email:'applicant@example.test'})],'$1::jsonb'),/already belongs to a club/);
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',email_domain:'example.test',admin_email:'nobody@example.test'})],'$1::jsonb'),/No account uses/);
+ const up=(await rpc('admin','create_club',[JSON.stringify({name:'UP Archery Club',short_name:'UPAC',school:'University of the Philippines',email_domain:'up.example.test',admin_email:'upadmin@up.example.test'})],'$1::jsonb')).id;
  await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'up archery club',admin_email:'upnew@up.example.test'})],'$1::jsonb'),/already exists/);
  const ws=name=>as(name,async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
  // The UP administrator sees UP's blank settings and none of DLSU's people, money or records.
@@ -1088,12 +1088,10 @@ test('Clubs 23 Nov: a second club is created by the platform administrator and k
  // A DLSU officer can't reach UP's event by its id either.
  await assert.rejects(()=>command('officer','save_event',{id:ev.id,version:1,title:'Hijack',description:'x',venue:'x',starts_at:new Date(Date.now()+48*3600e3).toISOString(),ends_at:new Date(Date.now()+50*3600e3).toISOString(),registration_opens:new Date(Date.now()-3600e3).toISOString(),registration_closes:new Date(Date.now()+24*3600e3).toISOString(),capacity:10}));
  assert.equal((await db.query('select title from app_private.events where id=$1',[ev.id])).rows[0].title,'UP Open Shoot');
- // With two clubs, a new account has no club until it picks one; a DLSU member can't switch.
+ // A new @up account lands in UP by its email domain (migration 051); a DLSU member can't switch.
  await as('upnew',()=>db.exec('select public.initialize_account()'));
- assert.equal((await ws('upnew')).club,null);
- assert.equal((await ws('upnew')).settings.length,0);
- await rpc('upnew','join_club',[JSON.stringify({club_id:up})],'$1::jsonb');
  assert.equal((await ws('upnew')).club.id,up);
+ assert.equal((await ws('upnew')).settings.length,1);
  await denied(()=>rpc('applicant','join_club',[JSON.stringify({club_id:up})],'$1::jsonb'),/already belongs/);
  // Interclub across clubs: UP's administrator joins a DLSU event with a code, stays in UP, and adds an archer that
  // DLSU sees; UP still sees no other DLSU event.
@@ -1125,5 +1123,40 @@ test('Clubs 23 Nov: a second club is created by the platform administrator and k
  await denied(()=>command('upadmin','set_membership_fee',{amount:500,due_days:0}),/1 to 120/);
  // The shared role catalogue can't be changed by one club's administrator once there are several clubs.
  await denied(()=>command('upadmin','define_role',{role_id:'treasurer',name:'Bursar',permissions:['finance']}),/platform administrator|shared/);
+ await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
+});
+test('Club domains 23 Nov: the email domain decides the club, and an account can never cross into another school\'s club',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ await db.query('update app_private.profiles set platform_admin=true where id=$1',[ids.admin]);
+ await rpc('admin','set_club_domain',[JSON.stringify({club_id:up,email_domain:'@UP.example.test'})],'$1::jsonb');
+ await rpc('admin','set_club_domain',[JSON.stringify({club_id:dlsu,email_domain:'example.test'})],'$1::jsonb');
+ assert.equal((await db.query('select email_domain from app_private.clubs where id=$1',[up])).rows[0].email_domain,'up.example.test');
+ await denied(()=>rpc('upadmin','set_club_domain',[JSON.stringify({club_id:up,email_domain:'x.test'})],'$1::jsonb'),/platform administrator/);
+ const make=async(name,id,email)=>{ids[name]=id;await db.query('insert into auth.users values($1,$2,now())',[id,email]);await as(name,()=>db.exec('select public.initialize_account()'));
+  return (await db.query('select club_id from app_private.profiles where id=$1',[id])).rows[0].club_id;};
+ // New accounts land in their domain's club; a sub-domain counts; the longest domain wins (up.example.test over example.test).
+ assert.equal(await make('upstudent','00000000-0000-4000-8000-0000000000d1','juan@up.example.test'),up);
+ assert.equal(await make('dlsustudent','00000000-0000-4000-8000-0000000000d2','ana@example.test'),dlsu);
+ assert.equal(await make('dlsusub','00000000-0000-4000-8000-0000000000d3','ben@student.example.test'),dlsu);
+ assert.equal(await make('outsider','00000000-0000-4000-8000-0000000000d4','x@gmail.test'),null);
+ // No crossing: joining, being moved, or an outsider joining a club with a domain.
+ await denied(()=>rpc('upstudent','join_club',[JSON.stringify({club_id:dlsu})],'$1::jsonb'),/can.t join|only for its own school|already belongs/);
+ await denied(()=>rpc('outsider','join_club',[JSON.stringify({club_id:up})],'$1::jsonb'),/can.t join|only for its own school/);
+ await assert.rejects(()=>db.query('update app_private.profiles set club_id=$1 where id=$2',[dlsu,ids.upstudent]),/only for its own school/);
+ // Creating a club: the domain is required and the first administrator's email must be on it.
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'Ateneo Archery Club',admin_email:'ana@example.test'})],'$1::jsonb'),/email domain/);
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'Ateneo Archery Club',email_domain:'ateneo.example.test',admin_email:'ana@example.test'})],'$1::jsonb'),/needs an @ateneo/);
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'Ateneo Archery Club',email_domain:'up.example.test',admin_email:'juan@up.example.test'})],'$1::jsonb'),/already uses/);
+ ids.ateneoadmin='00000000-0000-4000-8000-0000000000d5';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.ateneoadmin,'karl@ateneo.example.test']);
+ await as('ateneoadmin',()=>db.exec('select public.initialize_account()'));
+ const at=(await rpc('admin','create_club',[JSON.stringify({name:'Ateneo Archery Club',school:'Ateneo',email_domain:'ateneo.example.test',admin_email:'karl@ateneo.example.test',theme:'blue'})],'$1::jsonb')).id;
+ const ws=await as('ateneoadmin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(ws.club.id,at); assert.equal(ws.club.theme,'blue'); assert.equal(ws.club.email_domain,'ateneo.example.test');
+ // A partner-only guest (account_type partner) still works as the host club's guest whatever the domain.
+ await db.query("update app_private.profiles set account_type='partner', club_id=$1 where id=$2",[dlsu,ids.outsider]);
+ // Put the fixtures back for any later test.
+ await db.query('update app_private.clubs set email_domain=null');
  await db.query('update app_private.profiles set platform_admin=false where id=$1',[ids.admin]);
 });

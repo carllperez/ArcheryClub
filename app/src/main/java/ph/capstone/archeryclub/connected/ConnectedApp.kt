@@ -94,7 +94,12 @@ fun ConnectedApp(vm:SystemViewModel){
     val workspace=state.workspace
     if(workspace==null){ClubSplash(state.busy,state.refreshError,onRetry=vm::refresh,onSignOut={vm.auth("signout","","")},problem=state.problem);return}
     // Several clubs (migration 050): a new account picks its club before anything else.
-    if(needsClub(workspace)){ChooseClubScreen(workspace,state,vm,snackbar);return}
+    var inviteFromChooser by rememberSaveable{mutableStateOf(false)}
+    if(needsClub(workspace)){
+        if(inviteFromChooser)PartnerClaimScreen(workspace,state.busy,snackbar,vm,{inviteFromChooser=false}){inviteFromChooser=false}
+        else ChooseClubScreen(workspace,state,vm,snackbar){inviteFromChooser=true}
+        return
+    }
     val permissions=workspace["permissions"]?.jsonArray?.map{it.jsonPrimitive.content}.orEmpty().toSet()
     val user=workspace.text("user_id")
     val isMember=workspace.records("memberships").any{it.text("user_id")==user&&it.text("status")=="Active"}

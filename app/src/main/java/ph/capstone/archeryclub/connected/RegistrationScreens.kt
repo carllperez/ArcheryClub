@@ -110,7 +110,9 @@ fun ApplicationScreen(
     // Students from other schools can apply (migration 049): "Another school" asks for its name and their own ID format.
     // The club's own school comes first (migration 050): DLSU's club asks for a DLSU ID, a UP club for a UP one.
     val homeSchool = myClub(workspace)?.text("school")?.ifBlank { null } ?: DLSU
-    var otherSchool by rememberSaveable(app?.text("version")) { mutableStateOf(initial["school"].orEmpty().isNotBlank() && !sameSchool(initial["school"], homeSchool)) }
+    // A club with an email domain is only for its own school (migration 051), so its form has no "Another school".
+    val schoolLocked = myClub(workspace)?.text("email_domain").orEmpty().isNotBlank()
+    var otherSchool by rememberSaveable(app?.text("version")) { mutableStateOf(!schoolLocked && initial["school"].orEmpty().isNotBlank() && !sameSchool(initial["school"], homeSchool)) }
     val dlsuRules = !otherSchool && isDlsu(homeSchool)
     val errors = applicationErrors(values, otherSchool, dlsuRules)
     val changed = values.toMap() != initial
@@ -178,7 +180,8 @@ fun ApplicationScreen(
             RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepHeader(1, "Your details", view.id.isNotBlank() && errors.isEmpty() && !changed)
             Text("School", style = MaterialTheme.typography.labelLarge)
-            ChoiceChips(listOf("home" to homeSchool, "other" to "Another school"), if (otherSchool) "other" else "home") {
+            if (schoolLocked) Text(homeSchool, style = MaterialTheme.typography.titleSmall)
+            else ChoiceChips(listOf("home" to homeSchool, "other" to "Another school"), if (otherSchool) "other" else "home") {
                 if (editable && !busy) {
                     otherSchool = it == "other"
                     values["school"] = if (otherSchool) values["school"].orEmpty().takeUnless { s -> sameSchool(s, homeSchool) }.orEmpty() else homeSchool
