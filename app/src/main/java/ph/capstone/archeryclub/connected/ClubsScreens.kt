@@ -144,7 +144,7 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
             }
         }
         approving?.let { r ->
-            ConfirmDialog("Create ${r.text("name")}?", "${r.text("requester")} becomes its first administrator, and every @${r.text("email_domain")} account joins it.",
+            ConfirmDialog("Create ${r.text("name")}?", "${r.text("requester")} becomes its only administrator. Anyone else who signs up with @${r.text("email_domain")} lands in this club as an ordinary applicant, and its officers approve them.",
                 "Approve", onConfirm = {
                     approving = null
                     vm?.save("decide_club_request", buildJsonObject { put("p_data", buildJsonObject { put("id", r.text("id")); put("decision", "approve") }) })
