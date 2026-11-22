@@ -266,7 +266,7 @@ private fun termSeed(): JsonObject {
 
 @Composable
 fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostState, permissions: Set<String>, onBack: () -> Unit, onStart: (String, JsonObject) -> Unit, onRoles: () -> Unit = {}, onSetup: () -> Unit = {}, onInventory: () -> Unit = {}, onAssign: (String) -> Unit = {},
-                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onJoinCodes: () -> Unit = {}, onRecords: () -> Unit) {
+                onSave: (String, JsonObject, () -> Unit) -> Unit = { _, _, _ -> }, onLog: () -> Unit = {}, onAccounts: () -> Unit = {}, onOfficers: (String) -> Unit = {}, onJoinCodes: () -> Unit = {}, onClubs: () -> Unit = {}, onRecords: () -> Unit) {
     val settings = workspace.records("settings").firstOrNull()
     val officers = officerViews(workspace, Instant.now())
     // Same lines as the full activity log (who was affected, sign-ins hidden), just the latest few.
@@ -323,6 +323,12 @@ fun AdminScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostStat
         DeskLabel("Accounts and history")
         RowGroup {
             GroupRow("users", "Accounts", "Membership, roles and sign-in", onClick = onAccounts)
+            // Platform administrator only: every club, plus requests from schools that don't have one yet.
+            if (isPlatformAdmin(workspace)) {
+                val waiting = pendingClubRequests(workspace).size
+                GroupRow("users", "Clubs", if (waiting > 0) "$waiting club request${if (waiting == 1) "" else "s"} waiting" else "Every school's club and new club requests",
+                    tint = if (waiting > 0) Club.amberInk else Club.forest, onClick = onClubs)
+            }
             GroupRow("qr", "Join codes", "For alumni and others without a school email", onClick = onJoinCodes)
             GroupRow("settings", "Roles & access", "What each role opens", onClick = onRoles)
             GroupRow("box", "Inventory set-up", "Categories, their fields and places", onClick = onInventory)
