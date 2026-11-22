@@ -110,4 +110,17 @@ class RegistrationLogicTest {
         assertEquals("Regular member", categoryFor("Alumni", listOf("Regular member")))
         assertEquals(null, categoryFor("", club)); assertEquals(null, categoryFor("3rd year", listOf("Regular member")))
     }
+
+    @Test fun studentsFromOtherSchoolsCanApply() {
+        val ready = applicationView(ws("draft", listOf(doc("d1", "School ID"), doc("d2", "Medical clearance"))))
+        val ust = mapOf("full_name" to "Tomas Santos", "phone" to "09171234567", "sex" to "Male", "college" to "College of Science", "program" to "BS Biology",
+            "year_level" to "1st year", "school" to "University of Santo Tomas", "student_number" to "2021-12345")
+        assertEquals(emptyList<String>(), submitBlockers(ready, ust, true, otherSchool = true))
+        // A UST ID is fine for UST but not for DLSU, whose ID is 8 digits.
+        assertEquals(listOf(STUDENT_ID_HINT), submitBlockers(ready, ust + ("school" to DLSU), true, otherSchool = false))
+        assertEquals(listOf("Enter the name of your school."), submitBlockers(ready, ust + ("school" to ""), true, otherSchool = true))
+        assertEquals(listOf("Enter your student ID number."), submitBlockers(ready, ust + ("student_number" to ""), true, otherSchool = true))
+        assertTrue(isDlsu("")); assertTrue(isDlsu(" dlsu ")); assertTrue(!isDlsu("Ateneo de Manila University"))
+        assertEquals("2021-12345", idInput("2021-12345 ", false)); assertEquals("20211234", idInput("2021-12345", true))
+    }
 }

@@ -92,7 +92,16 @@ fun applicationView(workspace: JsonObject, application: JsonObject? = workspace.
     return ApplicationView(application, applicationStage(application?.text("status").orEmpty()), reqs, docs.filter { it.text("requirement") !in names })
 }
 
-const val APPLICATION_FIELDS = "full_name,phone,student_number,sex,college,program,year_level,emergency_contact_name,emergency_contact_phone,experience"
+const val APPLICATION_FIELDS = "school,full_name,phone,student_number,sex,college,program,year_level,emergency_contact_name,emergency_contact_phone,experience"
+/** Students from other schools can apply too (migration 049). A blank school means DLSU, as for older applications. */
+const val DLSU = "De La Salle University"
+fun isDlsu(school: String?): Boolean = school.isNullOrBlank() || school.trim().lowercase() in setOf("de la salle university", "dlsu", "dlsu manila")
+/** Other schools' ID numbers vary (2021-12345, A12345...): 4 to 20 letters, digits or dashes, as the server checks. */
+fun validOtherSchoolId(s: String): Boolean = Regex("^[A-Za-z0-9-]{4,20}$").matches(s.trim())
+const val OTHER_ID_HINT = "Your student ID number is 4 to 20 letters, numbers or dashes."
+/** What the ID box accepts while typing, by school. */
+fun idInput(s: String, dlsu: Boolean): String = if (dlsu) studentIdInput(s) else s.filter { it.isLetterOrDigit() || it == '-' }.take(20)
+
 /** DLSU colleges, by the short names students use. */
 val COLLEGES = listOf("CCS", "GCOE", "COS", "CLA", "RVR-COB", "SOE", "BAGCED", "TDCOL", "Other")
 val YEAR_LEVELS = listOf("1st year", "2nd year", "3rd year", "4th year", "5th year", "Graduate", "Alumni")
@@ -111,15 +120,22 @@ fun categoryFor(yearLevel: String, categories: List<String>): String? {
     }
 }
 
-/** Mirrors the server: name required (≤160); mobile numbers are Philippine mobiles; the ID number is 8 digits. */
-fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
+/** Mirrors the server: name required (≤160); mobile numbers are Philippine mobiles; a DLSU ID number is 8 digits.
+ *  [otherSchool]: the applicant picked "Another school", so the school's name is needed and their ID format applies. */
+fun applicationErrors(v: Map<String, String>, otherSchool: Boolean = !isDlsu(v["school"])): Map<String, String> = buildMap {
+    val school = v["school"].orEmpty().trim()
+    if (otherSchool && school.isEmpty()) put("school", "Enter the name of your school.")
+    else if (school.length > 120) put("school", "Keep it under 120 characters.")
     val name = v["full_name"].orEmpty().trim()
     if (name.isEmpty()) put("full_name", "Enter your full name as it appears on your school ID.")
     else if (name.length > 160) put("full_name", "Keep it under 160 characters.")
     val phone = v["phone"].orEmpty().trim()
     if (phone.isNotEmpty() && !validMobile(phone)) put("phone", MOBILE_HINT)
     val id = v["student_number"].orEmpty().trim()
-    if (id.isNotEmpty() && !validStudentId(id)) put("student_number", STUDENT_ID_HINT)
+    if (id.isNotEmpty()) when {
+        !otherSchool && !validStudentId(id) -> put("student_number", STUDENT_ID_HINT)
+        otherSchool && !validOtherSchoolId(id) -> put("student_number", OTHER_ID_HINT)
+    }
     if (v["experience"].orEmpty().length > 2000) put("experience", "Keep it under 2,000 characters.")
     if (v["program"].orEmpty().trim().length > 120) put("program", "Keep it under 120 characters.")
     val ecName = v["emergency_contact_name"].orEmpty().trim(); val ecPhone = v["emergency_contact_phone"].orEmpty().trim()
@@ -128,11 +144,11 @@ fun applicationErrors(v: Map<String, String>): Map<String, String> = buildMap {
 }
 
 /** Everything still standing between the applicant and a successful submission, in plain words. */
-fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean): List<String> = buildList {
+fun submitBlockers(view: ApplicationView, values: Map<String, String>, confirmed: Boolean, otherSchool: Boolean = !isDlsu(values["school"])): List<String> = buildList {
     if (!view.stage.editable) { add("This application is being checked."); return@buildList }
-    applicationErrors(values).values.forEach { add(it) }
+    applicationErrors(values, otherSchool).values.forEach { add(it) }
     if (values["phone"].orEmpty().isBlank()) add("Enter your mobile number.")
-    if (values["student_number"].orEmpty().isBlank()) add("Enter your DLSU ID number.")
+    if (values["student_number"].orEmpty().isBlank()) add(if (otherSchool) "Enter your student ID number." else "Enter your DLSU ID number.")
     if (values["sex"].orEmpty().isBlank()) add("Pick your sex.")
     if (values["college"].orEmpty().isBlank()) add("Pick your college.")
     if (values["program"].orEmpty().isBlank()) add("Enter your program.")

@@ -33,8 +33,9 @@ fun PartnerChoiceCard(onPartner: () -> Unit) = RaisedCard(onClick = onPartner) {
     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         IconChip("users", Tone.INFO)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Here for another university's club?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
-            Text("Partner club representatives don't apply for membership. Enter the invite code the host club sent you.",
+            // Wording since 23 Nov: students from other schools now apply above; this card is only for club representatives.
+            Text("Representing another school's club?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+            Text("For an interclub event, club representatives don't apply. Enter the invite code the host club sent you.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("›", fontSize = 22.sp)

@@ -1028,3 +1028,23 @@ test('Club funds 22 Nov: President and Treasurer get the same verified totals; t
  assert.ok(treasurer.financial_records.some(r=>r.kind==='payment'&&r.user_id===ids.other));
  assert.equal(member.fund_totals,null,'members get no club totals');
 });
+test('Other schools 23 Nov: an application records the school; DLSU keeps the 8-digit ID, other schools accept their own ID format',async()=>{
+ ids.uste='00000000-0000-4000-8000-0000000000e1';
+ await db.query('insert into auth.users values($1,$2,now())',[ids.uste,'uste@example.test']);
+ await as('uste',()=>db.exec('select public.initialize_account()'));
+ const base={full_name:'Tomas Santos',phone:'09171234567',sex:'Male',college:'College of Science',program:'BS Biology',year_level:'1st year',experience:''};
+ const save=(d,action='save_application')=>rpc('uste','save_application_details',[action,JSON.stringify(d)],'$1,$2::jsonb');
+ // A UST-style ID is refused for DLSU (the default school) ...
+ await denied(()=>save({...base,student_number:'2021-12345'}),/DLSU ID number is 8 digits/);
+ // ... and accepted once the school is UST.
+ const a=await save({...base,school:'University of Santo Tomas',student_number:'2021-12345'});
+ assert.equal(a.school,'University of Santo Tomas'); assert.equal(a.student_number,'2021-12345');
+ await denied(()=>save({...base,version:a.version,school:'University of Santo Tomas',student_number:'12'}),/4 to 20 letters/);
+ await denied(()=>save({...base,version:a.version,confirmed:true,school:'University of Santo Tomas',student_number:''},'submit_application'),/student ID number/);
+ // "dlsu" typed by hand still means DLSU and its ID rule.
+ const b=await save({...base,version:a.version,school:'dlsu',student_number:'12345678'});
+ assert.equal(b.school,'De La Salle University');
+ // Existing DLSU applications default to DLSU.
+ await db.exec('reset role');
+ assert.equal((await db.query('select school from app_private.applications where user_id=$1',[ids.newbie])).rows[0].school,'De La Salle University');
+});
