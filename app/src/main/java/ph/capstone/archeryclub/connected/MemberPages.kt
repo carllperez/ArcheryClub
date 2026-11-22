@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.ClubIcon
+import ph.capstone.archeryclub.ui.InfoCard
 import java.time.Instant
 
 /* The member's four tabs share one frame: a green hero at the top and the tab bar at the bottom.
