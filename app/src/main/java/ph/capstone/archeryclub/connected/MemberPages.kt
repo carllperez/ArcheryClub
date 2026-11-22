@@ -217,6 +217,7 @@ fun ApplicantHome(
     val known = fullName.takeUnless { it == "Club account" }.orEmpty()
     HeroScaffold(if (firstName(known).isBlank()) "Welcome to the club" else hello(java.time.LocalTime.now().hour, known), snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
         eyebrow = {
+            clubPill(workspace).takeIf { it.isNotBlank() }?.let { Pill(it, Color.White.copy(alpha = .18f), Color.White) }
             val fee = if (pendingPayment) membershipFeeDue(workspace, user, java.time.LocalDate.now()) else null
             when (fee?.let(::payStep)) {
                 PayStep.PAY -> Pill("APPROVED · PAY TO ACTIVATE", Club.lime, Club.forestDeep)

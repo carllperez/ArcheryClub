@@ -574,9 +574,18 @@ private val shortDay = java.time.format.DateTimeFormatter.ofPattern("MMM d", jav
 private fun day(i: Instant?) = i?.atZone(java.time.ZoneId.systemDefault())?.format(shortDay).orEmpty()
 
 /** The single most urgent item across all of a person's desks: overdue/danger first, then the biggest queue. */
+/** Club setup lines still to do, for an administrator; 0 for anyone else. A new club (migration 050) starts here. */
+fun setupRemaining(workspace: JsonObject, permissions: Set<String>): Int =
+    if ("administration" !in permissions) 0 else setupChecklist(workspace.records("settings").firstOrNull()).count { !it.done }
+
 fun officerFocus(workspace: JsonObject, permissions: Set<String>, now: Instant): OfficerFocus? {
     val q = officerQueues(workspace, permissions, now).filter { it.count > 0 }
-        .sortedWith(compareByDescending<QueueItem> { it.tone == Tone.DANGER }.thenByDescending { it.count }).firstOrNull() ?: return null
+        .sortedWith(compareByDescending<QueueItem> { it.tone == Tone.DANGER }.thenByDescending { it.count }).firstOrNull()
+        ?: return setupRemaining(workspace, permissions).takeIf { it > 0 }?.let { left ->
+            val lines = setupChecklist(workspace.records("settings").firstOrNull())
+            OfficerFocus("CLUB SETUP", "Set up your club · ${lines.size - left} of ${lines.size} done",
+                "Requirements, categories and fees your members will see. Next: ${lines.first { !it.done }.title.lowercase()}.", "club_setup", "Open club setup")
+        }
     val user = workspace.text("user_id")
     val more = if (q.count > 1) " · ${q.count - 1} more after this" else ""
     return when (q.label) {
@@ -654,8 +663,8 @@ fun setupChecklist(settings: JsonObject?): List<SetupLine> {
 
 /** Suggestions from the club bylaws (revised August 2024) that the list doesn't have yet. */
 fun setupSuggestions(key: String, current: List<String>): List<String> = when (key) {
-    "application_requirements" -> listOf("Proof of DLSU affiliation (ID)", "Mentee training completion or evaluation result")
-    "renewal_requirements" -> listOf("Proof of DLSU affiliation (ID)")
+    "application_requirements" -> listOf("Proof of school affiliation (ID)", "Mentee training completion or evaluation result")
+    "renewal_requirements" -> listOf("Proof of school affiliation (ID)")
     "membership_categories" -> listOf("Undergraduate", "Graduate", "Alumni", "Faculty/Staff")
     else -> emptyList()
 }.filter { s -> current.none { it.equals(s, ignoreCase = true) } }

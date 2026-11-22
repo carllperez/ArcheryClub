@@ -94,7 +94,7 @@ fun ClubLanding(
 ) {
     val user=workspace.text("user_id")
     val profile=workspace.records("profiles").find{it.text("id")==user}
-    val fullName=profile?.text("full_name").orEmpty().ifBlank{"Club account"}
+    val fullName=profile?.text("full_name").orEmpty().ifBlank{nameFromEmail(profile?.text("email"))}.ifBlank{"Club account"}
     val initials=fullName.split(Regex("\\s+")).filter{it.isNotBlank()}.take(2).joinToString(""){it.take(1)}.uppercase()
     val permissions=(workspace["permissions"] as? JsonArray).orEmpty().map{it.jsonPrimitive.content}.toSet()
     val membership=workspace.records("memberships").find{it.text("user_id")==user}

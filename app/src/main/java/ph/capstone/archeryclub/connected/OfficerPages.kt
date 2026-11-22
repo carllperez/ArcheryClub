@@ -59,9 +59,12 @@ fun OfficerHome(
     val events = workspace.records("events").filter { it.text("published") == "true" && it.text("archived") != "true" }.map { activityView(it, workspace, now) }
     val upcoming = events.filter { it.end?.isAfter(now) == true }.sortedBy { it.start }
     HeroScaffold(hello(LocalTime.now().hour, fullName), snackbar = snackbar, overlap = 44.dp, busy = state.busy, bottomBar = bottomBar,
-        eyebrow = { Pill(pill, Club.lime, Club.forestDeep) },
+        eyebrow = {
+            Pill(pill, Club.lime, Club.forestDeep)
+            clubPill(workspace).takeIf { it.isNotBlank() }?.let { Pill(it, androidx.compose.ui.graphics.Color.White.copy(alpha = .18f), androidx.compose.ui.graphics.Color.White) }
+        },
         heroExtra = {
-            Text(if (total == 0) "Nothing waiting on your desks" else "$total thing${if (total == 1) "" else "s"} need${if (total == 1) "s" else ""} you today",
+            Text(if (total == 0 && setupRemaining(workspace, permissions) > 0) "Your club setup isn't finished yet" else if (total == 0) "Nothing waiting on your desks" else "$total thing${if (total == 1) "" else "s"} need${if (total == 1) "s" else ""} you today",
                 style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = .9f))
         }) {
         state.refreshError?.let { NoticeCard("Refresh needed", it, Tone.WARNING); SecondaryAction("Try again", !state.busy, onRefresh) }

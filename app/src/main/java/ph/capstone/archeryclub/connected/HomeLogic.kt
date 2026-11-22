@@ -72,3 +72,9 @@ fun clubName(workspace: JsonObject): String = myClub(workspace)?.text("name")?.i
 
 /** The club's colour name ("green", "red", "blue"); signed-out screens and older backends use green. */
 fun clubTheme(workspace: JsonObject?): String = workspace?.let { myClub(it)?.text("theme") }?.ifBlank { null } ?: "green"
+/** A readable name from an email when the account has none yet: karl_perez@ateneo.edu.ph -> "Karl Perez". */
+fun nameFromEmail(email: String?): String = email.orEmpty().substringBefore('@').split(Regex("[._-]+"))
+    .filter { it.isNotBlank() && it.any(Char::isLetter) }.joinToString(" ") { w -> w.lowercase().replaceFirstChar { it.uppercase() } }
+/** The club's short name for a pill on Home (DLSU, UP, ADMU); blank with a single club, where it adds nothing. */
+fun clubPill(workspace: JsonObject): String = if (allClubs(workspace).size < 2) "" else
+    myClub(workspace)?.let { c -> c.text("short_name").ifBlank { c.text("name") } }.orEmpty().uppercase()

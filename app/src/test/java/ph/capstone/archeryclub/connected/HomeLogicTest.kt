@@ -1,6 +1,7 @@
 package ph.capstone.archeryclub.connected
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
@@ -84,5 +85,22 @@ class HomeLogicTest {
         assertEquals("red", clubTheme(inUp)); assertEquals("green", clubTheme(null)); assertEquals("UP Archery Club", clubName(inUp))
         assertEquals(true, sameSchool("university of the philippines", "University of the Philippines"))
         assertEquals(true, sameSchool("DLSU", "De La Salle University")); assertEquals(false, sameSchool("Ateneo", "De La Salle University"))
+    }
+
+    @org.junit.Test fun aNewClubsAdministratorIsGreetedByNameAndSentToSetup() {
+        assertEquals("Karl Perez", nameFromEmail("karl_perez@ateneo.edu.ph"))
+        assertEquals("Ana Cruz", nameFromEmail("ana.cruz2@up.edu.ph".replace("2", "")))
+        assertEquals("", nameFromEmail("12345@x.test")); assertEquals("", nameFromEmail(null))
+        fun o(vararg p: Pair<String, String>) = kotlinx.serialization.json.JsonObject(p.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })
+        val clubs = kotlinx.serialization.json.JsonArray(listOf(o("id" to "a", "name" to "Ateneo Archery Club", "short_name" to "ADMU"), o("id" to "b", "name" to "UP Archery Club")))
+        // A brand-new club: blank settings, nothing in any queue -> Home points the administrator at Club setup.
+        val ws = kotlinx.serialization.json.JsonObject(mapOf("user_id" to kotlinx.serialization.json.JsonPrimitive("u"), "clubs" to clubs,
+            "club" to clubs[0], "settings" to kotlinx.serialization.json.JsonArray(listOf(o("club_name" to "Ateneo Archery Club")))))
+        assertEquals("ADMU", clubPill(ws))
+        val admin = setOf("administration")
+        assertTrue(setupRemaining(ws, admin) > 0); assertEquals(0, setupRemaining(ws, setOf("finance")))
+        val focus = officerFocus(ws, admin, java.time.Instant.now())!!
+        assertEquals("club_setup", focus.route); assertTrue(focus.title.startsWith("Set up your club"))
+        assertEquals(null, officerFocus(ws, setOf("finance"), java.time.Instant.now()))
     }
 }
