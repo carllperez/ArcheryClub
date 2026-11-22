@@ -40,7 +40,7 @@ private fun ClubTag(workspace: JsonObject, partnerId: String) {
 }
 
 @Composable
-private fun ClubBadge(name: String, partnerId: String, size: Int = 38) {
+internal fun ClubBadge(name: String, partnerId: String, size: Int = 38) {
     val (bg, fg) = swatch(partnerId)
     Box(Modifier.size(size.dp).clip(RoundedCornerShape((size / 3).dp)).background(bg), contentAlignment = Alignment.Center) {
         Text(clubInitials(name), color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)

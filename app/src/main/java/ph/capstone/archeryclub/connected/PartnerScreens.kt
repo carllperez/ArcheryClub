@@ -2,6 +2,7 @@ package ph.capstone.archeryclub.connected
 
 import android.content.Intent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -185,4 +186,52 @@ fun PartnerInvites(workspace: JsonObject, event: JsonObject, busy: Boolean, vm: 
             }) { Text("Cancel code", fontWeight = FontWeight.ExtraBold, color = Club.roseInk) } },
             dismissButton = { TextButton(onClick = { cancelling = null }) { Text("Keep") } })
     }
+}
+
+/** A partner representative's Profile tab, in the same green-hero style as their Home (22 Nov: the plain member
+ *  list looked unfinished and offered "My application" and "All modules", which don't apply to them). */
+@Composable
+fun PartnerProfilePage(workspace: JsonObject, fullName: String, noticeCount: Int, state: SystemState, snackbar: SnackbarHostState,
+                       bottomBar: @Composable () -> Unit, onPage: (String) -> Unit, onRoute: (String) -> Unit, onSignOut: () -> Unit,
+                       recovery: @Composable () -> Unit) {
+    val me = workspace.text("user_id")
+    val profile = workspace.records("profiles").find { it.text("id") == me }
+    val access = workspace.records("event_access").firstOrNull { it.text("user_id") == me && it.text("revoked_at").isBlank() }
+    val club = workspace.records("partner_clubs").find { it.text("id") == access?.text("partner_id") }
+    val events = partnerEvents(workspace)
+    var signOut by remember { mutableStateOf(false) }
+    HeroScaffold(fullName, snackbar = snackbar, busy = state.busy, bottomBar = bottomBar,
+        eyebrow = { Pill("PARTNER REPRESENTATIVE", Club.lime, Club.forestDeep) },
+        heroExtra = { Text("Guest account for DLSU Archery Club interclub events", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
+        if (state.recovery) recovery()
+        // Who they speak for.
+        if (club != null) RaisedCard {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                ClubBadge(club.text("name"), club.text("id"), 48)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("REPRESENTING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+                    Text(club.text("name"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    profile?.text("university")?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+        }
+        // How DLSU reaches them.
+        val contact = listOf("account" to profile?.text("email").orEmpty(), "profile" to profile?.text("phone").orEmpty()).filter { it.second.isNotBlank() }
+        if (contact.isNotEmpty()) {
+            DeskLabel("Contact")
+            RowGroup { contact.forEachIndexed { i, (icon, value) -> GroupRow(icon, value, divider = i < contact.lastIndex, onClick = null) } }
+        }
+        DeskLabel("Your club's events")
+        RowGroup {
+            GroupRow("calendar", "Your events", "${events.size} shared with your club", onClick = { onPage("home") })
+            GroupRow("bell", "Notices", tint = Club.amberInk, chip = Club.amberSoft,
+                trailing = { if (noticeCount > 0) Badge { Text("$noticeCount") } }, onClick = { onPage("notices") })
+            GroupRow("plus", "Have a code for another event?", "Enter the invite code the host club sent", divider = false, onClick = { onRoute("partner_claim") })
+        }
+        OutlinedButton(onClick = { signOut = true }, enabled = !state.busy, shape = CircleShape, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Club.roseSoft)) { Text("Sign out", color = Club.roseInk, fontWeight = FontWeight.ExtraBold) }
+    }
+    if (signOut) ConfirmDialog("Sign out?", "Sign back in with the same email to see your club's events.", "Sign out",
+        onConfirm = { signOut = false; onSignOut() }, onDismiss = { signOut = false }, destructive = true)
 }
