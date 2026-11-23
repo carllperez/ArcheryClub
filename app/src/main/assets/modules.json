@@ -599,6 +599,19 @@
           "optional": false
         },
         {
+          "name": "kind",
+          "label": "Type",
+          "type": "choice",
+          "options": [
+            "training",
+            "event",
+            "meeting"
+          ],
+          "source": "",
+          "optional": true,
+          "hint": "Training, Event or Meeting. The Attendance desk sorts by this."
+        },
+        {
           "name": "description",
           "label": "Description",
           "type": "long",

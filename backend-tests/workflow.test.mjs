@@ -1481,3 +1481,22 @@ test('Elections 23 Nov: a stuck election is rescheduled with a new residency rul
  const row2=(await db.query('select status,confirmation from app_private.elections where id=$1',[e2.id])).rows[0];
  assert.equal(row2.status,'archived'); assert.equal(row2.confirmation,'Cancelled: Test run');
 });
+
+test('Attendance desk 23 Nov: activities carry a type; officers see who came to what; members don\'t',async()=>{
+ await grant('officer','activity_officer');
+ await denied(()=>command('officer','save_event',{title:'Bad type',description:'x',venue:'Range',starts_at:future(20),ends_at:future(22),registration_opens:future(-2),registration_closes:future(10),capacity:5,kind:'party'}),/Training, Event or Meeting/);
+ const ev=await command('officer','save_event',{title:'Saturday practice',description:'Practice',venue:'Range',starts_at:future(20),ends_at:future(22),registration_opens:future(-2),registration_closes:future(10),capacity:5,kind:'training'});
+ assert.equal((await row('events',ev.id)).kind,'training');
+ await command('officer','publish_event',{id:ev.id,version:1});
+ for(const p of ['applicant','successor'])await command(p,'register_event',{event_id:ev.id});
+ await command('officer','record_attendance',{event_id:ev.id,user_id:ids.applicant,status:'present',remark:'Here'});
+ await db.query("update app_private.events set registration_opens=now()-interval '9 hours', registration_closes=now()-interval '4 hours', starts_at=now()-interval '3 hours', ends_at=now()-interval '1 hour' where id=$1",[ev.id]);
+ const ov=(await rpc('admin','club_workspace',[],'')).attendance_overview;
+ const e=ov.events.find(x=>x.id===ev.id);
+ assert.equal(e.kind,'training');
+ const byUser=Object.fromEntries(e.roster.map(r=>[r.user_id,r]));
+ assert.equal(byUser[ids.applicant].status,'present'); assert.equal(byUser[ids.applicant].method,'manual'); assert.equal(byUser[ids.applicant].registered,true);
+ assert.equal(byUser[ids.successor].status,null,'registered, no record: a no-show');
+ assert.ok(ov.members.some(m=>m.user_id===ids.applicant));
+ assert.equal((await rpc('applicant','club_workspace',[],'')).attendance_overview,null,'members don\'t get the desk');
+});

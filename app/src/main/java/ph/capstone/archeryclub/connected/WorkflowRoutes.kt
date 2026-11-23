@@ -70,6 +70,13 @@ fun WorkflowRoute(
         }, onUpload, onOpenDocument, onPayFee = onBack)
         "applications" -> if (allowed("membership")) ApplicationsQueueScreen(workspace, busy, snackbar, onBack, { onPush("application_review:$it") }, onJoinCodes = { onPush("join_codes") }) { onGo("records:7") }
             else ScreenShell("Applications", onBack, snackbar) { EmptyState("Membership officers only", "Your current role can't review applications.") }
+        // Attendance desk (migration 062): read-only, for Administration, Activities, Training and President.
+        "attendance" -> if (canSeeAttendance(workspace, ATTENDANCE_DESK_PERMISSIONS.filter { allowed(it) }.toSet())) AttendanceScreen(workspace, snackbar, onBack, onPush)
+            else denied("Officers only", "The Attendance desk is for administrators, the President, and the Activity and Training officers.")
+        "attendance_event" -> if (canSeeAttendance(workspace, ATTENDANCE_DESK_PERMISSIONS.filter { allowed(it) }.toSet())) AttendanceEventScreen(workspace, id, snackbar, onBack, onPush)
+            else denied("Officers only", "The Attendance desk is for administrators, the President, and the Activity and Training officers.")
+        "attendance_member" -> if (canSeeAttendance(workspace, ATTENDANCE_DESK_PERMISSIONS.filter { allowed(it) }.toSet())) AttendanceMemberScreen(workspace, id, snackbar, onBack, onPush)
+            else denied("Officers only", "The Attendance desk is for administrators, the President, and the Activity and Training officers.")
         "join_codes" -> if (allowed("membership") || allowed("administration")) JoinCodesScreen(workspace, busy, snackbar, onBack, vm)
             else denied("Join codes", "Only the Membership officer or an Administrator makes join codes.")
         "application_review" -> if (allowed("membership")) ApplicationReviewScreen(workspace, id, busy, snackbar, onBack, onCommand, onOpenDocument)

@@ -23,7 +23,7 @@ import java.time.LocalTime
 
 private fun queueIcon(route: String) = when {
     route == "training_desk" -> "target"; route == "finance_desk" -> "money"; route == "elections" -> "vote"; route == "reports" -> "chart"
-    route == "interclub" -> "users"; route == "admin" -> "settings"
+    route == "interclub" -> "users"; route == "admin" -> "settings"; route == "attendance" -> "check"
     route == "applications" -> "doc"; route == "name_corrections" -> "profile"; route == "module:7" || route == "records:7" -> "users"
     route == "equipment" -> "box"; route == "module:8" || route == "records:8" || route == "officer_activities" -> "calendar"
     route == "module:11" -> "target"; route == "module:12" -> "money"; route == "module:14" -> "settings"
@@ -54,7 +54,11 @@ fun OfficerHome(
     val representing = workspace.records("event_access").any { it.text("user_id") == workspace.text("user_id") && it.text("revoked_at").isBlank() }
     val permissions = if ("administration" in permissions && "interclub" !in permissions && featureOn(workspace, "interclub") &&
         (interclubInvitationsToUs(workspace).isNotEmpty() || representing)) permissions + "interclub" else permissions
-    val desks = deskTiles(workspace, permissions, now)
+    val desks = deskTiles(workspace, permissions, now) + if (canSeeAttendance(workspace, permissions)) {
+        val flagged = missingStreaks(workspace).size
+        listOf(DeskTile("attendance", "Attendance", "attendance", 0,
+            if (flagged > 0) "$flagged missed 3 in a row" else "Who came to what", false))
+    } else emptyList()
     val focus = officerFocus(workspace, permissions, now)
     val total = desks.sumOf { it.waiting }
     val roles = myRoleLines(workspace, now)

@@ -55,6 +55,10 @@ for _f in forms['create_election']['fields']:
 forms['create_election']['help']=('The dates are a plan, not a wait: from the election page you announce, open voting and close voting yourself as soon as '
  'everything is ready, so a whole election can run in one sitting. Steps: approve the rules, add the voters, announce, confirm '
  'candidates, open voting, close voting, then another election officer confirms the results.')
+# 23 Nov: activity type for the Attendance desk (migration 062).
+for _f in [forms['save_event']]:
+ if not any(x['name']=='kind' for x in _f['fields']):
+  _f['fields'].insert(1,{'name':'kind','label':'Type','type':'choice','options':['training','event','meeting'],'source':'','optional':True,'hint':'Training, Event or Meeting. The Attendance desk sorts by this.'})
 forms['update_election']={**forms['create_election'],'action':'update_election','label':'Edit draft election rules and schedule','table':'elections','states':['draft']}
 form('nominate_candidate','Nominate a member','user_id:record:member_directory;position:choice:President|Vice President;statement:long','member','elections',{'election_id':'id'},['announced'],help='The election officer reviews eligibility before the nomination appears on the ballot.')
 form('confirm_candidate','Review candidate eligibility','confirmed:boolean;remark:long','elections','candidates')
