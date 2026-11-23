@@ -210,7 +210,7 @@ fun FinanceRecordScreen(
     val (label, tone) = financeStatus(r.text("status"))
     val sticky: (@Composable RowScope.() -> Unit)? = if (finance && pending && !own) ({
         CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("verify_financial_request", JsonObject(r + ("status" to JsonPrimitive("returned_for_correction")))) }
-        StickyButton("Verify", !busy && missing.isEmpty(), Modifier.weight(1.3f)) { verifying = true }
+        StickyButton(if (r.text("kind") == "payment") "Verify" else "Mark as paid", !busy && missing.isEmpty(), Modifier.weight(1.3f)) { verifying = true }
     }) else null
     HeroScaffold(peso(r.amount()), onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill(kindLabel(r.text("kind")).uppercase(), Color.White.copy(alpha = .16f), Color.White); Pill(label, Club.lime, Club.forestDeep) },
@@ -272,6 +272,16 @@ fun FinanceRecordScreen(
 @Composable
 private fun VerifyDialog(workspace: JsonObject, r: JsonObject, onCommand: (String, JsonObject, () -> Unit) -> Unit, onClose: () -> Unit) {
     val fee = if (r.text("kind") == "payment") matchingFee(r, workspace.records("fee_assessments")) else null
+    // An approved expense or reimbursement: this is the moment the money leaves the club funds.
+    if (r.text("kind") != "payment") {
+        ConfirmDialog("Mark ${peso(r.amount())} as paid to ${memberName(workspace, r.text("user_id"))}?",
+            "For \"${r.text("purpose")}\". Do this once the money has been sent. It then comes off the club funds for good (Ledger: −${peso(r.amount())}).",
+            "Mark as paid", onConfirm = {
+                onClose()
+                onCommand("verify_financial_request", JsonObject(versionOf(r) + mapOf("status" to JsonPrimitive("verified"), "remark" to JsonPrimitive("Paid back to the member.")))) {}
+            }, onDismiss = onClose)
+        return
+    }
     ConfirmDialog("Verify ${peso(r.amount())}?", buildString {
         append("From ${memberName(workspace, r.text("user_id"))} for \"${r.text("purpose")}\"")
         paymentMethodLabel(r.text("payment_method")).takeIf { it.isNotBlank() }?.let { append(", paid with $it") }
@@ -321,9 +331,17 @@ fun FinanceDeskScreen(
     HeroScaffold("Club funds", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill(if (finance) "TREASURER" else "PRESIDENT", Club.lime, Club.forestDeep) },
         heroExtra = {
-            HeroStats(listOf(peso(funds.received) to "Verified in", peso(funds.spent) to "Verified out", peso(funds.balance) to "Balance"))
+            val aside = setAsideAmount(workspace)
+            HeroStats(if (aside > 0) listOf(peso(funds.balance) to "Balance", peso(aside) to "Approved, to pay", peso(funds.balance - aside) to "Available")
+                else listOf(peso(funds.received) to "Verified in", peso(funds.spent) to "Verified out", peso(funds.balance) to "Balance"))
             HeroTabs(tabs, tab) { tab = it }
         }) {
+        approvedUnpaid(workspace).takeIf { it.isNotEmpty() }?.let { due ->
+            NoticeCard("${peso(due.sumOf { it.amount() })} approved, waiting to be paid",
+                due.joinToString("; ") { "${memberName(workspace, it.text("user_id"))}: ${it.text("purpose")} (${peso(it.amount())})" } +
+                    ". Already taken off Available. ${if (finance) "Open it and tap Mark as paid once the money is sent." else "The Treasurer marks it paid once the money is sent."}",
+                Tone.WARNING)
+        }
         when (tab) {
             "check" -> {
                 if (toLink.isNotEmpty()) {
@@ -344,7 +362,8 @@ fun FinanceDeskScreen(
                         leading = { Initials(memberName(workspace, r.text("user_id")), 40) },
                         trailing = { Text(peso(r.amount()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold) }, onClick = { onOpen(r.text("id")) }) {
                         Text(listOfNotNull(kindLabel(r.text("kind")), if (proof) "receipt attached" else "no receipt",
-                            missing.takeIf { it.isNotEmpty() }?.let { m -> "waiting for " + m.joinToString(" and ") { if (it == "president") "President" else "Treasurer" } + " approval" }).joinToString(" · "),
+                            missing.takeIf { it.isNotEmpty() }?.let { m -> "waiting for " + m.joinToString(" and ") { if (it == "president") "President" else "Treasurer" } + " approval" }
+                                ?: "approved · mark as paid".takeIf { r.text("kind") != "payment" }).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall, color = if (missing.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Club.amberInk)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             CardButton("Return", Modifier.weight(1f), danger = true, enabled = !busy) { onStart("verify_financial_request", JsonObject(r + ("status" to JsonPrimitive("returned_for_correction")))) }

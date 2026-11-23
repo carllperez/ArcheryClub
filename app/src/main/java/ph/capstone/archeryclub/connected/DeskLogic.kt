@@ -1186,3 +1186,11 @@ fun financeCsv(workspace: JsonObject, today: java.time.LocalDate): String {
     rows += listOf("Verified out", "", "", "", money(funds.spent)); rows += listOf("Balance", today.toString(), "", "", money(funds.balance))
     return rows.joinToString("\n") { r -> r.joinToString(",") { cell(it) } } + "\n"
 }
+
+/** Expenses and reimbursements both offices approved but the Treasurer hasn't marked paid yet (23 Nov): the club has
+ *  committed this money, so the funds the Treasurer sees show it as set aside before it reaches the ledger. */
+fun approvedUnpaid(workspace: JsonObject): List<JsonObject> {
+    val approvals = workspace.records("financial_approvals")
+    return workspace.records("financial_records").filter { it.text("kind") != "payment" && it.text("status") == "pending_verification" && missingApprovals(it, approvals).isEmpty() }
+}
+fun setAsideAmount(workspace: JsonObject): Double = approvedUnpaid(workspace).sumOf { it.amount() }

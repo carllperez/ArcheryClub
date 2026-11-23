@@ -172,12 +172,14 @@ fun OfficerHome(
             }
         }
         if ("finance" in permissions || "president" in permissions) {
-            val balance = fundsSummary(workspace.records("financial_records")).balance
+            val aside = setAsideAmount(workspace)
+            val balance = (serverFunds(workspace) ?: fundsSummary(workspace.records("financial_records"))).balance - aside
             RaisedCard(onClick = { onRoute("finance_desk:ledger") }) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("CLUB FUNDS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${peso(balance)} balance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                        Text("${peso(balance)} ${if (aside > 0) "available" else "balance"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                        if (aside > 0) Text("${peso(aside)} approved, waiting to be paid", style = MaterialTheme.typography.bodySmall, color = Club.amberInk)
                     }
                     FilledTonalButton(onClick = { onRoute("finance_desk:ledger") }) { Text("View", fontWeight = FontWeight.ExtraBold) }
                 }
