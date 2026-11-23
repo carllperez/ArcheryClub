@@ -312,6 +312,12 @@ fun FinanceDeskScreen(
     var verifying by remember { mutableStateOf<JsonObject?>(null) }
     var matching by remember { mutableStateOf<JsonObject?>(null) }
     val settingsFee = workspace.records("settings").firstOrNull()?.amount("membership_fee") ?: 0.0
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
+    var financeExportText by remember { mutableStateOf("") }
+    val financeExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) runCatching { requireNotNull(exportContext.contentResolver.openOutputStream(uri)).bufferedWriter().use { it.write(financeExportText) } }
+            .onFailure { vm?.error("The finance records could not be saved.") }
+    }
     HeroScaffold("Club funds", onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill(if (finance) "TREASURER" else "PRESIDENT", Club.lime, Club.forestDeep) },
         heroExtra = {
@@ -403,6 +409,12 @@ fun FinanceDeskScreen(
                     }
                 }
                 TextButton(onClick = onRecords, modifier = Modifier.fillMaxWidth()) { Text("All finance records and audit trail") }
+            }
+        }
+        // 23 Nov: the Treasurer's records as a spreadsheet, for liquidation reports and the org office.
+        RowGroup {
+            GroupRow("doc", "Export finance records (CSV)", "Payments, expenses, reimbursements, fees and totals", divider = false) {
+                financeExportText = financeCsv(workspace, LocalDate.now()); financeExport.launch("club-finance-${LocalDate.now()}.csv")
             }
         }
         TextButton(onClick = onMine, modifier = Modifier.fillMaxWidth()) { Text("My own payments and claims") }

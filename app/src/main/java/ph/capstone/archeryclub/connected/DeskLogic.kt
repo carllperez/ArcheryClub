@@ -1159,3 +1159,30 @@ fun electionNextStep(e: JsonObject, workspace: JsonObject, now: Instant): Electi
         else -> null
     }
 }
+
+/** Treasurer's export (23 Nov): every finance record and charged fee the reader can see, then the fund totals, as one
+ *  CSV table for liquidation reports and the org office. Excel and Google Sheets open it directly. */
+fun financeCsv(workspace: JsonObject, today: java.time.LocalDate): String {
+    fun cell(v: String) = if (v.any { it == ',' || it == '"' || it == '\n' }) "\"" + v.replace("\"", "\"\"") + "\"" else v
+    fun day(v: String) = v.take(10)
+    fun money(v: Double) = String.format(java.util.Locale.US, "%.2f", v)
+    val approvals = workspace.records("financial_approvals")
+    fun approved(recordId: String, office: String) = approvals.find { it.text("record_id") == recordId && it.text("office") == office }
+        ?.let { "${memberName(workspace, it.text("approved_by"))} (${day(it.text("approved_at"))})" }.orEmpty()
+    val kind = mapOf("payment" to "Payment in", "expense" to "Expense", "reimbursement" to "Reimbursement")
+    val rows = mutableListOf(listOf("Type", "Date", "Member", "Purpose", "Amount (PHP)", "Method", "Reference", "Status", "Checked by", "Approved by President", "Approved by Treasurer", "Due"))
+    workspace.records("financial_records").sortedBy { it.text("created_at") }.forEach { r ->
+        rows += listOf(kind[r.text("kind")] ?: human(r.text("kind")), day(r.text("verified_at").ifBlank { r.text("created_at") }), memberName(workspace, r.text("user_id")),
+            r.text("purpose"), money(r.amount()), when (r.text("payment_method")) { "gcash" -> "GCash"; "bank" -> "Bank transfer"; "" -> ""; else -> human(r.text("payment_method")) }, r.text("reference"), financeStatus(r.text("status")).first,
+            r.text("reviewed_by").takeIf { it.isNotBlank() }?.let { memberName(workspace, it) }.orEmpty(),
+            if (r.text("kind") == "payment") "" else approved(r.text("id"), "president"), if (r.text("kind") == "payment") "" else approved(r.text("id"), "finance"), "")
+    }
+    workspace.records("fee_assessments").sortedBy { it.text("due_on") }.forEach { f ->
+        rows += listOf("Fee charged", "", memberName(workspace, f.text("user_id")), f.text("purpose"), money(f.amount()), "", "",
+            if (f.text("payment_id").isBlank()) "Unpaid" else "Paid", "", "", "", f.text("due_on"))
+    }
+    val funds = serverFunds(workspace) ?: fundsSummary(workspace.records("financial_records"))
+    rows += listOf(""); rows += listOf("Verified in", "", "", "", money(funds.received))
+    rows += listOf("Verified out", "", "", "", money(funds.spent)); rows += listOf("Balance", today.toString(), "", "", money(funds.balance))
+    return rows.joinToString("\n") { r -> r.joinToString(",") { cell(it) } } + "\n"
+}
