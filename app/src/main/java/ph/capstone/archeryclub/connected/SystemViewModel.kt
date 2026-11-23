@@ -52,8 +52,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
                 // A personal email belongs to no school, so it needs a club's join code or an interclub invite code (migration 053).
                 // The code is checked before the account exists, so a wrong one never leaves an account with no club.
                 var kind:String?=null
-                if(isPersonalEmail(e)){
-                    require(code.isNotBlank()){"A personal email needs a join code from a club, or an interclub invite code. Otherwise sign up with your school email (like @dlsu.edu.ph)."}
+                if(isPersonalEmail(e)&&code.isNotBlank()){
                     kind=(gateway.rpc("check_signup_code",buildJsonObject{put("p_code",code.trim());put("p_email",e)}) as? JsonObject)?.get("kind")?.jsonPrimitive?.contentOrNull
                     require(kind!=null){"That code isn't valid for $e. Check it, and the email it was made for, with the club that sent it."}
                 }
@@ -61,7 +60,7 @@ class SystemViewModel(val gateway:SupabaseGateway):ViewModel() {
                 // With email confirmation off, Supabase returns a session immediately: go straight to the application.
                 if(gateway.client.auth.currentSessionOrNull()!=null){gateway.initialize()
                     if(kind=="join")gateway.rpc("claim_join_code",buildJsonObject{put("p_data",buildJsonObject{put("code",code.trim())})})
-                    mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),pendingInvite=code.trim().takeIf{kind=="invite"},message=if(kind=="invite")"Account created. Finish joining the event with your invite code." else "Account created. Start your application.")}
+                    mutable.value=mutable.value.copy(signedIn=true,workspace=gateway.workspace(),pendingInvite=code.trim().takeIf{kind=="invite"},message=when{kind=="invite"->"Account created. Finish joining the event with your invite code.";isPersonalEmail(e)&&kind==null->"Account created. Join a club with its join code, or start a community club.";else->"Account created. Start your application."})}
                 else mutable.value=mutable.value.copy(message="Check your email to verify your account, then sign in.")
             }
             "recover"->{gateway.recover(email);mutable.value=mutable.value.copy(message="If the account exists, a recovery email has been sent.",recovery=true)}

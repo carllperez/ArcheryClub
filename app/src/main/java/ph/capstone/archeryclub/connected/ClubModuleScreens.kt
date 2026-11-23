@@ -40,6 +40,9 @@ fun workflowChoiceOptions(form: JsonObject, field: JsonObject, initial: JsonObje
         if (approvals.any { it.text("approved_by") == workspace.text("user_id") }) return emptyList()
         return listOf("president", "finance").filter { office -> office in permissions && approvals.none { it.text("office") == office } }
     }
+    // 23 Nov testing: a President-only revote still offered Vice President.
+    if (form.text("action") in setOf("file_candidacy", "nominate_candidate") && field.text("name") == "position")
+        (initial["positions"] as? JsonArray)?.map { it.jsonPrimitive.content }?.takeIf { it.isNotEmpty() }?.let { return it }
     return (field["options"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
 }
 

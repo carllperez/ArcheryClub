@@ -97,7 +97,7 @@ fun ElectionScreen(
     HeroScaffold(e.text("title"), onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("ELECTION", Color.White.copy(alpha = .16f), Color.White); Pill(electionStageLabel(e, Instant.now()).uppercase(), if (stageOpen || status !in setOf("announced", "voting")) Club.lime else Club.amberSoft, if (stageOpen || status !in setOf("announced", "voting")) Club.forestDeep else Club.amberInk) },
         heroExtra = {
-            Text(when_ + if (status == "voting" && eligible.isNotEmpty()) " · ${voted.size} of ${eligible.size} voted" else "", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
+            Text(when_ + if (officer && status == "voting" && eligible.isNotEmpty()) " · ${voted.size} of ${eligible.size} voted" else "", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
         },
         sticky = if (canVote) ({ StickyButton("Review and cast ballot", !busy && positions.isNotEmpty() && positions.all { !choices[it].isNullOrBlank() }, Modifier.weight(1f)) { confirming = true } }) else null) {
         StepDots(electionTimeline(status))
@@ -113,6 +113,7 @@ fun ElectionScreen(
                             ElectionAction.CONFIRM -> onStart("confirm_results", e)
                             ElectionAction.ADVANCE -> advancing = step
                             ElectionAction.RESCHEDULE -> rescheduling = true
+                            ElectionAction.OPEN -> onOpen(step.target)
                             ElectionAction.NEW -> onStart("create_election", newElectionSeed(Instant.now()).let { seed ->
                                 JsonObject(seed + mapOf("title" to JsonPrimitive("${e.text("title")} (revote)"), "positions" to (e["positions"] ?: seed["positions"]!!))) })
                             ElectionAction.ADD_VOTERS -> vm?.rpc("add_all_eligible_voters", buildJsonObject { put("p_id", eid) }) { r -> rollResult = r as? JsonObject; vm?.refresh() }
@@ -751,7 +752,7 @@ private fun newElectionSeed(now: Instant): JsonObject = buildJsonObject {
     put("announces_at", now.truncatedTo(java.time.temporal.ChronoUnit.MINUTES).toString())
     put("candidacy_closes", inDays(3)); put("voting_opens", inDays(3)); put("voting_closes", inDays(5)); put("result_due", inDays(7))
     put("threshold", 60); put("residency_terms", 0)
-    put("rules", "One vote per position. Candidates and voters are Active members. Results count when at least 60% of voters take part.")
+    put("rules", "One vote per position. Candidates and voters are Active members. Results count only if turnout reaches the percentage set above.")
     put("rules_validated", false)
     put("positions", JsonArray(listOf(JsonPrimitive("President"), JsonPrimitive("Vice President"))))
 }

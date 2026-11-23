@@ -1090,8 +1090,8 @@ fun EndCursor.previous(): EndCursor = if (cursor > 0) copy(cursor = cursor - 1) 
 // 23 Nov feedback: "The election process is complicated and the instructions are a bit unclear. I wasn't able to complete
 // it in a single session." The election page now opens with the one thing the officer does next (migration 060 lets
 // them do it now instead of waiting for the planned date).
-enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, RESCHEDULE, NEW, NONE }
-data class ElectionStep(val eyebrow: String, val title: String, val detail: String, val action: ElectionAction, val button: String = "")
+enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, RESCHEDULE, NEW, OPEN, NONE }
+data class ElectionStep(val eyebrow: String, val title: String, val detail: String, val action: ElectionAction, val button: String = "", val target: String = "")
 
 private val electionWhen = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.ENGLISH)
 private fun at(i: Instant?) = i?.atZone(java.time.ZoneId.systemDefault())?.format(electionWhen) ?: "the planned date"
@@ -1150,11 +1150,14 @@ fun electionNextStep(e: JsonObject, workspace: JsonObject, now: Instant): Electi
             val others = electionOfficerNames(workspace, workspace.text("user_id"), now)
             ElectionStep("RESULTS", "Confirm the official results",
                 "The officer who closed voting can't confirm the count; another election officer does" +
-                    (if (others.isNotEmpty()) " (${others.joinToString(", ")})." else ". Nobody else holds Election officer yet: assign one in Administration, Officers and terms."),
+                    (if (others.isNotEmpty()) " (${others.joinToString(", ")})." else ". If no one else holds Election officer, an administrator assigns one in Officers and terms."),
                 ElectionAction.CONFIRM, "Confirm results")
         }
         "confirmed" -> ElectionStep("DONE", "Results are out", "Members see the confirmed results on this page.", ElectionAction.NONE)
-        "requires_revote" -> ElectionStep("REVOTE", "Turnout was below ${e.text("threshold")}%",
+        // Once the revote exists, this page points to it (23 Nov testing: saving it left the officer here, the draft under Other elections).
+        "requires_revote" -> workspace.records("elections").find { it.text("title") == "${e.text("title")} (revote)" }?.let { r ->
+            ElectionStep("REVOTE", "The revote is set up", "Continue in \"${r.text("title")}\" (${electionStageLabel(r, now).lowercase()}).", ElectionAction.OPEN, "Open the revote", r.text("id"))
+        } ?: ElectionStep("REVOTE", "Turnout was below ${e.text("threshold")}%",
             "The results don't count. Create a new election for the revote.", ElectionAction.NEW, "Create the revote")
         else -> null
     }
