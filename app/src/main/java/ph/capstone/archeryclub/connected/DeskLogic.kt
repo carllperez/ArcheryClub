@@ -1090,7 +1090,7 @@ fun EndCursor.previous(): EndCursor = if (cursor > 0) copy(cursor = cursor - 1) 
 // 23 Nov feedback: "The election process is complicated and the instructions are a bit unclear. I wasn't able to complete
 // it in a single session." The election page now opens with the one thing the officer does next (migration 060 lets
 // them do it now instead of waiting for the planned date).
-enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, RESCHEDULE, NONE }
+enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, RESCHEDULE, NEW, NONE }
 data class ElectionStep(val eyebrow: String, val title: String, val detail: String, val action: ElectionAction, val button: String = "")
 
 private val electionWhen = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.ENGLISH)
@@ -1155,7 +1155,7 @@ fun electionNextStep(e: JsonObject, workspace: JsonObject, now: Instant): Electi
         }
         "confirmed" -> ElectionStep("DONE", "Results are out", "Members see the confirmed results on this page.", ElectionAction.NONE)
         "requires_revote" -> ElectionStep("REVOTE", "Turnout was below ${e.text("threshold")}%",
-            "The results don't count. Create a new election for the revote.", ElectionAction.NONE)
+            "The results don't count. Create a new election for the revote.", ElectionAction.NEW, "Create the revote")
         else -> null
     }
 }

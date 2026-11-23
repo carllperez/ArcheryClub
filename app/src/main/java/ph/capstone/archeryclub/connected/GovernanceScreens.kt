@@ -113,6 +113,8 @@ fun ElectionScreen(
                             ElectionAction.CONFIRM -> onStart("confirm_results", e)
                             ElectionAction.ADVANCE -> advancing = step
                             ElectionAction.RESCHEDULE -> rescheduling = true
+                            ElectionAction.NEW -> onStart("create_election", newElectionSeed(Instant.now()).let { seed ->
+                                JsonObject(seed + mapOf("title" to JsonPrimitive("${e.text("title")} (revote)"), "positions" to (e["positions"] ?: seed["positions"]!!))) })
                             ElectionAction.ADD_VOTERS -> vm?.rpc("add_all_eligible_voters", buildJsonObject { put("p_id", eid) }) { r -> rollResult = r as? JsonObject; vm?.refresh() }
                             else -> Unit
                         }
@@ -212,6 +214,8 @@ fun ElectionScreen(
         if (officer) {
             DeskLabel("Election officer")
             RowGroup {
+                // A new election could only be started while the club had none (23 Nov testing).
+                GroupRow("vote", "Create a new election", "Starts filled in; you change what you need") { onStart("create_election", newElectionSeed(Instant.now())) }
                 if (status == "draft") GroupRow("settings", "Edit details and dates") { onStart("update_election", e) }
                 if (status == "announced") GroupRow("calendar", "Reschedule", "Reopen candidacy with new dates") { rescheduling = true }
                 if (status in setOf("draft", "announced", "voting") && voted.isEmpty()) GroupRow("close", "Cancel this election", "Archive it with a reason", tint = Club.amberInk) { cancelling = true }
