@@ -257,8 +257,13 @@ fun officerQueues(workspace: JsonObject, permissions: Set<String>, now: Instant 
         add(QueueItem("Candidates to confirm", workspace.records("candidates").count { it.text("election_id") in open && it.text("confirmed") != "true" }, "module:9", Tone.WARNING))
     }
     if ("interclub" in permissions) {
-        add(QueueItem("Delegates to review", workspace.records("delegates").count { it.text("status") == "pending" }, "module:15", Tone.WARNING))
-        add(QueueItem("Partner concerns", workspace.records("interclub_concerns").count { it.text("status") == "open" }, "module:15", Tone.WARNING))
+        // Only our own events' delegates and concerns: a guest event's rows are the host's to handle (migration 057).
+        val club = (workspace["club"] as? JsonObject)?.text("id").orEmpty()
+        fun ours(r: JsonObject) = club.isBlank() || r.text("club_id").isBlank() || r.text("club_id") == club
+        add(QueueItem("Delegates to review", workspace.records("delegates").count { it.text("status") == "pending" && ours(it) }, "module:15", Tone.WARNING))
+        add(QueueItem("Partner concerns", workspace.records("interclub_concerns").count { it.text("status") == "open" && ours(it) }, "module:15", Tone.WARNING))
+        add(QueueItem("Invitations to answer", interclubInvitationsToUs(workspace).size, "module:15", Tone.WARNING))
+        add(QueueItem("Member sign-ups to confirm", signupsToConfirm(workspace), "module:15", Tone.WARNING))
     }
 }
 

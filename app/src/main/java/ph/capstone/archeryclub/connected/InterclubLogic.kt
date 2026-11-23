@@ -159,3 +159,40 @@ fun clubsToInvite(workspace: JsonObject, eventId: String): List<JsonObject> {
     return workspace.records("clubs").filter { it.text("id") != mine && it.text("id") !in busy }.sortedBy { it.text("name") }
 }
 fun clubNameById(workspace: JsonObject, id: String): String = workspace.records("clubs").find { it.text("id") == id }?.text("name") ?: "A club"
+
+
+// Migration 058: a guest club's members sign up for an accepted interclub event themselves.
+private fun ownClubId(workspace: JsonObject) = (workspace["club"] as? JsonObject)?.text("id").orEmpty()
+/** Events another club sent us that our club accepted and posted to members, soonest first. */
+fun interclubOpenToMembers(workspace: JsonObject): List<JsonObject> = workspace.records("interclub_invitations")
+    .filter { it.text("guest_club") == ownClubId(workspace) && it.text("status") == "accepted" && it.text("published_at").isNotBlank() }
+    .sortedBy { it.text("starts_at") }
+/** The signed-in member's own sign-up for an invitation, if any. */
+fun mySignup(workspace: JsonObject, invitationId: String): JsonObject? =
+    workspace.records("interclub_signups").find { it.text("invitation_id") == invitationId && it.text("user_id") == workspace.text("user_id") }
+/** The member's entry with the host's progress (delegate review, target, verified result). */
+fun myInterclubEntry(workspace: JsonObject, invitationId: String): JsonObject? =
+    workspace.records("my_interclub").find { it.text("invitation_id") == invitationId }
+/** Our club's invitation for another club's event (null for our own events and for code-invited partners). */
+fun ourInvitationFor(workspace: JsonObject, eventId: String): JsonObject? =
+    workspace.records("interclub_invitations").find { it.text("event_id") == eventId && it.text("guest_club") == ownClubId(workspace) }
+fun signupsFor(workspace: JsonObject, invitationId: String): List<JsonObject> =
+    workspace.records("interclub_signups").filter { it.text("invitation_id") == invitationId && it.text("status") != "withdrawn" }
+        .sortedWith(compareBy({ when (it.text("status")) { "signed_up" -> 0; "confirmed" -> 1; else -> 2 } }, { it.text("created_at") }))
+/** Sign-ups waiting for our club's lead to confirm. */
+fun signupsToConfirm(workspace: JsonObject): Int = workspace.records("interclub_signups")
+    .count { it.text("club_id") == ownClubId(workspace) && it.text("status") == "signed_up" && it.text("user_id") != workspace.text("user_id") }
+/** Where the member's entry stands, in one line. */
+fun signupStatusLine(signup: JsonObject?, entry: JsonObject?, host: String): String = when (signup?.text("status")) {
+    null, "", "withdrawn" -> ""
+    "signed_up" -> "Signed up · waiting for your club's representative to confirm"
+    "declined" -> "Not confirmed: ${signup.text("remark")}"
+    else -> when (entry?.text("delegate_status")) {
+        "eligible" -> "In the delegation · approved by $host"
+        "checked_in" -> "In the delegation · checked in"
+        "rejected" -> "$host didn't approve this entry: ${entry.text("delegate_remark")}"
+        "incomplete" -> "$host returned this entry: ${entry.text("delegate_remark")}"
+        "substituted" -> "Substituted"
+        else -> "In the delegation · $host is reviewing it"
+    }
+}

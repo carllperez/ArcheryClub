@@ -47,6 +47,7 @@ fun MemberActivitiesPage(
             GroupRow("settings", "Manage activities", "Create, publish and take attendance", divider = false, onClick = { onRoute("officer_activities") })
         }
         AnnouncementsCard(workspace, vm, state.busy, limit = 2) { onRoute("records:3") }
+        InterclubForMembers(workspace, state.busy, vm)
         // List or Calendar, as a switch right after the announcements.
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp)) {
             listOf("list" to "List", "calendar" to "Calendar").forEach { (key, label) ->

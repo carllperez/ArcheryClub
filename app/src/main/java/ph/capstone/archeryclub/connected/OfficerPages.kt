@@ -49,6 +49,11 @@ fun OfficerHome(
     isMember: Boolean = false, onPage: (String) -> Unit = {}, onModule: (Int) -> Unit = {}, vm: SystemViewModel? = null,
 ) {
     val now = Instant.now()
+    // An administrator answers invitations from other clubs and, once they accept, represents the club (migration 057),
+    // so the Partner clubs desk shows for them while that's going on even without the Interclub officer role.
+    val representing = workspace.records("event_access").any { it.text("user_id") == workspace.text("user_id") && it.text("revoked_at").isBlank() }
+    val permissions = if ("administration" in permissions && "interclub" !in permissions && featureOn(workspace, "interclub") &&
+        (interclubInvitationsToUs(workspace).isNotEmpty() || representing)) permissions + "interclub" else permissions
     val desks = deskTiles(workspace, permissions, now)
     val focus = officerFocus(workspace, permissions, now)
     val total = desks.sumOf { it.waiting }
@@ -188,6 +193,8 @@ fun OfficerHome(
                 if (gearOn) HomeTile("box", "$borrowed", if (borrowed == 1) "Borrow Request" else "Borrow Requests", Modifier.weight(1f).fillMaxHeight()) { onPage("gear") }
             }
             if (gearOn) HomeRow("arrows", "Borrow Club Gear", "Bows, arrows and accessories") { onPage("gear") }
+            interclubOpenToMembers(workspace).firstOrNull { mySignup(workspace, it.text("id")) == null && (it.instant("registration_closes")?.isAfter(now) ?: true) }?.let { v ->
+                HomeRow("users", "Interclub at ${v.text("host_name")}", "${v.text("event_title")} · sign up by ${fmtDay(v.instant("registration_closes"))}") { onPage("activities") } }
             if (activitiesOn) landingEvents(workspace, registeredOnly = true).firstOrNull()?.let { e ->
                 val v = activityView(e, workspace, now)
                 HomeRow("calendar", e.text("title"), "${fmtDay(v.start)} · ${fmtTime(v.start)} · ${v.status.label}") { onRoute("activity:${e.text("id")}") }

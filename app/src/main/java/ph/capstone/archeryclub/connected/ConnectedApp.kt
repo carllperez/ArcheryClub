@@ -108,7 +108,7 @@ fun ConnectedApp(vm:SystemViewModel){
     val access=workspace.records("event_access").filter{it.text("user_id")==user&&it.text("revoked_at").isBlank()}
     fun allowed(permission:String)=when(permission){
         "account"->true;"member"->isMember;"funds"->"finance" in permissions||"president" in permissions
-        "partner"->"interclub" in permissions||access.isNotEmpty()
+        "partner"->"interclub" in permissions||access.isNotEmpty()||("administration" in permissions&&interclubInvitationsToUs(workspace).isNotEmpty())
         "coordinator"->"interclub" in permissions||access.any{it.text("role")=="coordinator"}
         else->permission in permissions
     }

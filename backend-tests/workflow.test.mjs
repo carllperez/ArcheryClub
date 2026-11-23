@@ -1340,3 +1340,53 @@ test('Interclub 23 Nov: the host sends an event to clubs in the app; a guest clu
  const sender=await as('officer',async()=>(await db.query("select message from app_private.notifications where user_id=$1 and kind='interclub' and message like '%Send to clubs fixture%' limit 1",[ids.officer])).rows[0]);
  assert.match(sender.message,/UP Archery Club accepted Send to clubs fixture/);
 });
+
+test('Interclub 23 Nov: the guest club posts an accepted event to its members, they sign up, the rep confirms them as delegates',async()=>{
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ const e=await command('officer','save_event',{title:'Member sign-up fixture',description:'Synthetic',venue:'Range B',starts_at:future(48),ends_at:future(52),registration_opens:future(-1),registration_closes:future(40),capacity:20});
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e.id,shared_details:'Shared',requirements:'School ID',registration_closes:future(30),rules:'Rules'});
+ await rpc('officer','send_interclub_invitations',[e.id,`{${up}}`],'$1::uuid,$2::uuid[]');
+ const inv=(await db.query('select * from app_private.interclub_invitations where event_id=$1',[e.id])).rows[0];
+ // Two UP members (upnew, plus a second) and a UP account that isn't a member.
+ ids.upm2='00000000-0000-4000-8000-0000000c0de7'; ids.upguest='00000000-0000-4000-8000-0000000c0de8';
+ await db.query('insert into auth.users values($1,$2,now()),($3,$4,now())',[ids.upm2,'upm2@up.example.test',ids.upguest,'upguest@up.example.test']);
+ for(const n of ['upm2','upguest']) await as(n,()=>db.exec('select public.initialize_account()'));
+ await db.query('update app_private.profiles set club_id=$2 where id=$1',[ids.upguest,up]);
+ for(const n of ['upnew','upm2']){
+  await db.query("update app_private.profiles set club_id=$2, full_name=$3 where id=$1",[ids[n],up,n==='upnew'?'Nina Uno':'Mara Dos']);
+  await db.query("insert into app_private.memberships(user_id,category,status,student_number,approved_by,club_id) values($1,'Regular member','Active','',$2,$3) on conflict(user_id) do update set status='Active'",[ids[n],ids.upadmin,up]);
+  await db.query("update app_private.memberships set status='Active' where user_id=$1",[ids[n]]);
+ }
+ const signup=(p,cat='Recurve')=>rpc(p,'interclub_signup',[inv.id,cat,''],'$1::uuid,$2::text,$3::text');
+ // Not open to members until the club accepts and posts it.
+ await denied(()=>signup('upnew'),/isn.t open to your club/);
+ await denied(()=>rpc('upnew','publish_interclub_invitation',[inv.id,'',null],'$1::uuid,$2::text,$3::int'),/Permission denied/);
+ await rpc('upadmin','respond_interclub_invitation',[inv.id,true,''],'$1::uuid,$2::boolean,$3::text');
+ await denied(()=>signup('upnew'),/isn.t open to your club/);
+ const pub=await rpc('upadmin','publish_interclub_invitation',[inv.id,'Bring your own arrows',1],'$1::uuid,$2::text,$3::int');
+ assert.equal(pub.notified,2);
+ // Members sign up; a non-member and a DLSU member can't; a member sees only their own sign-up, the rep sees all.
+ await denied(()=>signup('upguest'),/Active members/);
+ await denied(()=>signup('applicant'),/isn.t open to your club/);
+ const s1=await signup('upnew'); await signup('upm2','Compound');
+ await denied(()=>signup('upnew'),/already signed up/);
+ await as('upnew',async()=>assert.equal((await db.query('select * from app_private.interclub_signups')).rows.length,1));
+ await as('upadmin',async()=>assert.equal((await db.query('select * from app_private.interclub_signups')).rows.length,2));
+ // The rep confirms one (one slot), the second can't fit; declining needs a reason.
+ const decide=(p,id,ok,why='')=>rpc(p,'decide_interclub_signup',[id,ok,why],'$1::uuid,$2::boolean,$3::text');
+ await denied(()=>decide('upnew',s1.id,true),/Permission denied/);
+ const c=await decide('upadmin',s1.id,true);
+ const d=await row('delegates',c.delegate_id);
+ assert.equal(d.full_name,'Nina Uno'); assert.equal(d.member_id,ids.upnew); assert.equal(d.partner_id,inv.partner_id); assert.equal(d.category,'Recurve');
+ const s2=(await db.query('select id from app_private.interclub_signups where user_id=$1',[ids.upm2])).rows[0];
+ await denied(()=>decide('upadmin',s2.id,true),/slots are taken/);
+ await denied(()=>decide('upadmin',s2.id,false,''),/short reason/);
+ await decide('upadmin',s2.id,false,'One slot only this time');
+ // The host reviews the delegate as usual; the member follows it in their own workspace.
+ await command('officer','review_delegate',{event_id:e.id,id:d.id,version:1,status:'eligible',remark:'Checked'});
+ const w=await rpc('upnew','club_workspace',[],'');
+ const mine=w.my_interclub.find(x=>x.event_id===e.id);
+ assert.equal(mine.status,'confirmed'); assert.equal(mine.delegate_status,'eligible');
+ await denied(()=>rpc('upnew','withdraw_interclub_signup',[inv.id],'$1::uuid'),/Ask your club/);
+});

@@ -178,6 +178,7 @@ fun ClubLanding(
         state.refreshError?.let{InfoCard("Refresh needed",it);TextButton(onClick=onRefresh,enabled=!state.busy){Text("Try again")}}
         when(page){
             "activities"->{
+                InterclubForMembers(workspace,state.busy,vm)
                 MemberActivitiesContent(workspace){onRoute("activity:$it")}
                 var calendar by rememberSaveable{mutableStateOf(false)}
                 TextButton(onClick={calendar=!calendar}){Text(if(calendar)"Hide calendar" else "View calendar")}
@@ -304,6 +305,8 @@ private fun MemberHome(
                 if(owed>0)HomeRow("money","Payments","${peso(owed)} due"){onModule(12)}
                 if(featureOn(workspace,"training"))HomeRow("target","My Training",scoreCards(workspace,user).firstOrNull()?.let{"Last round ${it.scoreLabel} · ${it.state.label}"}?:"Log rounds, get coach feedback"){onModule(4)}
                 if(gearOn)HomeRow("arrows","Borrow Club Gear","Bows, arrows and accessories"){onPage("gear")}
+                interclubOpenToMembers(workspace).firstOrNull{mySignup(workspace,it.text("id"))==null&&(it.instant("registration_closes")?.isAfter(java.time.Instant.now())?:true)}?.let{v->
+                    HomeRow("users","Interclub at ${v.text("host_name")}","${v.text("event_title")} · sign up by ${fmtDay(v.instant("registration_closes"))}"){onPage("activities")}}
                 HomeRow("profile","Archery Profile",trailing={CompletionPill(profileCompleteness(profile))}){onRoute("profile")}
             }
         }

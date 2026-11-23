@@ -150,7 +150,7 @@ fun InterclubScreen(
         return
     }
     // A partner representative gets their own page: one question per stage (22 Nov mockups).
-    if (!coordinator) { PartnerEventPage(workspace, e, busy, snackbar, onBack, onStart); return }
+    if (!coordinator) { PartnerEventPage(workspace, e, busy, snackbar, onBack, onStart, vm); return }
     val eid = e.text("event_id"); val status = e.text("status"); val now = Instant.now()
     val step = interclubStep(e, workspace, now)
     val next = interclubNext(e, workspace, now)
@@ -635,7 +635,7 @@ private fun SplitBar(first: Int, second: Int, total: Int) {
  *  delegation and the questions folded into one row each. */
 @Composable
 fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackbar: SnackbarHostState, onBack: () -> Unit,
-                     onStart: (String, JsonObject) -> Unit) {
+                     onStart: (String, JsonObject) -> Unit, vm: SystemViewModel? = null) {
     val eid = e.text("event_id"); val now = Instant.now()
     val stage = partnerStage(e)
     val me = workspace.text("user_id")
@@ -662,12 +662,14 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
             }, color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
             PartnerTracker(stage.step)
         }) {
+        // Clubs that use the app: post the event to your members and confirm who goes (migration 058).
+        GuestClubMembers(workspace, eid, busy, vm)
         when (stage) {
             PartnerStage.OPEN -> {
                 val approved = mine.count { it.text("status") in setOf("eligible", "checked_in") }
                 val waiting = mine.count { it.text("status") == "pending" }
                 if (signupsOpen) LeadCard("YOUR NEXT STEP", "Add your archers by ${fmtDay(e.instant("registration_closes"))}",
-                    "DLSU reviews each one.${daysLeftLabel(e.instant("registration_closes"), now)?.let { " $it to add or fix delegates." }.orEmpty()}") {
+                    "${ourInvitationFor(workspace, eid)?.text("host_name") ?: "The host club"} reviews each one.${daysLeftLabel(e.instant("registration_closes"), now)?.let { " $it to add or fix delegates." }.orEmpty()}") {
                     if (mine.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.weight(1f)) { SplitBar(approved, waiting, mine.size) }
@@ -912,5 +914,138 @@ private fun InvitationInbox(incoming: List<JsonObject>, busy: Boolean, vm: Syste
                 vm?.save("respond_interclub_invitation", buildJsonObject { put("p_id", v.text("id")); put("p_accept", false); put("p_note", reason.trim()) })
             }) { Text("Decline", fontWeight = FontWeight.ExtraBold) } },
             dismissButton = { TextButton(onClick = { declining = null }) { Text("Cancel") } })
+    }
+}
+
+
+/** Guest club's lead on another club's event: post it to members, then confirm who goes (migration 058). */
+@Composable
+private fun GuestClubMembers(workspace: JsonObject, eid: String, busy: Boolean, vm: SystemViewModel?) {
+    val inv = ourInvitationFor(workspace, eid) ?: return
+    if (inv.text("status") != "accepted") return
+    var posting by remember { mutableStateOf(false) }
+    var declining by remember { mutableStateOf<JsonObject?>(null) }
+    val closes = inv.instant("registration_closes")
+    val open = closes?.let { Instant.now().isBefore(it) } ?: true
+    if (inv.text("published_at").isBlank()) {
+        LeadCard("YOUR MEMBERS", "Let your members sign up", "Post this event to ${clubName(workspace)}'s members. They sign up in Activities and you confirm who goes; each one you confirm becomes a delegate.") {
+            CardButton("Post to our members", Modifier.fillMaxWidth(), primary = true, enabled = !busy && open && vm != null) { posting = true }
+        }
+    } else {
+        val signups = signupsFor(workspace, inv.text("id"))
+        val confirmed = signups.count { it.text("status") == "confirmed" }
+        val slots = inv.text("slots").toIntOrNull()
+        DeskLabel("Member sign-ups · ${signups.count { it.text("status") == "signed_up" }} to confirm")
+        Text("$confirmed confirmed${slots?.let { " of $it slots" }.orEmpty()} · posted ${fmtDay(inv.instant("published_at"))}",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (signups.isEmpty()) EmptyState("No sign-ups yet", "Members see this event in Activities until ${fmtDay(closes)}.")
+        else RowGroup { signups.forEachIndexed { i, s ->
+            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(s.text("full_name"), style = MaterialTheme.typography.titleSmall)
+                        Text(s.text("category") + if (s.text("note").isNotBlank()) " · ${s.text("note")}" else "", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    when (s.text("status")) { "confirmed" -> StatusPill("Delegate", Tone.POSITIVE); "declined" -> StatusPill("Declined", Tone.NEUTRAL); else -> StatusPill("Signed up", Tone.WARNING) }
+                }
+                if (s.text("status") == "signed_up" && open) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardButton("Confirm", Modifier.weight(1f), primary = true, enabled = !busy && vm != null && (slots == null || confirmed < slots)) {
+                        vm?.save("decide_interclub_signup", buildJsonObject { put("p_signup", s.text("id")); put("p_confirm", true); put("p_remark", "") })
+                    }
+                    CardButton("Decline", Modifier.weight(1f), enabled = !busy && vm != null) { declining = s }
+                }
+            }
+            if (i < signups.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
+        } }
+    }
+    if (posting) {
+        var note by remember { mutableStateOf("") }
+        var slots by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { posting = false },
+            title = { Text("Post to our members?") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Every Active member of ${clubName(workspace)} gets a notice and can sign up until ${fmtDay(closes)}.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(note, { note = it.take(300) }, label = { Text("Note for members (optional)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(slots, { slots = it.filter(Char::isDigit).take(3) }, label = { Text("Slots (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            } },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                posting = false
+                vm?.save("publish_interclub_invitation", buildJsonObject {
+                    put("p_id", inv.text("id")); put("p_note", note.trim()); slots.toIntOrNull()?.let { put("p_slots", it) } ?: put("p_slots", JsonNull) })
+            }) { Text("Post", fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { posting = false }) { Text("Cancel") } })
+    }
+    declining?.let { s ->
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { declining = null },
+            title = { Text("Decline ${s.text("full_name")}?") },
+            text = { OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason they'll see") }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { TextButton(enabled = reason.trim().length >= 3 && !busy, onClick = {
+                declining = null
+                vm?.save("decide_interclub_signup", buildJsonObject { put("p_signup", s.text("id")); put("p_confirm", false); put("p_remark", reason.trim()) })
+            }) { Text("Decline", fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { declining = null }) { Text("Cancel") } })
+    }
+}
+
+/** Members: interclub events at other clubs that their club posted, with their own sign-up (migration 058). */
+@Composable
+fun InterclubForMembers(workspace: JsonObject, busy: Boolean, vm: SystemViewModel?) {
+    val now = Instant.now()
+    val isMember = workspace.records("memberships").any { it.text("user_id") == workspace.text("user_id") && it.text("status") == "Active" }
+    val events = interclubOpenToMembers(workspace).filter { v ->
+        mySignup(workspace, v.text("id")) != null || (v.instant("registration_closes")?.let { now.isBefore(it) } ?: true) }
+    if (events.isEmpty() || !isMember) return
+    var signing by remember { mutableStateOf<JsonObject?>(null) }
+    DeskLabel("Interclub · other clubs")
+    events.forEach { v ->
+        val signup = mySignup(workspace, v.text("id")).takeIf { it?.text("status") != "withdrawn" }
+        val entry = myInterclubEntry(workspace, v.text("id"))
+        val open = v.instant("registration_closes")?.let { now.isBefore(it) } ?: true
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("AT ${v.text("host_name").uppercase()}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(v.text("event_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            Text("${fmtDay(v.instant("starts_at"))} · ${v.text("venue")}" + if (open) " · sign up by ${fmtDay(v.instant("registration_closes"))}" else "",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (v.text("member_note").isNotBlank()) Text(v.text("member_note"), style = MaterialTheme.typography.bodyMedium)
+            if (v.text("slots").isNotBlank()) Text("${v.text("slots")} slots for ${clubName(workspace)}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val line = signupStatusLine(signup, entry, v.text("host_name"))
+            if (line.isNotBlank()) Text(line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+                color = if (signup?.text("status") == "declined" || entry?.text("delegate_status") in setOf("rejected", "incomplete")) Club.amberInk else Club.forest)
+            entry?.get("target")?.let { t -> if (t is JsonObject) Text("Target: ${t.text("target_group")} · ${fmtDay(t.instant("starts_at"))}", style = MaterialTheme.typography.bodySmall) }
+            entry?.text("result")?.takeIf { it.isNotBlank() }?.let { Text("Result: $it", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold) }
+            when {
+                signup == null && open -> CardButton("Sign up", Modifier.fillMaxWidth(), primary = true, enabled = !busy && vm != null) { signing = v }
+                signup?.text("status") == "declined" && open -> CardButton("Sign up again", Modifier.fillMaxWidth(), enabled = !busy && vm != null) { signing = v }
+                signup?.text("status") == "signed_up" && open -> CardButton("Withdraw", Modifier.fillMaxWidth(), enabled = !busy && vm != null) {
+                    vm?.save("withdraw_interclub_signup", buildJsonObject { put("p_id", v.text("id")) })
+                }
+            }
+        } }
+    }
+    signing?.let { v ->
+        val profile = workspace.records("profiles").find { it.text("id") == workspace.text("user_id") }
+        var category by remember { mutableStateOf(bowCategory(profile?.text("bow_type").orEmpty())) }
+        var note by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { signing = null },
+            title = { Text("Sign up for ${v.text("event_title")}") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Bow category", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("Recurve", "Compound", "Barebow").forEach { c ->
+                        FilterChip(category == c, { category = c }, label = { Text(c) })
+                    }
+                }
+                OutlinedTextField(note, { note = it.take(200) }, label = { Text("Note for your representative (optional)") }, modifier = Modifier.fillMaxWidth())
+                Text("Your club's representative confirms who goes, then ${v.text("host_name")} reviews each delegate.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                signing = null
+                vm?.save("interclub_signup", buildJsonObject { put("p_id", v.text("id")); put("p_category", category); put("p_note", note.trim()) })
+            }) { Text("Sign up", fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { signing = null }) { Text("Cancel") } })
     }
 }
