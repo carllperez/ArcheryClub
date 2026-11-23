@@ -1,12 +1,15 @@
 package ph.capstone.archeryclub.connected
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -140,12 +143,15 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
     var domain by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var theme by rememberSaveable { mutableStateOf("green") }
+    // Migration 059: a community club has no school domain; people join it with its join code only.
+    var community by rememberSaveable { mutableStateOf(false) }
     var attempted by remember { mutableStateOf(false) }
     val errors = buildMap {
         if (name.trim().length < 2) put("name", "Enter the club's name.")
         if (!email.trim().matches(Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))) put("email", "Enter the first administrator's email.")
         val d = domain.trim().trimStart('@').lowercase()
-        if (!d.matches(Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$"))) put("domain", "Enter the school's email domain, like up.edu.ph.")
+        if (community) Unit
+        else if (!d.matches(Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$"))) put("domain", "Enter the school's email domain, like up.edu.ph.")
         else if (!email.trim().lowercase().substringAfter('@').let { it == d || it.endsWith(".$d") }) put("email", "The first administrator needs an @$d email.")
     }
     var approving by remember { mutableStateOf<JsonObject?>(null) }
@@ -197,8 +203,17 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
             OutlinedTextField(name, { name = it.take(160) }, label = { Text("Club name") }, placeholder = { Text("e.g. UP Archery Club") }, singleLine = true,
                 isError = attempted && "name" in errors, supportingText = { if (attempted) errors["name"]?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(short, { short = it.take(40) }, label = { Text("Short name (optional)") }, placeholder = { Text("e.g. UPAC") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(school, { school = it.take(160) }, label = { Text("School") }, placeholder = { Text("e.g. University of the Philippines") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(domain, { domain = it.trim().take(80) }, label = { Text("School email domain") }, placeholder = { Text("e.g. up.edu.ph") }, singleLine = true,
+            OutlinedTextField(school, { school = it.take(160) }, label = { Text(if (community) "Group or organisation (optional)" else "School") },
+                placeholder = { Text(if (community) "e.g. Alumni archers of Manila" else "e.g. University of the Philippines") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { community = !community }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(community, { community = it })
+                Column(Modifier.weight(1f)) {
+                    Text("Community club (no school email)", style = MaterialTheme.typography.titleSmall)
+                    Text("Nobody joins by email: people sign up with the club's join code. Its first administrator uses a personal email.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!community) OutlinedTextField(domain, { domain = it.trim().take(80) }, label = { Text("School email domain") }, placeholder = { Text("e.g. up.edu.ph") }, singleLine = true,
                 prefix = { Text("@") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 isError = attempted && "domain" in errors,
                 supportingText = { Text(if (attempted) errors["domain"] ?: "" else "Only accounts with this email join the club. Nobody else can.") },
@@ -215,8 +230,9 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
             CardButton("Create club", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
                 attempted = true
                 if (errors.isEmpty()) vm?.save("create_club", buildJsonObject { put("p_data", buildJsonObject {
-                    put("name", name.trim()); put("short_name", short.trim()); put("school", school.trim()); put("admin_email", email.trim()); put("theme", theme); put("email_domain", domain.trim().trimStart('@').lowercase())
-                }) }) { name = ""; short = ""; school = ""; email = ""; domain = ""; theme = "green"; attempted = false }
+                    put("name", name.trim()); put("short_name", short.trim()); put("school", school.trim()); put("admin_email", email.trim()); put("theme", theme)
+                    if (community) put("community", true) else put("email_domain", domain.trim().trimStart('@').lowercase())
+                }) }) { name = ""; short = ""; school = ""; email = ""; domain = ""; theme = "green"; community = false; attempted = false }
             }
         } }
     }
