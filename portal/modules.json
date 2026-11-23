@@ -992,7 +992,7 @@
       "fields": [
         {
           "name": "title",
-          "label": "Title",
+          "label": "Election title",
           "type": "text",
           "options": [],
           "source": "",
@@ -1011,7 +1011,7 @@
         },
         {
           "name": "term_end",
-          "label": "Term end",
+          "label": "New officers serve until",
           "type": "date",
           "options": [],
           "source": "",
@@ -1019,11 +1019,12 @@
         },
         {
           "name": "announces_at",
-          "label": "Announces at",
+          "label": "Announce on",
           "type": "timestamp",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Members are told and can start running."
         },
         {
           "name": "candidacy_closes",
@@ -1031,7 +1032,8 @@
           "type": "timestamp",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Last moment to run or nominate."
         },
         {
           "name": "voting_opens",
@@ -1051,7 +1053,7 @@
         },
         {
           "name": "result_due",
-          "label": "Result due",
+          "label": "Results due",
           "type": "timestamp",
           "options": [],
           "source": "",
@@ -1059,23 +1061,25 @@
         },
         {
           "name": "threshold",
-          "label": "Threshold",
+          "label": "Turnout needed (%)",
           "type": "number",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Results count only if at least this share of voters vote."
         },
         {
           "name": "residency_terms",
-          "label": "Residency terms",
+          "label": "Completed terms needed to vote",
           "type": "number",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "0 = every Active member can vote. Above 0 needs residency records."
         },
         {
           "name": "rules",
-          "label": "Rules",
+          "label": "Election rules",
           "type": "long",
           "options": [],
           "source": "",
@@ -1083,7 +1087,7 @@
         },
         {
           "name": "rules_validated",
-          "label": "Rules validated",
+          "label": "These rules are approved",
           "type": "boolean",
           "options": [],
           "source": "",
@@ -1091,7 +1095,7 @@
         },
         {
           "name": "method",
-          "label": "Method",
+          "label": "How members vote",
           "type": "choice",
           "options": [
             "digital",
@@ -1099,7 +1103,8 @@
             "external"
           ],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Digital = in the app."
         },
         {
           "name": "positions",
@@ -1114,7 +1119,7 @@
       "table": null,
       "seed": {},
       "states": [],
-      "help": "Proposal defaults: announce 4 weeks before third-term end, candidacy +3 days, voting +7 days, results within +3 days, 60% turnout, 2 consecutive completed terms. Validate the club rules before opening."
+      "help": "The dates are a plan, not a wait: from the election page you announce, open voting and close voting yourself as soon as everything is ready, so a whole election can run in one sitting. Steps: approve the rules, add the voters, announce, confirm candidates, open voting, close voting, then another election officer confirms the results."
     },
     "file_candidacy": {
       "action": "file_candidacy",
@@ -1156,7 +1161,7 @@
       "fields": [
         {
           "name": "title",
-          "label": "Title",
+          "label": "Election title",
           "type": "text",
           "options": [],
           "source": "",
@@ -1175,7 +1180,7 @@
         },
         {
           "name": "term_end",
-          "label": "Term end",
+          "label": "New officers serve until",
           "type": "date",
           "options": [],
           "source": "",
@@ -1183,11 +1188,12 @@
         },
         {
           "name": "announces_at",
-          "label": "Announces at",
+          "label": "Announce on",
           "type": "timestamp",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Members are told and can start running."
         },
         {
           "name": "candidacy_closes",
@@ -1195,7 +1201,8 @@
           "type": "timestamp",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Last moment to run or nominate."
         },
         {
           "name": "voting_opens",
@@ -1215,7 +1222,7 @@
         },
         {
           "name": "result_due",
-          "label": "Result due",
+          "label": "Results due",
           "type": "timestamp",
           "options": [],
           "source": "",
@@ -1223,23 +1230,25 @@
         },
         {
           "name": "threshold",
-          "label": "Threshold",
+          "label": "Turnout needed (%)",
           "type": "number",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Results count only if at least this share of voters vote."
         },
         {
           "name": "residency_terms",
-          "label": "Residency terms",
+          "label": "Completed terms needed to vote",
           "type": "number",
           "options": [],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "0 = every Active member can vote. Above 0 needs residency records."
         },
         {
           "name": "rules",
-          "label": "Rules",
+          "label": "Election rules",
           "type": "long",
           "options": [],
           "source": "",
@@ -1247,7 +1256,7 @@
         },
         {
           "name": "rules_validated",
-          "label": "Rules validated",
+          "label": "These rules are approved",
           "type": "boolean",
           "options": [],
           "source": "",
@@ -1255,7 +1264,7 @@
         },
         {
           "name": "method",
-          "label": "Method",
+          "label": "How members vote",
           "type": "choice",
           "options": [
             "digital",
@@ -1263,7 +1272,8 @@
             "external"
           ],
           "source": "",
-          "optional": false
+          "optional": false,
+          "hint": "Digital = in the app."
         },
         {
           "name": "positions",

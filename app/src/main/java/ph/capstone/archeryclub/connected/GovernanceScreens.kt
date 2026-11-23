@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
 import ph.capstone.archeryclub.ui.Club
 import ph.capstone.archeryclub.ui.ClubIcon
@@ -62,7 +63,7 @@ fun ElectionScreen(
         HeroScaffold("Elections", onBack, snackbar, overlap = 44.dp, busy = busy, eyebrow = { Pill("ELECTIONS", Color.White.copy(alpha = .16f), Color.White) },
             heroExtra = { Text("Officer elections run here: candidacy, an anonymous ballot and official results.", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
             EmptyState("No election right now", "When the election officer announces one, you'll see the timeline and candidates here.",
-                if (officer) "Create an election" else null) { onStart("create_election", buildJsonObject { put("method", "digital"); put("kind", "annual") }) }
+                if (officer) "Create an election" else null) { onStart("create_election", newElectionSeed(Instant.now())) }
             if (officer) TextButton(onClick = onRecords, modifier = Modifier.fillMaxWidth()) { Text("Terms, residency and leadership records") }
         }
         return
@@ -78,6 +79,8 @@ fun ElectionScreen(
     val iVoted = voted.any { it.text("user_id") == user }
     val canVote = isMember && eligible.any { it.text("user_id") == user } && !iVoted && status == "voting" && stageOpen && e.text("method") == "digital"
     val choices = remember(eid) { mutableStateMapOf<String, String>() }
+    var advancing by remember(eid) { mutableStateOf<ElectionStep?>(null) }
+    var rollResult by remember(eid) { mutableStateOf<JsonObject?>(null) }
     var confirming by remember { mutableStateOf(false) }
     var summary by remember(eid) { mutableStateOf<JsonObject?>(null) }
     val resultsVisible = officer || status in setOf("confirmed", "requires_revote", "archived")
@@ -96,7 +99,36 @@ fun ElectionScreen(
         },
         sticky = if (canVote) ({ StickyButton("Review and cast ballot", !busy && positions.isNotEmpty() && positions.all { !choices[it].isNullOrBlank() }, Modifier.weight(1f)) { confirming = true } }) else null) {
         StepDots(electionTimeline(status))
-        if (officer && e.text("rules_validated") != "true") NoticeCard("Rules not validated", "Confirm the election rules before announcing or opening the vote.", Tone.WARNING)
+        if (officer) electionNextStep(e, workspace, Instant.now())?.let { step ->
+            Surface(shape = RoundedCornerShape(16.dp), color = Club.forestDeep, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("THIS STEP · ${step.eyebrow}", color = Club.lime, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
+                    Text(step.title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text(step.detail, color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodySmall)
+                    if (step.action != ElectionAction.NONE) Button(onClick = {
+                        when (step.action) {
+                            ElectionAction.EDIT -> onStart("update_election", e)
+                            ElectionAction.CONFIRM -> onStart("confirm_results", e)
+                            ElectionAction.ADVANCE -> advancing = step
+                            ElectionAction.ADD_VOTERS -> vm?.rpc("add_all_eligible_voters", buildJsonObject { put("p_id", eid) }) { r -> rollResult = r as? JsonObject; vm?.refresh() }
+                            else -> Unit
+                        }
+                    }, enabled = !busy, modifier = Modifier.padding(top = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Club.lime, contentColor = Club.forestDeep)) {
+                        Text(step.button, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
+        }
+        rollResult?.let { r ->
+            val added = r.text("added").toIntOrNull() ?: 0; val short = r.text("short_of_residency").toIntOrNull() ?: 0
+            NoticeCard(if (added > 0) "$added voter${if (added == 1) "" else "s"} added" else "No one was added",
+                buildString {
+                    if (r.text("already") != "0" && r.text("already").isNotBlank()) append("${r.text("already")} were already on the list. ")
+                    if (short > 0) append("$short Active member${if (short == 1) " doesn't" else "s don't"} have the ${r.text("residency_terms")} completed term(s) this election asks for. " +
+                        "Record their terms in Terms, residency and leadership records, or set the residency rule to 0 while the election is a draft.")
+                    if (isEmpty()) append("Everyone eligible is on the list.")
+                }, if (added > 0) Tone.POSITIVE else Tone.WARNING)
+        }
         when {
             iVoted -> NoticeCard("You voted", "Thank you. The club records only that you voted, never who you chose.", Tone.POSITIVE)
             status == "voting" && e.text("method") != "digital" -> NoticeCard("Voting isn't in the app this time", if (e.text("method") == "paper") "This election uses paper ballots. Ask the election officer where to vote." else "This election is run outside the app. Results are posted here once confirmed.", Tone.INFO)
@@ -190,6 +222,25 @@ fun ElectionScreen(
             DeskLabel("Other elections")
             others.take(5).forEach { o -> DeskRow(o.text("title"), electionStageLabel(o, Instant.now()), leading = { IconChip("vote", Tone.NEUTRAL) }, onClick = { onOpen(o.text("id")) }) }
         }
+    }
+    advancing?.let { step ->
+        var reason by remember { mutableStateOf("") }
+        val closingEarly = status == "voting" && e.instant("voting_closes")?.isAfter(Instant.now()) == true && voted.size < eligible.size
+        AlertDialog(onDismissRequest = { advancing = null },
+            title = { Text(step.button + "?") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(when (status) {
+                    "draft" -> "Members get a notice and can run or nominate until ${fmtDateTime(e.instant("candidacy_closes"))}."
+                    "announced" -> "Candidacy closes and the ballot opens for ${eligible.size} voter${if (eligible.size == 1) "" else "s"}. Candidates can't be added after this."
+                    else -> "No more ballots after this. ${voted.size} of ${eligible.size} voted."
+                }, style = MaterialTheme.typography.bodyMedium)
+                if (closingEarly) OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Why close early? (kept in the record)") }, modifier = Modifier.fillMaxWidth())
+            } },
+            confirmButton = { TextButton(enabled = !busy && (!closingEarly || reason.trim().length >= 3), onClick = {
+                advancing = null
+                vm?.save("advance_election", buildJsonObject { put("p_id", eid); put("p_reason", reason.trim()) })
+            }) { Text(step.button, fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { advancing = null }) { Text("Cancel") } })
     }
     if (confirming) ConfirmDialog("Cast your ballot?", positions.joinToString("\n") { p -> "$p: ${confirmed.find { it.text("id") == choices[p] }?.let { memberName(workspace, it.text("user_id")) } ?: "—"}" } +
         "\n\nYou can vote once and can't change it after.", "Cast ballot", onConfirm = {
@@ -635,4 +686,21 @@ fun AccountsScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHostS
             }) { Text(if (a.enabled) "Disable" else "Enable", fontWeight = FontWeight.ExtraBold, color = if (a.enabled) Club.roseInk else Color.Unspecified) } },
             dismissButton = { TextButton(onClick = { toggling = null }) { Text("Cancel") } })
     }
+}
+
+
+/** A new election starts filled in: today's announcement, 3 days of candidacy, 2 days of voting, results 2 days later.
+ *  The officer can move each stage on sooner from the election page (migration 060). */
+private fun newElectionSeed(now: Instant): JsonObject = buildJsonObject {
+    val zone = java.time.ZoneId.systemDefault()
+    val year = now.atZone(zone).year
+    fun inDays(d: Long) = now.plus(java.time.Duration.ofDays(d)).truncatedTo(java.time.temporal.ChronoUnit.MINUTES).toString()
+    put("title", "Officer election $year"); put("kind", "annual"); put("method", "digital")
+    put("term_end", now.atZone(zone).toLocalDate().plusYears(1).toString())
+    put("announces_at", now.truncatedTo(java.time.temporal.ChronoUnit.MINUTES).toString())
+    put("candidacy_closes", inDays(3)); put("voting_opens", inDays(3)); put("voting_closes", inDays(5)); put("result_due", inDays(7))
+    put("threshold", 60); put("residency_terms", 0)
+    put("rules", "One vote per position. Candidates and voters are Active members. Results count when at least 60% of voters take part.")
+    put("rules_validated", false)
+    put("positions", JsonArray(listOf(JsonPrimitive("President"), JsonPrimitive("Vice President"))))
 }

@@ -41,6 +41,20 @@ form('save_term','Add academic term','name;sequence:number;starts_on:date;ends_o
 form('record_residency','Record completed residency','user_id:record:member_directory;term_id:record:academic_terms;completed:boolean','elections')
 form('create_election','Configure election','title;kind:choice:annual|special;term_end:date;announces_at:timestamp;candidacy_closes:timestamp;voting_opens:timestamp;voting_closes:timestamp;result_due:timestamp;threshold:number;residency_terms:number;rules:long;rules_validated:boolean;method:choice:digital|paper|external;positions:lines','elections',help='Proposal defaults: announce 4 weeks before third-term end, candidacy +3 days, voting +7 days, results within +3 days, 60% turnout, 2 consecutive completed terms. Validate the club rules before opening.')
 form('file_candidacy','File candidacy','position:choice:President|Vice President;statement:long','member','elections',{'election_id':'id'},['announced'])
+# 23 Nov feedback ("the election process is complicated and the instructions are a bit unclear"): plain labels and hints.
+_election_words={'title':('Election title',''),'term_end':('New officers serve until',''),
+ 'announces_at':('Announce on','Members are told and can start running.'),'candidacy_closes':('Candidacy closes','Last moment to run or nominate.'),
+ 'voting_opens':('Voting opens',''),'voting_closes':('Voting closes',''),'result_due':('Results due',''),
+ 'threshold':('Turnout needed (%)','Results count only if at least this share of voters vote.'),
+ 'residency_terms':('Completed terms needed to vote','0 = every Active member can vote. Above 0 needs residency records.'),
+ 'rules':('Election rules',''),'rules_validated':('These rules are approved',''),'method':('How members vote','Digital = in the app.')}
+for _f in forms['create_election']['fields']:
+ if _f['name'] in _election_words:
+  _f['label'],_hint=_election_words[_f['name']]
+  if _hint:_f['hint']=_hint
+forms['create_election']['help']=('The dates are a plan, not a wait: from the election page you announce, open voting and close voting yourself as soon as '
+ 'everything is ready, so a whole election can run in one sitting. Steps: approve the rules, add the voters, announce, confirm '
+ 'candidates, open voting, close voting, then another election officer confirms the results.')
 forms['update_election']={**forms['create_election'],'action':'update_election','label':'Edit draft election rules and schedule','table':'elections','states':['draft']}
 form('nominate_candidate','Nominate a member','user_id:record:member_directory;position:choice:President|Vice President;statement:long','member','elections',{'election_id':'id'},['announced'],help='The election officer reviews eligibility before the nomination appears on the ballot.')
 form('confirm_candidate','Review candidate eligibility','confirmed:boolean;remark:long','elections','candidates')

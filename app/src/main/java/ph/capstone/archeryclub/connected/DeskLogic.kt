@@ -1086,3 +1086,71 @@ fun EndCursor.clearEnd(): EndCursor = if (cursor < ends.size) EndCursor(ends.fil
 fun EndCursor.canNext(planned: Int?): Boolean = cursor < ends.size && (cursor < ends.lastIndex || planned == null || ends.size < planned)
 fun EndCursor.next(planned: Int?): EndCursor = if (canNext(planned)) copy(cursor = cursor + 1) else this
 fun EndCursor.previous(): EndCursor = if (cursor > 0) copy(cursor = cursor - 1) else this
+
+// 23 Nov feedback: "The election process is complicated and the instructions are a bit unclear. I wasn't able to complete
+// it in a single session." The election page now opens with the one thing the officer does next (migration 060 lets
+// them do it now instead of waiting for the planned date).
+enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, NONE }
+data class ElectionStep(val eyebrow: String, val title: String, val detail: String, val action: ElectionAction, val button: String = "")
+
+private val electionWhen = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.ENGLISH)
+private fun at(i: Instant?) = i?.atZone(java.time.ZoneId.systemDefault())?.format(electionWhen) ?: "the planned date"
+
+/** Names of everyone holding a desk with the elections permission (who can confirm results), except [exceptUser]. */
+fun electionOfficerNames(workspace: JsonObject, exceptUser: String, now: Instant): List<String> {
+    val roles = workspace.records("roles").filter { r -> (r["permissions"] as? kotlinx.serialization.json.JsonArray).orEmpty()
+        .any { (it as? kotlinx.serialization.json.JsonPrimitive)?.content == "elections" } }.map { it.text("id") }.toSet()
+    return workspace.records("role_assignments").filter { it.text("role_id") in roles && it.text("retired_at").isBlank() &&
+            (it.instant("ends_at")?.isAfter(now) ?: true) && it.text("user_id") != exceptUser }
+        .map { memberName(workspace, it.text("user_id")) }.distinct().sorted()
+}
+
+fun electionNextStep(e: JsonObject, workspace: JsonObject, now: Instant): ElectionStep? {
+    val eid = e.text("id")
+    val positions = (e["positions"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    val candidates = workspace.records("candidates").filter { it.text("election_id") == eid }
+    val unreviewed = candidates.count { it.text("confirmed") != "true" && it.text("reviewed_by").isBlank() }
+    val voters = workspace.records("eligible_voters").count { it.text("election_id") == eid }
+    val voted = workspace.records("voter_participation").count { it.text("election_id") == eid }
+    val missing = positions.filter { p -> candidates.none { it.text("position") == p && it.text("confirmed") == "true" } }
+    val residency = e.text("residency_terms").toIntOrNull() ?: 0
+    val addVoters = ElectionStep("VOTERS", "Add the voters",
+        "Puts every Active member" + (if (residency > 0) " with $residency completed term${if (residency == 1) "" else "s"}" else "") + " on the voter list in one go.",
+        ElectionAction.ADD_VOTERS, "Add eligible members")
+    return when (e.text("status")) {
+        "draft" -> when {
+            e.text("rules_validated") != "true" -> ElectionStep("FIRST", "Confirm the election rules",
+                "Open the details, check the rules and tick \"These rules are approved\". Nothing can move on until then.", ElectionAction.EDIT, "Edit details")
+            voters == 0 -> addVoters
+            else -> ElectionStep("NEXT", "Announce the election",
+                "Members can run or nominate someone until ${at(e.instant("candidacy_closes"))}. You can open voting sooner from here once candidates are confirmed.",
+                ElectionAction.ADVANCE, "Announce now")
+        }
+        "announced" -> when {
+            unreviewed > 0 -> ElectionStep("CANDIDATES", "Review $unreviewed candidac${if (unreviewed == 1) "y" else "ies"}",
+                "Tap Review on each one below to confirm or reject it.", ElectionAction.NONE)
+            voters == 0 -> addVoters
+            missing.isNotEmpty() -> ElectionStep("WAITING FOR CANDIDATES", "No confirmed candidate for ${missing.joinToString(" or ")} yet",
+                "Members file or nominate below until ${at(e.instant("candidacy_closes"))}. Voting opens once every position has a confirmed candidate.", ElectionAction.NONE)
+            else -> ElectionStep("NEXT", "Open voting",
+                (if (e.instant("candidacy_closes")?.isAfter(now) == true) "This closes candidacy now (it was due ${at(e.instant("candidacy_closes"))}) and opens the ballot"
+                 else "Candidacy has closed. This opens the ballot") + " for $voters voter${if (voters == 1) "" else "s"} until ${at(e.instant("voting_closes"))}.",
+                ElectionAction.ADVANCE, "Open voting now")
+        }
+        "voting" -> ElectionStep("VOTING", "$voted of $voters voted",
+            if (voted >= voters && voters > 0) "Everyone on the list has voted. Close voting to count the ballots."
+            else "Voting closes on its own at ${at(e.instant("voting_closes"))}, or close it now. Closing early needs a reason.",
+            ElectionAction.ADVANCE, "Close voting")
+        "closed" -> {
+            val others = electionOfficerNames(workspace, workspace.text("user_id"), now)
+            ElectionStep("RESULTS", "Confirm the official results",
+                "The officer who closed voting can't confirm the count; another election officer does" +
+                    (if (others.isNotEmpty()) " (${others.joinToString(", ")})." else ". Nobody else holds Election officer yet: assign one in Administration, Officers and terms."),
+                ElectionAction.CONFIRM, "Confirm results")
+        }
+        "confirmed" -> ElectionStep("DONE", "Results are out", "Members see the confirmed results on this page.", ElectionAction.NONE)
+        "requires_revote" -> ElectionStep("REVOTE", "Turnout was below ${e.text("threshold")}%",
+            "The results don't count. Create a new election for the revote.", ElectionAction.NONE)
+        else -> null
+    }
+}

@@ -1427,3 +1427,32 @@ test('Community clubs 23 Nov: a gmail account requests its own club; people join
  await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'Faux Community',community:true,admin_email:'kid@up.example.test'})],'$1::jsonb'),/school email/);
  await db.query('update app_private.clubs set email_domain=null');
 });
+
+test('Elections 23 Nov: an officer runs a whole election in one sitting; early closing needs a reason; a second officer confirms',async()=>{
+ await grant('officer','election_officer'); await grant('successor','election_officer');
+ const e=await command('officer','create_election',{title:'One-sitting election',kind:'special',term_end:'2031-01-01',announces_at:future(24),candidacy_closes:future(48),
+  voting_opens:future(72),voting_closes:future(96),result_due:future(120),threshold:10,residency_terms:0,rules:'One vote per position',rules_validated:true,method:'digital',positions:['President']});
+ const adv=(p,reason='')=>rpc(p,'advance_election',[e.id,reason],'$1::uuid,$2::text');
+ await denied(()=>adv('applicant'),/Permission denied/);
+ assert.equal((await adv('officer')).status,'announced');            // a day before "announces at"
+ const c=await command('applicant','nominate_candidate',{election_id:e.id,user_id:ids.successor,position:'President',statement:'Platform'});
+ await denied(()=>adv('officer'),/voter roll|Confirm/);               // the old checks still apply
+ await command('officer','confirm_candidate',{id:c.id,confirmed:true,remark:'Eligible'});
+ const roll=await rpc('officer','add_all_eligible_voters',[e.id],'$1::uuid');
+ assert.ok(roll.added>=1); assert.equal(roll.short_of_residency,0);
+ assert.equal((await rpc('officer','add_all_eligible_voters',[e.id],'$1::uuid')).added,0,'nobody twice');
+ const v=await adv('officer'); assert.equal(v.status,'voting'); assert.equal(v.early,true);
+ await command('applicant','cast_ballot',{election_id:e.id,choices:{President:c.id}});
+ const left=(await db.query('select count(*)::int n from app_private.eligible_voters x where election_id=$1 and not exists(select 1 from app_private.voter_participation p where p.election_id=x.election_id and p.user_id=x.user_id)',[e.id])).rows[0].n;
+ if(left>0) await denied(()=>adv('officer'),/Say why voting closes early/);
+ assert.equal((await adv('officer','Everyone present has voted')).status,'closed');
+ const ver=(await db.query('select version from app_private.elections where id=$1',[e.id])).rows[0].version;
+ await denied(()=>command('officer','confirm_results',{id:e.id,version:ver,confirmation:'Self'}),/Another COMELEC/);
+ await command('successor','confirm_results',{id:e.id,version:ver,confirmation:'Checked the count'});
+ assert.equal((await db.query('select status from app_private.elections where id=$1',[e.id])).rows[0].status,'confirmed');
+ // The residency rule is reported, not silently applied.
+ const e2=await command('officer','create_election',{title:'Residency check',kind:'special',term_end:'2031-01-01',announces_at:future(24),candidacy_closes:future(48),
+  voting_opens:future(72),voting_closes:future(96),result_due:future(120),threshold:60,residency_terms:6,rules:'Six terms',rules_validated:true,method:'digital',positions:['President']});
+ const r2=await rpc('officer','add_all_eligible_voters',[e2.id],'$1::uuid');
+ assert.equal(r2.added,0); assert.ok(r2.short_of_residency>=1); assert.equal(r2.residency_terms,6);
+});
