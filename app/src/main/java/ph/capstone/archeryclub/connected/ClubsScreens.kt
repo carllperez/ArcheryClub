@@ -28,10 +28,11 @@ fun ChooseClubScreen(workspace: JsonObject, state: SystemState, vm: SystemViewMo
     val request = myClubRequest(workspace)
     var asking by rememberSaveable { mutableStateOf(false) }
     val domains = allClubs(workspace).mapNotNull { c -> c.text("email_domain").takeIf { it.isNotBlank() }?.let { "@$it (${c.text("short_name").ifBlank { c.text("name") }})" } }
-    val open = allClubs(workspace).filter { it.text("email_domain").isBlank() }
+    // Community clubs (no domain, migration 059) are entered with their join code, never picked from a list.
+    val open = if (domains.isEmpty()) allClubs(workspace).filter { it.text("email_domain").isBlank() } else emptyList()
     val personal = isPersonalEmail(email) || domain.isBlank()
-    HeroScaffold(if (personal) "Use your school email" else "Your school has no club yet", snackbar = snackbar, busy = state.busy,
-        heroExtra = { Text(if (personal) "Each club is only for its own school's email." else "You can ask for one: the club would be for every @$domain account.",
+    HeroScaffold(if (personal) "Join a club or start one" else "Your school has no club yet", snackbar = snackbar, busy = state.busy,
+        heroExtra = { Text(if (personal) "Without a school email you join a club with its join code, or start a community club of your own." else "You can ask for one: the club would be for every @$domain account.",
             color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
         when {
             personal -> {
@@ -46,6 +47,18 @@ fun ChooseClubScreen(workspace: JsonObject, state: SystemState, vm: SystemViewMo
                         vm.save("claim_join_code", buildJsonObject { put("p_data", buildJsonObject { put("code", joinCode.trim()) }) })
                     }
                 } }
+                // Migration 059: no club to join? Start a community club (no school email needed).
+                DeskLabel("Start your own club")
+                when {
+                    request?.text("status") == "pending" -> NoticeCard("Request sent: ${request.text("name")}",
+                        "The platform administrator will approve it or say why not. Once approved, you're its administrator and you share its join code with the people you want in.", Tone.WARNING)
+                    request?.text("status") == "declined" && !asking -> {
+                        NoticeCard("Your request wasn't approved", request.text("remark").ifBlank { "No reason was given." }, Tone.DANGER)
+                        PrimaryAction("Ask again", !state.busy) { asking = true }
+                    }
+                    asking -> ClubRequestForm(domain, state.busy, vm, community = true) { asking = false }
+                    else -> SecondaryAction("Start a community club", !state.busy) { asking = true }
+                }
             }
             request?.text("status") == "pending" -> NoticeCard("Request sent: ${request.text("name")}",
                 "The platform administrator will approve it or say why not. You'll get a notice, and once approved, this app opens your new club with you as its administrator.",
@@ -82,7 +95,7 @@ fun ChooseClubScreen(workspace: JsonObject, state: SystemState, vm: SystemViewMo
 
 /** What a student fills in to ask for their school's club. The domain comes from their own email, not from a field. */
 @Composable
-private fun ClubRequestForm(domain: String, busy: Boolean, vm: SystemViewModel, onSent: () -> Unit) {
+private fun ClubRequestForm(domain: String, busy: Boolean, vm: SystemViewModel, community: Boolean = false, onSent: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     var short by rememberSaveable { mutableStateOf("") }
     var school by rememberSaveable { mutableStateOf("") }
@@ -91,21 +104,23 @@ private fun ClubRequestForm(domain: String, busy: Boolean, vm: SystemViewModel, 
     var attempted by remember { mutableStateOf(false) }
     val errors = buildMap {
         if (name.trim().length < 2) put("name", "Enter the club's name.")
-        if (school.trim().length < 2) put("school", "Enter your school's name.")
+        if (!community && school.trim().length < 2) put("school", "Enter your school's name.")
     }
     RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("REQUEST A CLUB", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("For @$domain", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+        Text(if (community) "COMMUNITY CLUB" else "REQUEST A CLUB", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (community) "For people without a school email" else "For @$domain", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
         OutlinedTextField(name, { name = it.take(160) }, label = { Text("Club name") }, placeholder = { Text("e.g. FEU Archery Club") }, singleLine = true,
             isError = attempted && "name" in errors, supportingText = { if (attempted) errors["name"]?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(short, { short = it.take(40) }, label = { Text("Short name (optional)") }, placeholder = { Text("e.g. FEU") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(school, { school = it.take(160) }, label = { Text("School") }, placeholder = { Text("e.g. Far Eastern University") }, singleLine = true,
+        OutlinedTextField(school, { school = it.take(160) }, label = { Text(if (community) "Group or organisation (optional)" else "School") },
+            placeholder = { Text(if (community) "e.g. Alumni archers of Manila" else "e.g. Far Eastern University") }, singleLine = true,
             isError = attempted && "school" in errors, supportingText = { if (attempted) errors["school"]?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
         Text("Colour", style = MaterialTheme.typography.labelLarge)
         ChoiceChips(listOf("green" to "Green", "red" to "Red", "blue" to "Blue"), theme) { theme = it }
         OutlinedTextField(note, { note = it.take(500) }, label = { Text("Note for the platform administrator (optional)") },
             placeholder = { Text("e.g. We have 15 members and an adviser") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-        Text("If approved, you become the club's first administrator and set its rules. Every @$domain account then joins it.",
+        Text(if (community) "If approved, you become the club's first administrator and set its rules. Nobody joins by email: people sign up with the club's join code, which you share, and apply as members."
+            else "If approved, you become the club's first administrator and set its rules. Every @$domain account then joins it.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         CardButton("Send request", Modifier.fillMaxWidth(), primary = true, enabled = !busy) {
             attempted = true
@@ -143,7 +158,7 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
         if (requests.isNotEmpty()) {
             DeskLabel("Club requests · ${requests.size}")
             requests.forEach { r ->
-                DeskRow(r.text("name"), listOf("@" + r.text("email_domain"), r.text("school")).joinToString(" · "),
+                DeskRow(r.text("name"), listOf(r.text("email_domain").takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Community club · personal email", r.text("school")).distinct().joinToString(" · "),
                     leading = { Initials(r.text("short_name").ifBlank { r.text("name") }, 36) }, status = "Waiting" to Tone.WARNING) {
                     Text("Asked by ${r.text("requester")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (r.text("note").isNotBlank()) Text("\u201C${r.text("note")}\u201D", style = MaterialTheme.typography.bodySmall)
@@ -155,7 +170,8 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
             }
         }
         approving?.let { r ->
-            ConfirmDialog("Create ${r.text("name")}?", "${r.text("requester")} becomes its only administrator and its Membership officer, so they can accept members. Anyone else who signs up with @${r.text("email_domain")} lands in this club as an ordinary applicant, and its officers approve them.",
+            ConfirmDialog("Create ${r.text("name")}?", "${r.text("requester")} becomes its only administrator and its Membership officer, so they can accept members. " + (if (r.text("email_domain").isBlank()) "It's a community club: nobody joins by email, only with its join code, and its officers approve each applicant."
+                else "Anyone else who signs up with @${r.text("email_domain")} lands in this club as an ordinary applicant, and its officers approve them."),
                 "Approve", onConfirm = {
                     approving = null
                     vm?.save("decide_club_request", buildJsonObject { put("p_data", buildJsonObject { put("id", r.text("id")); put("decision", "approve") }) })
@@ -172,7 +188,7 @@ fun PlatformClubsScreen(workspace: JsonObject, busy: Boolean, snackbar: Snackbar
         }
         DeskLabel("${allClubs(workspace).size} club${if (allClubs(workspace).size == 1) "" else "s"}")
         allClubs(workspace).forEach { c ->
-            DeskRow(c.text("name"), listOf(c.text("email_domain").takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(), c.text("school")).filter { it.isNotBlank() }.joinToString(" · "),
+            DeskRow(c.text("name"), listOf(c.text("email_domain").takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Community · join code only", c.text("school")).filter { it.isNotBlank() }.distinct().joinToString(" · "),
                 leading = { Initials(c.text("short_name").ifBlank { c.text("name") }, 36) },
                 status = (if (c.text("id") == myClub(workspace)?.text("id")) "Your club · " else "") + c.text("theme").replaceFirstChar { it.uppercase() } to Tone.NEUTRAL)
         }

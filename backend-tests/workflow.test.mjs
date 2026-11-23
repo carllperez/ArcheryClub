@@ -1173,7 +1173,8 @@ test('Club requests 23 Nov: a student whose school has no club asks for one; the
  const req=(n,d)=>rpc(n,'request_club',[JSON.stringify(d)],'$1::jsonb');
  const decide=(n,d)=>rpc(n,'decide_club_request',[JSON.stringify(d)],'$1::jsonb');
  // Only for your own school's domain, never a personal email, never from inside a club.
- await denied(()=>req('gmailer',{name:'Gmail Archers',school:'None'}),/school email/);
+ // Since migration 059 a personal email asks for a community club instead of being refused.
+ assert.equal((await req('gmailer',{name:'Gmail Archers',school:'None'})).community,true);
  await denied(()=>req('applicant',{name:'Another DLSU club',school:'DLSU'}),/already belongs|already has a club/);
  const r=await req('feu',{name:'FEU Archery Club',short_name:'FEU',school:'Far Eastern University',theme:'green'});
  await denied(()=>req('feu2',{name:'FEU Archers 2',school:'FEU'}),/already waiting/);
@@ -1389,4 +1390,40 @@ test('Interclub 23 Nov: the guest club posts an accepted event to its members, t
  const mine=w.my_interclub.find(x=>x.event_id===e.id);
  assert.equal(mine.status,'confirmed'); assert.equal(mine.delegate_status,'eligible');
  await denied(()=>rpc('upnew','withdraw_interclub_signup',[inv.id],'$1::uuid'),/Ask your club/);
+});
+
+test('Community clubs 23 Nov: a gmail account requests its own club; people join it with its code only',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ await db.query("update app_private.clubs set email_domain='example.test' where id=$1",[dlsu]);
+ await db.query("update app_private.clubs set email_domain='up.example.test' where id=$1",[up]);
+ await db.query('update app_private.profiles set platform_admin=true where id=$1',[ids.admin]);
+ const mk=async(n,id,email)=>{ids[n]=id;await db.query('insert into auth.users values($1,$2,now())',[id,email]);await as(n,()=>db.exec('select public.initialize_account()'));};
+ await mk('founder','00000000-0000-4000-8000-0000000c0e01','founder@gmail.test');
+ await mk('friend','00000000-0000-4000-8000-0000000c0e02','friend@gmail.test');
+ await mk('upkid','00000000-0000-4000-8000-0000000c0e03','kid@up.example.test');
+ // The test domains aren't on the personal list, so mark the founder's as personal the way the app sees gmail.
+ await db.query("update auth.users set email='founder@gmail.com' where id=$1",[ids.founder]);
+ await db.query("update auth.users set email='friend@gmail.com' where id=$1",[ids.friend]);
+ const req=await rpc('founder','request_club',[JSON.stringify({name:'Weekend Archers',short_name:'WKND',theme:'blue',note:'Alumni who shoot on Saturdays'})],'$1::jsonb');
+ assert.equal(req.community,true);
+ await denied(()=>rpc('founder','request_club',[JSON.stringify({name:'Another'})],'$1::jsonb'),/already waiting/);
+ const r=(await db.query('select * from app_private.club_requests where id=$1',[req.id])).rows[0];
+ assert.equal(r.email_domain,null); assert.equal(r.school,'Community club');
+ const ok=await rpc('admin','decide_club_request',[JSON.stringify({id:req.id,decision:'approve'})],'$1::jsonb');
+ const club=(await db.query('select * from app_private.clubs where id=$1',[ok.club_id])).rows[0];
+ assert.equal(club.email_domain,null);
+ assert.equal((await db.query('select club_id from app_private.profiles where id=$1',[ids.founder])).rows[0].club_id,ok.club_id);
+ const perms=(await rpc('founder','club_workspace',[],'')).permissions;
+ assert.ok(perms.includes('administration')&&perms.includes('membership'));
+ // Nobody lands in it by email or picks it from a list: only its code works, and not for a school email.
+ await denied(()=>rpc('friend','join_club',[JSON.stringify({club_id:ok.club_id})],'$1::jsonb'),/join code/);
+ const code=(await db.query('select join_code from app_private.settings where club_id=$1',[ok.club_id])).rows[0].join_code;
+ await rpc('friend','claim_join_code',[JSON.stringify({code})],'$1::jsonb');
+ assert.equal((await db.query('select club_id from app_private.profiles where id=$1',[ids.friend])).rows[0].club_id,ok.club_id);
+ await db.query('update app_private.profiles set club_id=null where id=$1',[ids.upkid]);
+ await denied(()=>rpc('upkid','claim_join_code',[JSON.stringify({code})],'$1::jsonb'),/belongs to UP/);
+ // A community club's first administrator can't be a school email.
+ await denied(()=>rpc('admin','create_club',[JSON.stringify({name:'Faux Community',community:true,admin_email:'kid@up.example.test'})],'$1::jsonb'),/school email/);
+ await db.query('update app_private.clubs set email_domain=null');
 });
