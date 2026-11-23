@@ -56,7 +56,7 @@ fun AttendanceScreen(workspace: JsonObject, snackbar: SnackbarHostState, onBack:
             view == "activities" -> events.forEach { e ->
                 val rate = if (e.expected == 0) null else e.present * 100 / e.expected
                 val bar: (@Composable ColumnScope.() -> Unit)? = if (e.taken && e.expected > 0) { { GoalBar(e.present / e.expected.toFloat(), (rate ?: 0) < 50) } } else null
-                DeskRow(e.title, "${kindLabel(e.kind)} · ${fmtDay(e.start)} · " +
+                DeskRow(e.title, "${activityKindLabel(e.kind)} · ${fmtDay(e.start)} · " +
                         if (!e.taken) "attendance not taken" else "${e.present} of ${e.expected} came" + rate?.let { " · $it%" }.orEmpty(),
                     leading = { IconChip(if (e.kind == "training") "target" else if (e.kind == "meeting") "users" else "calendar", if (e.taken) Tone.POSITIVE else Tone.NEUTRAL) },
                     status = if (!e.taken) "Not taken" to Tone.WARNING else null,
@@ -84,7 +84,7 @@ fun AttendanceEventScreen(workspace: JsonObject, eventId: String, snackbar: Snac
         if (e != null) TextButton(onClick = { shareCsv(context, "Attendance: ${e.title}", attendanceCsv(listOf(e))) }) { Text("Export", fontWeight = FontWeight.ExtraBold) }
     }) {
         if (e == null) { EmptyState("Activity not found", "It may have been archived."); return@ScreenShell }
-        Text("${kindLabel(e.kind)} · ${fmtDateTime(e.start)} · ${e.venue}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${activityKindLabel(e.kind)} · ${fmtDateTime(e.start)} · ${e.venue}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         RaisedCard { Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
             listOf("${e.present}" to "Present", "${e.absent}" to "Absent", "${e.excused}" to "Excused", "${e.noRecord}" to "No record").forEach { (v, l) ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -126,7 +126,7 @@ fun AttendanceMemberScreen(workspace: JsonObject, userId: String, snackbar: Snac
         DeskLabel("Activities since joining · ${m.timeline.size}")
         if (m.timeline.isEmpty()) EmptyState("Nothing yet", "Activities where attendance was taken appear here.")
         m.timeline.forEach { (e, s) ->
-            DeskRow(e.title, "${kindLabel(e.kind)} · ${fmtDay(e.start)}", leading = { IconChip(if (e.kind == "training") "target" else "calendar", statusTone(s)) },
+            DeskRow(e.title, "${activityKindLabel(e.kind)} · ${fmtDay(e.start)}", leading = { IconChip(if (e.kind == "training") "target" else "calendar", statusTone(s)) },
                 status = statusLabel(s) to statusTone(s), onClick = { onOpen("attendance_event:${e.id}") })
         }
     }

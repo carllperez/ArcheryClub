@@ -12,7 +12,7 @@ fun canSeeAttendance(workspace: JsonObject, permissions: Set<String>): Boolean =
     permissions.any { it in ATTENDANCE_DESK_PERMISSIONS } && workspace["attendance_overview"] is JsonObject && featureOn(workspace, "activities")
 
 val ACTIVITY_KINDS = listOf("training" to "Training", "event" to "Events", "meeting" to "Meetings")
-fun kindLabel(kind: String) = when (kind) { "training" -> "Training"; "meeting" -> "Meeting"; else -> "Event" }
+fun activityKindLabel(kind: String) = when (kind) { "training" -> "Training"; "meeting" -> "Meeting"; else -> "Event" }
 
 data class AttRow(val userId: String, val name: String, val registered: Boolean, val status: String, val method: String, val by: String)
 data class AttEvent(val id: String, val title: String, val kind: String, val start: Instant?, val end: Instant?, val venue: String, val roster: List<AttRow>) {
@@ -66,7 +66,7 @@ private fun csv(v: String) = if (v.any { it == ',' || it == '"' || it == '\n' })
 fun attendanceCsv(events: List<AttEvent>): String = buildString {
     append("Activity,Type,Date,Member,Registered,Status,Method,Recorded by\n")
     events.forEach { e -> e.roster.forEach { r ->
-        append(listOf(e.title, kindLabel(e.kind), e.start?.toString()?.take(10).orEmpty(), r.name, if (r.registered) "Yes" else "No",
+        append(listOf(e.title, activityKindLabel(e.kind), e.start?.toString()?.take(10).orEmpty(), r.name, if (r.registered) "Yes" else "No",
             statusLabel(r.status), r.method, r.by).joinToString(",") { csv(it) }).append('\n')
     } }
 }
