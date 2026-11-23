@@ -50,7 +50,7 @@ fun inviteViews(workspace: JsonObject, eventId: String, now: Instant, nameOf: (S
 /** The message a rep's club sends: what the code is for and how to use it. */
 fun inviteMessage(eventTitle: String, clubName: String, code: String, closes: String): String =
     "You're invited to represent $clubName at \"$eventTitle\" (DLSU Archery Club).\n" +
-        "1. Install the DLSU Archery Club app and create an account.\n" +
+        "1. Install the ArcherEyes app and create an account.\n" +
         "2. Choose \"I'm a partner club representative\" and enter this code: $code\n" +
         "The code works once and expires $closes."
 

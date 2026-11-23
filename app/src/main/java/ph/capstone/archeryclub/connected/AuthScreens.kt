@@ -87,7 +87,7 @@ fun ClubAuthScreen(state: SystemState, vm: SystemViewModel, snackbar: SnackbarHo
             HeroBand(bottomPadding = 104.dp) {
                 Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ClubMark()
-                    Text("ARCHERY CLUB", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.6.sp, color = Color.White)
+                    Text("ARCHEREYES", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.6.sp, color = Color.White)
                     AnimatedContent(creating, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) }, label = "auth-title") { c ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(if (c) "Create your account" else "Welcome back", style = MaterialTheme.typography.headlineMedium, color = Color.White)

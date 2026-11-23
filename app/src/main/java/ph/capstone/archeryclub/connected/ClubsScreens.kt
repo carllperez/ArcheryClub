@@ -270,7 +270,7 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CardButton("Share", Modifier.weight(1f), primary = true, enabled = clubCode.isNotBlank()) {
-                    val message = "Join $club in the Archery Club app.\n1. Install the app and tap Create an account.\n" +
+                    val message = "Join $club in the ArcherEyes app.\n1. Install the app and tap Create an account.\n" +
                         "2. Sign up with your email. With a personal email (like Gmail), enter this join code: $clubCode\n3. Send your membership application."
                     context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, message) }, "Share the join code"))
@@ -315,7 +315,7 @@ fun JoinCodesScreen(workspace: JsonObject, busy: Boolean, snackbar: SnackbarHost
         }
     }
     made?.let { (code, forEmail) ->
-        val message = "You're invited to join $club in the Archery Club app.\n1. Install the app and tap Create an account.\n" +
+        val message = "You're invited to join $club in the ArcherEyes app.\n1. Install the app and tap Create an account.\n" +
             "2. Sign up with $forEmail.\n3. Enter this join code: $code\nThen send your membership application."
         ConfirmDialog("Code for $forEmail", "Send them this code. It works once, only with that email, for 14 days.", "Share",
             extra = { Text(code, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
