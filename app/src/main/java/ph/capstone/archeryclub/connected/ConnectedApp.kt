@@ -149,6 +149,8 @@ fun ConnectedApp(vm:SystemViewModel){
             if(allowed("administration")){stackVar="club_setup";return}
             return
         }
+        // An invitation from another club (migration 057) is answered on the Partner clubs desk.
+        if(notice.text("kind")=="interclub_invitation"){stackVar="interclub:";return}
         val destination=notice.text("module").toIntOrNull()?:return
         val record=notice.text("record_id")
         if(destination in setOf(3,8)&&workspace.records("events").any{it.text("id")==record}){stackVar="activity:$record";return}

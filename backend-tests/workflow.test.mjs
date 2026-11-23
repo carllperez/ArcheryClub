@@ -1304,3 +1304,39 @@ test('Club join code 23 Nov: one shared code per club lets any personal email in
  assert.equal((await check(code,'late@gmail.test')).kind,null);
  await db.query('update app_private.clubs set email_domain=null');
 });
+
+test('Interclub 23 Nov: the host sends an event to clubs in the app; a guest club accepts or declines',async()=>{
+ const dlsu='00000000-0000-4000-8000-00000000d150';
+ const up=(await db.query("select id from app_private.clubs where name='UP Archery Club'")).rows[0].id;
+ const e=await command('officer','save_event',{title:'Send to clubs fixture',description:'Synthetic',venue:'Range',starts_at:future(48),ends_at:future(52),registration_opens:future(-1),registration_closes:future(40),capacity:20});
+ await command('officer','publish_event',{id:e.id,version:1});
+ await command('officer','share_interclub_event',{event_id:e.id,shared_details:'Shared',requirements:'School ID',registration_closes:future(30),rules:'Rules'});
+ const send=(person,clubs)=>rpc(person,'send_interclub_invitations',[e.id,`{${clubs.join(',')}}`],'$1::uuid,$2::uuid[]');
+ await denied(()=>send('applicant',[up]),/interclub officer/);
+ await denied(()=>send('officer',[]),/at least one/);
+ assert.equal((await send('officer',[up,dlsu])).sent,1,'only the other club, never itself');
+ assert.equal((await send('officer',[up])).sent,0,'already waiting');
+ // UP sees it and hears about it; DLSU sees what it sent.
+ const upw=await as('upadmin',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ const inv=upw.interclub_invitations.find(x=>x.event_id===e.id);
+ assert.equal(inv.status,'pending'); assert.equal(inv.event_title,'Send to clubs fixture');
+ assert.ok(upw.notifications.some(n=>n.kind==='interclub_invitation'&&n.record_id===inv.id));
+ const dw=await as('officer',async()=>(await db.query('select public.club_workspace() w')).rows[0].w);
+ assert.equal(dw.interclub_invitations.filter(x=>x.event_id===e.id).length,1);
+ // A UP member without the desk can't answer; a decline needs a reason; accepting makes the UP admin the rep.
+ const respond=(person,accept,note='')=>rpc(person,'respond_interclub_invitation',[inv.id,accept,note],'$1::uuid,$2::boolean,$3::text');
+ await denied(()=>respond('officer',true),/not found/);
+ await denied(()=>respond('upadmin',false,''),/why your club is declining/);
+ await respond('upadmin',true);
+ const access=(await db.query('select * from app_private.event_access where event_id=$1 and user_id=$2',[e.id,ids.upadmin])).rows[0];
+ assert.equal(access.role,'partner'); assert.equal(access.club_id,dlsu);
+ await denied(()=>respond('upadmin',true),/already answered/);
+ // The UP rep adds a delegate for UP, but can't use DLSU's host controls even though they're UP's administrator.
+ await command('upadmin','save_delegate',{event_id:e.id,partner_id:inv.partner_id,full_name:'Uno Archer',affiliation:'UP',category:'Recurve',requirements:'School ID'});
+ await as('upadmin',async()=>assert.equal(await (async()=>{const r=await db.query('select app_private.event_staff($1) s',[e.id]);return r.rows[0].s;})(),false));
+ await denied(()=>command('upadmin','update_shared_event',{event_id:e.id,status:'active',shared_details:'x',shared_venue:'x',shared_start:future(48),shared_end:future(52)}),/host club/);
+ // The host still runs its own event, and heard back.
+ await as('officer',async()=>assert.equal((await db.query('select app_private.event_staff($1) s',[e.id])).rows[0].s,true));
+ const sender=await as('officer',async()=>(await db.query("select message from app_private.notifications where user_id=$1 and kind='interclub' and message like '%Send to clubs fixture%' limit 1",[ids.officer])).rows[0]);
+ assert.match(sender.message,/UP Archery Club accepted Send to clubs fixture/);
+});

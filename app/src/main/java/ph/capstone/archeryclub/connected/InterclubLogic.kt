@@ -141,3 +141,21 @@ fun partnerTally(workspace: JsonObject, eventId: String): PartnerTally {
     val competed = mine.count { it.text("status") == "checked_in" }
     return PartnerTally(competed, published.size, (competed - published.size).coerceAtLeast(0), published.mapNotNull { icScore(it.text("result")) }.maxOrNull())
 }
+
+
+// Migration 057: events sent between clubs that use the app.
+/** Invitations other clubs sent to this club that still need an answer. */
+fun interclubInvitationsToUs(workspace: JsonObject): List<JsonObject> {
+    val mine = (workspace["club"] as? JsonObject)?.text("id").orEmpty()
+    return workspace.records("interclub_invitations").filter { it.text("guest_club") == mine && it.text("status") == "pending" }.sortedBy { it.text("starts_at") }
+}
+/** What this club sent for one of its events, newest answer first. */
+fun interclubInvitationsSent(workspace: JsonObject, eventId: String): List<JsonObject> =
+    workspace.records("interclub_invitations").filter { it.text("event_id") == eventId }.sortedBy { when (it.text("status")) { "pending" -> 0; "accepted" -> 1; else -> 2 } }
+/** Clubs the event can still go to: not this club, not one already waiting or joined. A declined club can be asked again. */
+fun clubsToInvite(workspace: JsonObject, eventId: String): List<JsonObject> {
+    val mine = (workspace["club"] as? JsonObject)?.text("id").orEmpty()
+    val busy = interclubInvitationsSent(workspace, eventId).filter { it.text("status") != "declined" }.map { it.text("guest_club") }.toSet()
+    return workspace.records("clubs").filter { it.text("id") != mine && it.text("id") !in busy }.sortedBy { it.text("name") }
+}
+fun clubNameById(workspace: JsonObject, id: String): String = workspace.records("clubs").find { it.text("id") == id }?.text("name") ?: "A club"

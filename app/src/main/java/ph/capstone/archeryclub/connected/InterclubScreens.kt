@@ -99,12 +99,29 @@ fun InterclubScreen(
     onBack: () -> Unit, onOpen: (String) -> Unit, onPush: (String) -> Unit, onStart: (String, JsonObject) -> Unit,
     onCommand: (String, JsonObject, () -> Unit) -> Unit, onRecords: () -> Unit, vm: SystemViewModel? = null,
 ) {
-    val events = workspace.records("interclub_events")
-    val e = if (id.isNotBlank()) events.find { it.text("event_id") == id } else featuredInterclub(events.filter { it.text("status") != "archived" }, Instant.now())
+    val allEvents = workspace.records("interclub_events")
+    // Migration 057: another club's event shows up here once this club accepts its invitation. Only our own events are
+    // run from this desk; a guest event opens as the partner page.
+    val ownClub = myClub(workspace)?.text("id").orEmpty()
+    fun hostedHere(x: JsonObject) = ownClub.isBlank() || x.text("club_id").isBlank() || x.text("club_id") == ownClub
+    val events = allEvents.filter(::hostedHere)
+    val guestEvents = allEvents.filterNot(::hostedHere).filter { it.text("status") != "archived" }
+    val e = if (id.isNotBlank()) allEvents.find { it.text("event_id") == id } else featuredInterclub(events.filter { it.text("status") != "archived" }, Instant.now())
+    val me = workspace.text("user_id")
+    val coordinator = coordinator && e != null && (hostedHere(e) || workspace.records("event_access").any {
+        it.text("event_id") == e.text("event_id") && it.text("user_id") == me && it.text("role") == "coordinator" && it.text("revoked_at").isBlank() })
+    val incoming = interclubInvitationsToUs(workspace)
     if (e == null) {
         HeroScaffold("Interclub", onBack, snackbar, overlap = 44.dp, busy = busy, eyebrow = { Pill("INTERCLUB", Color.White.copy(alpha = .16f), Color.White) },
             heroExtra = { Text("Share a club activity with partner clubs, collect their delegates and publish verified results.", color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium) }) {
-            EmptyState("No shared events yet", "Post the activity first (Events desk), then share it here with partner clubs.")
+            InvitationInbox(incoming, busy, vm)
+            if (guestEvents.isNotEmpty()) {
+                DeskLabel("Joined as a guest club")
+                guestEvents.forEach { g -> DeskRow(g.text("shared_title"), "${fmtDay(g.instant("shared_start"))} · ${g.text("shared_venue")}",
+                    leading = { IconChip("users", Tone.INFO) }, onClick = { onOpen(g.text("event_id")) }) }
+            }
+            if (interclubOfficer || events.isNotEmpty() || (incoming.isEmpty() && guestEvents.isEmpty()))
+                EmptyState("No shared events yet", "Post the activity first (Events desk), then share it here and send it to other clubs.")
             // A filled button: the outlined one in the empty card read as disabled (21 Nov testing).
             if (interclubOfficer) CardButton("Share an activity", Modifier.fillMaxWidth(), primary = true, enabled = !busy) { onStart("share_interclub_event", buildJsonObject {}) }
             // The clubs already added, so the officer can see them before sharing an event (they weren't listed anywhere).
@@ -149,6 +166,7 @@ fun InterclubScreen(
     }) {}
     var confirmStage by remember { mutableStateOf<String?>(null) }
     var newInvite by remember { mutableStateOf(false) }
+    var sendTo by remember { mutableStateOf(false) }
     HeroScaffold(e.text("shared_title"), onBack, snackbar, overlap = 44.dp, busy = busy,
         eyebrow = { Pill("INTERCLUB", Color.White.copy(alpha = .16f), Color.White)
             Pill(when (status) { "preparation" -> "PREPARATION"; "active" -> "EVENT DAY"; "completed" -> "FINISHED"; else -> "ARCHIVED" }, Club.amberSoft, Club.amberInk) },
@@ -157,6 +175,7 @@ fun InterclubScreen(
                 color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodyMedium)
             StepTracker(step)
         }) {
+        InvitationInbox(incoming, busy, vm)
         // A partner rep sees their own delegation's numbers; the officer sees the event's.
         val targeted = icAssignments(workspace, eid).map { it.text("delegate_id") }.toSet()
         val stats = if (coordinator) listOf("${partners.size}" to "Partner clubs", "${delegates.size}" to "Delegates", "$toReview" to "To review")
@@ -189,7 +208,7 @@ fun InterclubScreen(
             }
         }
         else if (coordinator && next != null) Surface(onClick = {
-            when { next.route != null -> onPush(next.route); next.step == IC_INVITE -> newInvite = true
+            when { next.route != null -> onPush(next.route); next.step == IC_INVITE -> sendTo = true
                 next.step == IC_ARCHIVE -> onStart("archive_interclub", e) }
         }, shape = RoundedCornerShape(16.dp), color = Club.forestDeep, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -217,8 +236,22 @@ fun InterclubScreen(
         if (!coordinator) PartnerDelegation(workspace, eid, busy, onStart)
         // Inviting stops when partner sign-ups close (the server refuses new codes then; 21 Nov testing still showed "Invite").
         val signupsOpen = status == "preparation" && (e.instant("registration_closes")?.let { now.isBefore(it) } ?: true)
-        if (coordinator) DeskLabel("Partner clubs", if (interclubOfficer && signupsOpen) "Invite" else null) { newInvite = true }
-        if (coordinator && partners.isEmpty()) EmptyState("No partner clubs yet", "Create an invite code for a club's representative. They only ever see this event.")
+        if (coordinator) DeskLabel("Partner clubs", if (interclubOfficer && signupsOpen) "Send to clubs" else null) { sendTo = true }
+        val sent = interclubInvitationsSent(workspace, eid)
+        if (coordinator && sent.isNotEmpty()) RowGroup { sent.forEachIndexed { i, s ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ClubBadge(clubNameById(workspace, s.text("guest_club")), s.text("partner_id"))
+                Column(Modifier.weight(1f)) {
+                    Text(clubNameById(workspace, s.text("guest_club")), style = MaterialTheme.typography.titleSmall)
+                    Text(when (s.text("status")) { "pending" -> "Sent ${fmtDay(s.instant("sent_at"))} · waiting for their answer"
+                        "accepted" -> "Accepted · their representative adds the delegates"; else -> "Declined: ${s.text("note")}" },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                when (s.text("status")) { "pending" -> StatusPill("Waiting", Tone.WARNING); "accepted" -> StatusPill("Joined", Tone.POSITIVE); else -> StatusPill("Declined", Tone.DANGER) }
+            }
+            if (i < sent.lastIndex) HorizontalDivider(color = Club.line.copy(alpha = .6f))
+        } }
+        if (coordinator && partners.isEmpty() && sent.isEmpty()) EmptyState("No partner clubs yet", "Send this event to clubs in the app, or make an invite code for a club that doesn't use it.")
         else if (coordinator) RowGroup { partners.forEachIndexed { i, p ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ClubBadge(p.partner.text("name"), p.partner.text("id"))
@@ -261,7 +294,13 @@ fun InterclubScreen(
             DeskLabel("Other shared events")
             others.take(5).forEach { o -> DeskRow(o.text("shared_title"), "${fmtDay(o.instant("shared_start"))} · ${human(o.text("status"))}", leading = { IconChip("calendar", Tone.NEUTRAL) }, onClick = { onOpen(o.text("event_id")) }) }
         }
+        if (guestEvents.isNotEmpty()) {
+            DeskLabel("Joined as a guest club")
+            guestEvents.forEach { g -> DeskRow(g.text("shared_title"), "${fmtDay(g.instant("shared_start"))} · ${g.text("shared_venue")}",
+                leading = { IconChip("users", Tone.INFO) }, onClick = { onOpen(g.text("event_id")) }) }
+        }
     }
+    if (sendTo) SendToClubsDialog(workspace, eid, busy, vm, onCodeInstead = { sendTo = false; newInvite = true }) { sendTo = false }
     confirmStage?.let { stage ->
         AlertDialog(onDismissRequest = { confirmStage = null },
             title = { Text(if (stage == "active") "Start the event day?" else "Finish the event?") },
@@ -801,5 +840,77 @@ fun PartnerEventPage(workspace: JsonObject, e: JsonObject, busy: Boolean, snackb
             PartnerStage.CHECKING -> "If a score doesn't match your scoresheet, ask DLSU before the event is archived."
             PartnerStage.FINAL -> ""
         }, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}
+
+
+/** Host: pick clubs that use the app and send them this event (migration 057). Clubs already waiting or joined aren't offered again. */
+@Composable
+private fun SendToClubsDialog(workspace: JsonObject, eid: String, busy: Boolean, vm: SystemViewModel?, onCodeInstead: () -> Unit, onDismiss: () -> Unit) {
+    val choices = clubsToInvite(workspace, eid)
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Send to clubs") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Their interclub officer or administrator gets a notice and accepts or declines. Whoever accepts becomes their representative and adds their archers.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (choices.isEmpty()) Text("Every club in the app already has this event.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                choices.forEach { c ->
+                    val id = c.text("id"); val on = id in picked
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { picked = if (on) picked - id else picked + id }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Checkbox(on, { picked = if (on) picked - id else picked + id })
+                        Column(Modifier.weight(1f)) {
+                            Text(c.text("name"), style = MaterialTheme.typography.titleSmall)
+                            if (c.text("school").isNotBlank()) Text(c.text("school"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                TextButton(onClick = onCodeInstead) { Text("Club not in the app? Make an invite code", fontWeight = FontWeight.ExtraBold) }
+            }
+        },
+        confirmButton = { TextButton(enabled = picked.isNotEmpty() && !busy && vm != null, onClick = {
+            vm?.save("send_interclub_invitations", buildJsonObject { put("p_event", eid); put("p_clubs", JsonArray(picked.map(::JsonPrimitive))) }) { onDismiss() }
+        }) { Text(if (picked.size > 1) "Send to ${picked.size} clubs" else "Send", fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+
+/** Guest club: events other clubs sent us, waiting for an answer (migration 057). */
+@Composable
+private fun InvitationInbox(incoming: List<JsonObject>, busy: Boolean, vm: SystemViewModel?) {
+    if (incoming.isEmpty()) return
+    var declining by remember { mutableStateOf<JsonObject?>(null) }
+    var accepting by remember { mutableStateOf<JsonObject?>(null) }
+    DeskLabel("Invitations from other clubs · ${incoming.size}")
+    incoming.forEach { v ->
+        RaisedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(v.text("host_name").uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(v.text("event_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            Text("${fmtDay(v.instant("starts_at"))} · ${v.text("venue")} · sign-ups close ${fmtDay(v.instant("registration_closes"))}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CardButton("Accept", Modifier.weight(1f), primary = true, enabled = !busy) { accepting = v }
+                CardButton("Decline", Modifier.weight(1f), enabled = !busy) { declining = v }
+            }
+        } }
+    }
+    accepting?.let { v ->
+        ConfirmDialog("Join ${v.text("event_title")}?", "You become your club's representative for this event: you add your archers as delegates and hear from ${v.text("host_name")}.",
+            "Accept", onConfirm = {
+                accepting = null
+                vm?.save("respond_interclub_invitation", buildJsonObject { put("p_id", v.text("id")); put("p_accept", true); put("p_note", "") })
+            }, onDismiss = { accepting = null })
+    }
+    declining?.let { v ->
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { declining = null },
+            title = { Text("Decline ${v.text("event_title")}?") },
+            text = { OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason, for ${v.text("host_name")}") }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { TextButton(enabled = reason.trim().length >= 3 && !busy, onClick = {
+                declining = null
+                vm?.save("respond_interclub_invitation", buildJsonObject { put("p_id", v.text("id")); put("p_accept", false); put("p_note", reason.trim()) })
+            }) { Text("Decline", fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { declining = null }) { Text("Cancel") } })
     }
 }
