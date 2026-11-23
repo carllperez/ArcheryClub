@@ -81,6 +81,8 @@ fun ElectionScreen(
     val choices = remember(eid) { mutableStateMapOf<String, String>() }
     var advancing by remember(eid) { mutableStateOf<ElectionStep?>(null) }
     var rollResult by remember(eid) { mutableStateOf<JsonObject?>(null) }
+    var rescheduling by remember(eid) { mutableStateOf(false) }
+    var cancelling by remember(eid) { mutableStateOf(false) }
     var confirming by remember { mutableStateOf(false) }
     var summary by remember(eid) { mutableStateOf<JsonObject?>(null) }
     val resultsVisible = officer || status in setOf("confirmed", "requires_revote", "archived")
@@ -110,6 +112,7 @@ fun ElectionScreen(
                             ElectionAction.EDIT -> onStart("update_election", e)
                             ElectionAction.CONFIRM -> onStart("confirm_results", e)
                             ElectionAction.ADVANCE -> advancing = step
+                            ElectionAction.RESCHEDULE -> rescheduling = true
                             ElectionAction.ADD_VOTERS -> vm?.rpc("add_all_eligible_voters", buildJsonObject { put("p_id", eid) }) { r -> rollResult = r as? JsonObject; vm?.refresh() }
                             else -> Unit
                         }
@@ -125,7 +128,7 @@ fun ElectionScreen(
                 buildString {
                     if (r.text("already") != "0" && r.text("already").isNotBlank()) append("${r.text("already")} were already on the list. ")
                     if (short > 0) append("$short Active member${if (short == 1) " doesn't" else "s don't"} have the ${r.text("residency_terms")} completed term(s) this election asks for. " +
-                        "Record their terms in Terms, residency and leadership records, or set the residency rule to 0 while the election is a draft.")
+                        "Record their terms in Terms, residency and leadership records, or set the rule to 0 (Edit details while it's a draft, Reschedule once announced).")
                     if (isEmpty()) append("Everyone eligible is on the list.")
                 }, if (added > 0) Tone.POSITIVE else Tone.WARNING)
         }
@@ -210,6 +213,8 @@ fun ElectionScreen(
             DeskLabel("Election officer")
             RowGroup {
                 if (status == "draft") GroupRow("settings", "Edit details and dates") { onStart("update_election", e) }
+                if (status == "announced") GroupRow("calendar", "Reschedule", "Reopen candidacy with new dates") { rescheduling = true }
+                if (status in setOf("draft", "announced", "voting") && voted.isEmpty()) GroupRow("close", "Cancel this election", "Archive it with a reason", tint = Club.amberInk) { cancelling = true }
                 GroupRow("check", "Change stage", changeStageHint(e, Instant.now())) { onStart("set_election_status", e) }
                 if (status in setOf("draft", "announced")) GroupRow("users", "Add an eligible voter", "${eligible.size} on the list") { onStart("confirm_voter", e) }
                 if (status == "closed" && e.text("method") != "digital") GroupRow("doc", "Record paper or external results") { onStart("record_external_results", e) }
@@ -241,6 +246,48 @@ fun ElectionScreen(
                 vm?.save("advance_election", buildJsonObject { put("p_id", eid); put("p_reason", reason.trim()) })
             }) { Text(step.button, fontWeight = FontWeight.ExtraBold) } },
             dismissButton = { TextButton(onClick = { advancing = null }) { Text("Cancel") } })
+    }
+    if (rescheduling) {
+        var candidacy by remember { mutableStateOf("2") }
+        var voting by remember { mutableStateOf("2") }
+        var everyone by remember { mutableStateOf((e.text("residency_terms").toIntOrNull() ?: 0) > 0 && eligible.isEmpty()) }
+        var reason by remember { mutableStateOf("") }
+        val ok = candidacy.toIntOrNull() in 1..30 && voting.toIntOrNull() in 1..30 && reason.trim().length >= 3
+        AlertDialog(onDismissRequest = { rescheduling = false },
+            title = { Text("Reschedule ${e.text("title")}") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Candidacy opens again from now, then voting follows. Members get a notice.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(candidacy, { candidacy = it.filter(Char::isDigit).take(2) }, label = { Text("Candidacy days") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(voting, { voting = it.filter(Char::isDigit).take(2) }, label = { Text("Voting days") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
+                if ((e.text("residency_terms").toIntOrNull() ?: 0) > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(everyone, { everyone = it })
+                    Text("Every Active member can vote (residency rule from ${e.text("residency_terms")} to 0 terms)", style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason (kept in the record)") }, modifier = Modifier.fillMaxWidth())
+            } },
+            confirmButton = { TextButton(enabled = ok && !busy, onClick = {
+                rescheduling = false
+                vm?.save("reschedule_election", buildJsonObject {
+                    put("p_id", eid); put("p_candidacy_days", candidacy.toInt()); put("p_voting_days", voting.toInt())
+                    if (everyone) put("p_residency", 0) else put("p_residency", JsonNull); put("p_reason", reason.trim()) })
+            }) { Text("Reschedule", fontWeight = FontWeight.ExtraBold) } },
+            dismissButton = { TextButton(onClick = { rescheduling = false }) { Text("Cancel") } })
+    }
+    if (cancelling) {
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { cancelling = false },
+            title = { Text("Cancel ${e.text("title")}?") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("It's archived and stops showing as the current election. This can't be undone; start a new election instead.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(reason, { reason = it.take(300) }, label = { Text("Reason (kept in the record)") }, modifier = Modifier.fillMaxWidth())
+            } },
+            confirmButton = { TextButton(enabled = reason.trim().length >= 3 && !busy, onClick = {
+                cancelling = false
+                vm?.save("cancel_election", buildJsonObject { put("p_id", eid); put("p_reason", reason.trim()) })
+            }) { Text("Cancel election", fontWeight = FontWeight.ExtraBold, color = Club.amberInk) } },
+            dismissButton = { TextButton(onClick = { cancelling = false }) { Text("Keep it") } })
     }
     if (confirming) ConfirmDialog("Cast your ballot?", positions.joinToString("\n") { p -> "$p: ${confirmed.find { it.text("id") == choices[p] }?.let { memberName(workspace, it.text("user_id")) } ?: "—"}" } +
         "\n\nYou can vote once and can't change it after.", "Cast ballot", onConfirm = {

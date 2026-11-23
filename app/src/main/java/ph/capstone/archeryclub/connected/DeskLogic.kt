@@ -1090,7 +1090,7 @@ fun EndCursor.previous(): EndCursor = if (cursor > 0) copy(cursor = cursor - 1) 
 // 23 Nov feedback: "The election process is complicated and the instructions are a bit unclear. I wasn't able to complete
 // it in a single session." The election page now opens with the one thing the officer does next (migration 060 lets
 // them do it now instead of waiting for the planned date).
-enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, NONE }
+enum class ElectionAction { EDIT, ADD_VOTERS, ADVANCE, CONFIRM, RESCHEDULE, NONE }
 data class ElectionStep(val eyebrow: String, val title: String, val detail: String, val action: ElectionAction, val button: String = "")
 
 private val electionWhen = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.ENGLISH)
@@ -1127,9 +1127,14 @@ fun electionNextStep(e: JsonObject, workspace: JsonObject, now: Instant): Electi
                 ElectionAction.ADVANCE, "Announce now")
         }
         "announced" -> when {
+            // Migration 061: candidacy over with a position nobody stands for can only be fixed by reopening it.
+            missing.isNotEmpty() && e.instant("candidacy_closes")?.isBefore(now) == true -> ElectionStep("STUCK",
+                "Candidacy closed without a candidate for ${missing.joinToString(" or ")}",
+                "Voting needs a confirmed candidate for every position, and nobody can run once candidacy closes. Reschedule to reopen candidacy, or cancel this election.",
+                ElectionAction.RESCHEDULE, "Reschedule")
             unreviewed > 0 -> ElectionStep("CANDIDATES", "Review $unreviewed candidac${if (unreviewed == 1) "y" else "ies"}",
                 "Tap Review on each one below to confirm or reject it.", ElectionAction.NONE)
-            voters == 0 -> addVoters
+            voters == 0 -> if (residency > 0) addVoters.copy(detail = addVoters.detail + " If nobody has $residency recorded term${if (residency == 1) "" else "s"}, reschedule with the rule set to 0.") else addVoters
             missing.isNotEmpty() -> ElectionStep("WAITING FOR CANDIDATES", "No confirmed candidate for ${missing.joinToString(" or ")} yet",
                 "Members file or nominate below until ${at(e.instant("candidacy_closes"))}. Voting opens once every position has a confirmed candidate.", ElectionAction.NONE)
             else -> ElectionStep("NEXT", "Open voting",

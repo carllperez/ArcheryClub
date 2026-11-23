@@ -1456,3 +1456,28 @@ test('Elections 23 Nov: an officer runs a whole election in one sitting; early c
  const r2=await rpc('officer','add_all_eligible_voters',[e2.id],'$1::uuid');
  assert.equal(r2.added,0); assert.ok(r2.short_of_residency>=1); assert.equal(r2.residency_terms,6);
 });
+
+test('Elections 23 Nov: a stuck election is rescheduled with a new residency rule, or cancelled',async()=>{
+ await grant('officer','election_officer');
+ const mk=async t=>command('officer','create_election',{title:t,kind:'special',term_end:'2031-01-01',announces_at:future(-3),candidacy_closes:future(-2),
+  voting_opens:future(-2),voting_closes:future(-1),result_due:future(1),threshold:60,residency_terms:3,rules:'Rules',rules_validated:true,method:'digital',positions:['President']});
+ const e=await mk('Stuck election');
+ // Announce while the old window lets it, then let the window pass (the state the live elections were in).
+ await db.query("update app_private.elections set status='announced' where id=$1",[e.id]);
+ assert.equal((await rpc('officer','add_all_eligible_voters',[e.id],'$1::uuid')).added,0);
+ await denied(()=>command('applicant','file_candidacy',{election_id:e.id,position:'President',statement:'Late'}),/not open/);
+ const re=(p,c,v,r,why)=>rpc(p,'reschedule_election',[e.id,c,v,r,why],'$1::uuid,$2::int,$3::int,$4::int,$5::text');
+ await denied(()=>re('applicant',2,2,0,'Fix'),/Permission denied/);
+ await denied(()=>re('officer',2,2,0,''),/Say why/);
+ await re('officer',2,2,0,'Nobody met the residency rule');
+ const row1=(await db.query('select residency_terms,candidacy_closes>now() open from app_private.elections where id=$1',[e.id])).rows[0];
+ assert.equal(row1.residency_terms,0); assert.equal(row1.open,true);
+ assert.ok((await rpc('officer','add_all_eligible_voters',[e.id],'$1::uuid')).added>=1);
+ await command('applicant','file_candidacy',{election_id:e.id,position:'President',statement:'Now I can run'});
+ // Cancelling: needs a reason, works before any ballot, and the election is archived.
+ const e2=await mk('Abandoned election');
+ await denied(()=>rpc('officer','cancel_election',[e2.id,''],'$1::uuid,$2::text'),/Say why/);
+ await rpc('officer','cancel_election',[e2.id,'Test run'],'$1::uuid,$2::text');
+ const row2=(await db.query('select status,confirmation from app_private.elections where id=$1',[e2.id])).rows[0];
+ assert.equal(row2.status,'archived'); assert.equal(row2.confirmation,'Cancelled: Test run');
+});
